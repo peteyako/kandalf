@@ -19,6 +19,7 @@ from pathlib import Path
 from unittest import mock
 
 from kandalf import claude_code as agent
+from kandalf import agent as agents
 from kandalf import gitlog
 from kandalf import pickup
 from kandalf import serve
@@ -317,6 +318,26 @@ class Queue(unittest.TestCase):
         self.tick(PLANS)
         self.assertEqual(self.fake.started, [])
         self.assertEqual(self.jobs(), [])
+
+    def test_a_tile_in_flight_with_no_session_when_the_server_starts_is_picked_up(self):
+        board = ("## In flight\n\n- [ ] PLN-01 **Fresh.**\n\n- [ ] PLN-02 **Mine.**\n  No pickup.\n\n"
+                 "- [ ] PLN-03 **Had one.**\n  Claude session `ab12cd34`: `claude attach ab12cd34`.\n\n## Done\n")
+        self.tick(board)  # the first look: all three are someone's
+        tiles = serve.in_flight_tiles(self.store, board)
+        self.assertEqual(pickup.adopt(self.store, tiles), ["PLN-01"])
+        self.tick(board)
+        self.assertEqual(self.fake.started, ["PLN-01"])
+        self.assertEqual(pickup.adopt(self.store, tiles), [])  # it has a job now
+        self.assertIn('  PLN-02 "Mine": no session: its tile says No pickup', pickup.startup_report(self.store, tiles, sessions=lambda: {}))
+
+    def test_a_tile_in_flight_that_loses_its_no_pickup_is_picked_up(self):
+        held = "## In flight\n\n- [ ] PLN-05 **Mine.**\n  No pickup. Rename things.\n\n## Done\n"
+        self.tick("## In flight\n\n## Done\n")
+        self.tick(held)
+        self.tick(held)
+        self.assertEqual(self.fake.started, [])
+        self.tick(held.replace("No pickup. ", ""))
+        self.assertEqual(self.fake.started, ["PLN-05"])
 
     def test_a_tile_that_lands_in_flight_is_started_at_once(self):
         self.tick(PLANS)
@@ -882,6 +903,28 @@ class Tidy(unittest.TestCase):
         self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree app-pln-07"])
         self.assertFalse(self.path.exists() or self.has_branch())
 
+    def test_a_deleted_story_loses_its_session_and_worktree_but_keeps_a_branch_with_commits(self):
+        (self.path / "scratch").write_text("not committed\n")
+        pickup.save(self.store, {"inflight": ["PLN-07"], "jobs": [{"key": "PLN-07", "id": "ab12cd34", "state": "started"}]})
+        retired = []
+        said = pickup.discard(self.store, "PLN-07", self.tile, retire=lambda sid: retired.append(sid) or True)
+        self.assertEqual(said, ["closed session ab12cd34", "removed worktree app-pln-07",
+                                "kept branch pln-07-small-thing: 1 commit not in dev"])
+        self.assertEqual(retired, ["ab12cd34"])
+        self.assertFalse(self.path.exists())
+        self.assertTrue(self.has_branch())
+        self.assertEqual([j["state"] for j in pickup.load(self.store)["jobs"]], ["ended"])
+
+    def test_a_deleted_story_with_no_commits_loses_its_branch_too(self):
+        git(self.path, "reset", "-q", "--hard", "HEAD~1")
+        said = pickup.discard(self.store, "PLN-07", self.tile, retire=lambda sid: False)
+        self.assertEqual(said, ["removed worktree app-pln-07", "deleted branch pln-07-small-thing"])
+        self.assertFalse(self.has_branch())
+
+    def test_a_deleted_tile_that_was_never_picked_up_touches_nothing(self):
+        self.assertEqual(pickup.discard(self.store, "PLN-99", "- [ ] PLN-99 **Other.**"), [])
+        self.assertTrue(self.path.exists() and self.has_branch())
+
     def test_a_story_archived_behind_the_server_s_back_is_tidied_on_the_next_look(self):
         from kandalf import serve
         pickup.save(self.store, {"inflight": None, "jobs": [
@@ -963,6 +1006,13 @@ class Naming(unittest.TestCase):
         self.assertEqual(serve.unmerged_done(st, board), {"PLN-07": ["feat/pln-07-small-thing"]})  # Done, not merged: outlined
         line = pickup.status(st, "PLN-07", tile, sessions=lambda: {}, why=lambda sid: None, screen=lambda sid: "", now=time.time)
         self.assertIn("Branch 1 commit ahead of dev", line)  # found the worktree from the tile alone
+        agents.use("copilot")
+        self.addCleanup(agents.use, "claude")
+        tile = serve.with_session(st, "## Done\n\n- [x] PLN-07 **Small thing.**\n", started).split("\n\n", 1)[1]
+        self.assertIn("Copilot session `ab12cd34`: `kandalf attach ab12cd34`.", tile)
+        self.assertEqual(pickup.tile_worktree(st, tile), path)
+        line = pickup.status(st, "PLN-07", tile, sessions=lambda: {"ab12cd34": "idle"}, why=lambda sid: "error", screen=lambda sid: "", now=time.time)
+        self.assertIn("session `ab12cd34` waiting for your input (it ended on an error).", line)
         self.assertEqual(pickup.prepare(st, {**job, "worktree": str(path)}), (path, name))  # a restart carries on in it
         git(app, "merge", "-q", "--ff-only", name)
         self.assertEqual(serve.unmerged_done(st, board), {})

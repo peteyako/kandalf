@@ -16,7 +16,7 @@ This file is for any coding agent working on kandalf; `CLAUDE.md` imports it for
   Change one and change the other in the same commit; the comments name the twin ("same in
   board.html"). Cover both sides: `test_pickup.py` and friends for Python, `test_page.js` for the
   page.
-- **`claude_code.py` is the only module that runs `claude`.** Keep every CLI call behind it.
+- **`claude_code.py` is the only module that runs `claude`, `copilot_cli.py` the only one that runs `copilot`.** Keep every CLI call behind them; `agent.py` picks one by board.json's `agent`.
 - **Store vs app.** A store (`<repo>-plans`) is its own git repo holding `plans.md`,
   `backlog.md`, plan docs and `board.json`; the app is the code repo it links into at
   `docs/plans`. `store.py` defines both. Tests build throwaway stores in temp dirs; never point

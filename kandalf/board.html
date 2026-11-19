@@ -55,8 +55,6 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] button.danger { color: var(--warn); }
 :root[data-theme="classic"] #status { margin-left: auto; color: var(--muted); font-size: 12px; }
 :root[data-theme="classic"] #status.err { color: var(--warn); }
-:root[data-theme="classic"] #banner { display: none; background: var(--accent-soft); padding: 8px 20px; border-bottom: 1px solid var(--line); }
-:root[data-theme="classic"] #banner.show { display: block; }
 :root[data-theme="classic"] #search { width: 200px; }
 :root[data-theme="classic"] #fileSel { display: flex; gap: 4px; flex-wrap: wrap; }
 :root[data-theme="classic"] #fileSel button { background: transparent; border: 1px solid var(--line); color: var(--muted); }
@@ -533,8 +531,17 @@ html, body { height: 100%; margin: 0; }
 :root:not([data-theme="classic"]) header select, :root:not([data-theme="classic"]) header input { box-shadow: var(--hdr-ctl-shadow); }
 :root:not([data-theme="classic"]) #status { margin-left: auto; color: var(--hdr-text); font: 12px var(--mono); }
 :root:not([data-theme="classic"]) #status.err { color: var(--danger-fg); background-color: var(--danger); background-image: var(--gloss); border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius); padding: 3px 8px; font-weight: 700; }
-:root:not([data-theme="classic"]) #banner { display: none; background: color-mix(in srgb, var(--accent) 45%, var(--bg)); color: var(--text); padding: 8px 24px; border-bottom: var(--bw) solid var(--edge); }
-:root:not([data-theme="classic"]) #banner.show { display: block; }
+/* What the board tells you (flash): toasts in the bottom-right corner, over the board, not in its way. */
+#toasts { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; max-width: min(440px, calc(100vw - 32px)); padding: 10px 12px 10px 14px;
+  background: var(--card); color: var(--text); border-left: 4px solid var(--accent); border-radius: 8px; font-size: 13px; line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.12); overflow-wrap: anywhere; animation: toast-in .18s ease-out; }
+.toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
+.toast b { display: block; margin-bottom: 2px; }
+.toast .toast-text { flex: 1; max-height: 40vh; overflow: auto; white-space: pre-line; }
+.toast button.toast-close { all: unset; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 2px; }
+.toast button.toast-close:hover { color: var(--text); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 :root:not([data-theme="classic"]) #search { width: 200px; }
 :root:not([data-theme="classic"]) #fileSel { display: flex; gap: 6px; flex-wrap: wrap; }
 :root:not([data-theme="classic"]) #fileSel button { font-size: 14px; padding: 6px 14px; background-color: var(--sb, var(--tab-bg)); color: var(--sf, var(--tab-fg)); }
@@ -872,7 +879,7 @@ applyTheme(themeNow, accentNow);
   <span id="themePick"><label class="hint">Theme <select id="themeSel" title="The board's look, remembered in this browser"></select></label><span id="accentSel" role="group" aria-label="Accent colour"></span></span>
   <span id="status">Loading…</span>
 </header>
-<div id="banner"></div>
+<div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="docView" hidden></section>
 <footer id="tagline">A wizard for your backlog, straight from middle management.</footer>
@@ -886,8 +893,8 @@ applyTheme(themeNow, accentNow);
       <label>Priority <select id="cardPrio"><option value="">None</option>
         <option value="P1">⇈ P1 Highest</option><option value="P2">↑ P2 High</option>
         <option value="P3">= P3 Medium</option><option value="P4">↓ P4 Low</option></select></label>
-      <label id="cardModelLabel" title="The model the Claude session for this story runs on, when the tile is picked up from In flight">Model <select id="cardModel"></select></label>
-      <span id="cardRepos" class="repos-pick hidden" title="The repos the Claude session for this story works in (the Repos line on the tile)">Repos <span id="cardReposBoxes"></span></span>
+      <label id="cardModelLabel" title="The model the agent's session for this story runs on, when the tile is picked up from In flight">Model <select id="cardModel"></select></label>
+      <span id="cardRepos" class="repos-pick hidden" title="The repos the agent's session for this story works in (the Repos line on the tile)">Repos <span id="cardReposBoxes"></span></span>
       <label>Estimate <input type="text" id="cardEst" size="6" placeholder="none" title="Wall-clock time: hours (4h), days of 24 h (1.5d) or weeks (1w); a range like 12-18h works"></label>
       <label>Column <select id="cardCol"></select></label>
     </div>
@@ -925,7 +932,7 @@ let rawText = "", docEditing = false, lastBoard = "plans.md";
 let readonly = false, file = null, mtime = null, doc = null, dirty = false, saving = false, dragging = null, editing = null;
 let nextId = 1;
 const $ = s => document.querySelector(s);
-const boardEl = $("#board"), statusEl = $("#status"), bannerEl = $("#banner");
+const boardEl = $("#board"), statusEl = $("#status"), toastsEl = $("#toasts");
 
 // ---------- markdown <-> board ----------
 function parse(text) {
@@ -1011,7 +1018,7 @@ const PRIO_ICON = { P1: "⇈", P2: "↑", P3: "=", P4: "↓" };
 const EST = String.raw`\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw]`;  // 4h, 1.5d, 2-3d, 1w
 const EST_RE = new RegExp(`^${EST}$`);
 // The store's key prefix (PLN, FLY, …) and name; /api/files reports them (listFiles).
-let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main";  // STORE_MODEL: what a story's session runs on unless its tile says
+let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_ATTACH = "claude attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
 let HEAD_RE, KEY_NUM_RE, LINK_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
@@ -1190,10 +1197,10 @@ function hiddenHint() { try { return localStorage.getItem(HINT_KEY()) || ""; } c
 const pickupHintHTML = sec => pickupHintShows(file, sec.name, pickups.why, hiddenHint())
   ? `<div class="pickup-why"><span>${inline(pickups.why)}</span><button type="button" data-act="hidewhy" title="Hide this note in this browser">×</button></div>` : "";
 const pickupFor = key => key ? pickups.jobs.findLast(j => j.key === key || (j.with || []).includes(key)) : undefined;
-const reposTag = repos => repos.length ? `<span class="repos" title="Its Claude session works in ${esc(repos.join(", "))}">⎇ ${esc(repos.join(", "))}</span>` : "";
-const modelTag = model => model ? `<span class="model" title="Its Claude session runs on ${esc(model)}, not the store's default (${esc(STORE_MODEL)})">◈ ${esc(model)}</span>` : "";
+const reposTag = repos => repos.length ? `<span class="repos" title="Its ${AGENT} session works in ${esc(repos.join(", "))}">⎇ ${esc(repos.join(", "))}</span>` : "";
+const modelTag = model => model ? `<span class="model" title="Its ${AGENT} session runs on ${esc(model)}, not the store's default (${esc(STORE_MODEL)})">◈ ${esc(model)}</span>` : "";
 const STOPPED = { idle: "idle", lost: "gone" };  // a session that isn't at work, as the tile says it
-const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? "Try starting Claude on this tile again" : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
+const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? `Try starting ${AGENT} on this tile again` : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
 // The job behind a tile's session line, if the board started that session.
 function sessionJob(session, key) {
   const job = session && pickupFor(key);
@@ -1201,7 +1208,7 @@ function sessionJob(session, key) {
 }
 // A tile's session as a block: which session, what it is doing, the command that opens it,
 // and Restart once it has stopped.
-const WAITING = { interrupted: "it was interrupted", question: "it asked a question" };  // pickup.py: WAITING
+const WAITING = { interrupted: "it was interrupted", question: "it asked a question", error: "it ended on an error" };  // pickup.py: WAITING
 // What a job's session is doing, in a word or two, for the block's label.
 function sessionState(job) {
   if (!job) return "";
@@ -1212,10 +1219,10 @@ function sessionState(job) {
 function sessionHTML(session, key) {
   if (!session) return "";
   const job = sessionJob(session, key), state = sessionState(job), waiting = job?.state === "idle" && job.waiting;
-  const attach = `claude attach ${session.id}`;
+  const attach = attachCmd(session.id);
   const look = job?.state === "lost" ? " lost" : waiting ? " waiting" : "";
   return `<div class="session${look}"><div class="session-top">
-      <span class="session-id">✦ Claude session <code>${session.id}</code></span>
+      <span class="session-id">✦ ${AGENT} session <code>${session.id}</code></span>
       ${state ? `<span class="session-state s-${waiting ? "waiting" : job.state}">${state}</span>` : ""}<span class="session-acts">
       <button type="button" data-act="copy" data-copy="${attach}" title="Copy the command that opens this session: ${attach}">Copy attach</button>
       ${key ? `<button type="button" data-act="status" data-key="${key}" title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
@@ -1227,11 +1234,11 @@ function sessionHTML(session, key) {
 function pickupTag(key, sec, session) {
   const job = pickupFor(key);
   if (!job || sessionJob(session, key)) return "";
-  if (job.state === "started") return `<span class="pickup on" title="${esc(`Claude is working on this. Open it with: claude attach ${job.id}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ Claude</span>`;
+  if (job.state === "started") return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>`;
   if (!isPickupColumn(sec.name)) return "";  // the rest only matters while the tile is in flight
-  if (STOPPED[job.state]) return `<span class="pickup bad" title="${esc(`Claude session ${job.id} is ${STOPPED[job.state]}`)}">✦ Claude ${STOPPED[job.state]}</span>` + restartButton(job);
-  if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: Claude starts this when ${job.behind || "the current"} session ends. Click to start it now.`)}">◌ queued</span>`;
-  if (job.state === "failed") return `<span class="pickup bad" title="${esc("Claude couldn't be started: " + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
+  if (STOPPED[job.state]) return `<span class="pickup bad" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + restartButton(job);
+  if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. Click to start it now.`)}">◌ queued</span>`;
+  if (job.state === "failed") return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
   return "";
 }
 
@@ -1267,11 +1274,13 @@ const SUB_RE = /^  [-*] \[( |x|X)\] (.*)$/;
 // The line the server writes into a tile when a Claude session starts on it (serve.py:
 // with_session): "Claude session `id`: `claude attach id`. Branch ..., worktree .... Started ...".
 // It shows as a block of its own, not as part of the description.
-const SESSION_RE = /^\s*Claude session `([0-9a-f]{6,})`: `claude attach [0-9a-f]+`\.?\s*(.*)$/;
+const SESSION_RE = /^\s*(?:Claude|Copilot) session `([0-9a-f]{6,})`: `[^`]+`\.?\s*(.*)$/;
 function sessionLine(line) {
   const m = line.match(SESSION_RE);
   return m ? { id: m[1], rest: m[2] } : null;
 }
+// The command that opens a session, by id (the store's agent decides it; serve.py: /api/files).
+const attachCmd = id => STORE_ATTACH.replace("{id}", id);
 // A tile picks the model its Claude session runs on with a line of its own, "Model: sonnet";
 // without one it is the store's default (pickup.py: MODEL_RE, model_for). The dialog's Model
 // dropdown writes and removes that line.
@@ -1376,6 +1385,13 @@ function statusParts(text) {
 }
 // The session's own note, cut at its "Now:" and "Next:" into what is done, what it is doing
 // and what comes next. A note without them comes back whole.
+// A status line as a toast's lines, a fact a line, the last few steps on its screen each on its own.
+function statusToast(line) {
+  const parts = statusParts(line.replace(/^\*{0,2}Status [^*]*?\d\d:\d\d:\*{0,2}\s*/, ""));
+  return parts.map(p => ({ ...p, text: p.text.replace(/`/g, "") })).flatMap(({ label, text }) => label === "Screen"
+    ? ["On its screen:", ...text.split(/\s*●\s*/).filter(Boolean).slice(-3).map(s => "● " + s)]
+    : [label && label !== "Progress" ? `${label}: ${text}` : text]).join("\n");
+}
 function noteParts(text) {
   const m = text.match(/^(.*?)(?:\s*\bNow:\s*(.*?))?(?:\s*\bNext:\s*(.*))?$/s);
   if (!m || (m[2] === undefined && m[3] === undefined)) return [{ label: "", text }];
@@ -1671,7 +1687,7 @@ async function movedColumn(card, toSec, fromSec, fromIndex) {
   if (family.length > 1) {
     const n = await ask({ title: `Start ${cardKey(card)} with its ${family.length} sub-stories?`, ok: "Start",
       body: [`<b>${esc(cardKey(card))}</b> ${esc(splitCard(card.text).title.replace(/\*\*|`/g, ""))}`,
-        "Each sub-story gets its own Claude session, in its own worktree and branch."],
+        `Each sub-story gets its own ${AGENT} session, in its own worktree and branch.`],
       note: `The rest queue and start as sessions finish. ${esc(cardKey(card))} itself gets no session.`,
       input: { label: "Sessions at work at once", type: "number", min: 1, max: 9, value: sessionsOf(card.body) || STORE_SESSIONS } });
     if (n === null) { moveCard(card.id, fromSec, fromIndex ?? fromSec.cards.length); return render(); }
@@ -1870,7 +1886,7 @@ async function boardAction(path, body, doing) {
   saving = false;
   return done;
 }
-// What the server did with the archived stories' worktrees and feature branches, for the banner.
+// What the server did with the archived stories' worktrees and feature branches, for a toast.
 const tidiedNote = j => (j.tidied || []).map(t => " " + t[0].toUpperCase() + t.slice(1) + ".").join("");
 async function clearColumn(sec) {
   const kept = sec.cards.map(cardKey).filter(k => unmerged[k]), n = sec.cards.length - kept.length;
@@ -1878,7 +1894,7 @@ async function clearColumn(sec) {
   if (!n) return flash(`Nothing to clear in ${sec.name}. ${staying}`);
   const tiles = `${n} tile${n > 1 ? "s" : ""}`;
   if (!await ask({ title: `Archive the ${tiles} in ${sec.name}?`, ok: "Archive", note: esc(staying),
-    body: "They leave the board for the archive, with the plan docs they link. A story that has landed also loses its Claude session, worktree and feature branch." })) return;
+    body: `They leave the board for the archive, with the plan docs they link. A story that has landed also loses its ${AGENT} session, worktree and feature branch.` })) return;
   const j = await boardAction("/api/clear", { column: sec.name }, "Clearing…");
   if (!j) return;
   lastClear = j.cleared; render();
@@ -2060,7 +2076,7 @@ function tileViewHTML(md) {
     if (!status && handoff === undefined) return "";
     const rows = (parts, cls = "") => `<dl class="${cls}">${parts.map(p => `<dt>${p.label}</dt><dd>${inline(p.text)}</dd>`).join("")}</dl>`;
     const measured = status ? `<span class="tv-status-at">Status · ${status.at} · measured by the board</span>${rows(statusParts(status.text))}` : "";
-    const said = handoff !== undefined ? `<span class="tv-status-at${status ? " tv-status-next" : ""}">Claude's note · what the session last wrote on the tile</span>${rows(noteParts(handoff), "note")}` : "";
+    const said = handoff !== undefined ? `<span class="tv-status-at${status ? " tv-status-next" : ""}">${AGENT}'s note · what the session last wrote on the tile</span>${rows(noteParts(handoff), "note")}` : "";
     status = null; handoff = undefined;
     return `<div class="tv-status">${measured}${said}</div>`;
   };
@@ -2157,7 +2173,7 @@ $("#cardAddKid").addEventListener("click", () => { editing.addKid = true; $("#ca
 // The Priority and Estimate fields and the tile's first line hold the same values: a field
 // rewrites the line (so the view, rendered from the textarea, follows), and typing "P2 ~3d "
 // into the line updates the fields.
-const MODELS = ["opus", "sonnet", "haiku", "fable"];
+let MODELS = ["opus", "sonnet", "haiku", "fable"];  // the store's agent's (serve.py: /api/files)
 function syncModel() {
   const own = modelOf($("#cardText").value), names = [...new Set([...MODELS, own].filter(Boolean))];
   const label = m => m[0].toUpperCase() + m.slice(1);
@@ -2208,8 +2224,28 @@ $("#cardEst").addEventListener("input", e => {
 $("#cardEst").addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
 $("#cardText").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("#cardSave").click(); } });
 $("#cardDelete").addEventListener("click", async () => {
-  if (!await ask({ title: "Delete this tile?", body: "It is removed from the board, not archived.", ok: "Delete", danger: true })) return;
-  const f = findCard(editing.card.id); f.s.cards.splice(f.i, 1);
+  const card = editing.card, key = cardKey(card);
+  const job = key ? pickups.jobs.findLast(j => j.key === key) : undefined;
+  const session = storyParts(card).session;
+  const live = (job && job.state !== "ended") || session;
+  const body = ["It is removed from the board, not archived."];
+  if (live) {
+    const id = session?.id || job?.id;
+    body.push(job?.state === "waiting" && !id ? `It leaves the queue for ${esc(AGENT)}.` : [
+      `Its work is thrown away too:`,
+      id ? `· the ${esc(AGENT)} session <code>${esc(id)}</code> is stopped and removed` : "",
+      job?.worktree ? `· its worktree <code>${esc(job.worktree)}</code> is removed, with anything uncommitted in it` : "· its worktree is removed, with anything uncommitted in it",
+      job?.branch ? `· its branch <code>${esc(job.branch)}</code> is deleted if it has no commits of its own, else kept` : "",
+    ].filter(Boolean).join("<br>"));
+  }
+  if (!await ask({ title: live ? `Delete ${key} and its ${AGENT} session?` : "Delete this tile?", body, ok: "Delete", danger: true })) return;
+  if (live) {
+    const tile = [card.text, ...(card.body || [])].join("\n");
+    const j = await postPickup({ key, discard: true, tile }).catch(() => null);
+    if (!j) return flash(`${key} wasn't deleted: its session and worktree couldn't be thrown away (server down?)`);
+    if (j.discarded?.length) flash(j.discarded.join("\n"), `${key} deleted`);
+  }
+  const f = findCard(card.id); f.s.cards.splice(f.i, 1);
   dlg.close("deleted"); changed();
 });
 dlg.addEventListener("close", () => {
@@ -2238,7 +2274,22 @@ dlg.addEventListener("close", () => {
 
 // ---------- persistence ----------
 function setStatus(t, err) { statusEl.textContent = t; statusEl.classList.toggle("err", !!err); }
-function flash(msg) { bannerEl.textContent = msg; bannerEl.classList.add("show"); clearTimeout(flash.t); flash.t = setTimeout(() => bannerEl.classList.remove("show"), 6000); }
+// Tell the user something in a toast: it goes after 5 seconds, or stays while the pointer is
+// on it, and × closes it at once; the newest three are kept. title: a bold first line.
+function flash(msg, title = "") {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `<div class="toast-text">${title ? `<b>${esc(title)}</b>` : ""}${esc(msg)}</div><button type="button" class="toast-close" title="Close" aria-label="Close">×</button>`;
+  const close = () => { el.classList.add("leaving"); setTimeout(() => el.remove(), 200); };
+  let timer;
+  const wait = () => { clearTimeout(timer); timer = setTimeout(close, 5000); };
+  el.querySelector(".toast-close").onclick = close;
+  el.onmouseenter = () => clearTimeout(timer);
+  el.onmouseleave = wait;
+  toastsEl.append(el);
+  while (toastsEl.children.length > 3) toastsEl.firstElementChild.remove();
+  wait();
+}
 let saveTimer = null;
 function scheduleSave() { setStatus("Unsaved…"); clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
 async function save() {
@@ -2277,6 +2328,9 @@ async function listFiles(select) {
   STORE_REPOS = j.repos || [];
   STORE_SESSIONS = j.sessions || 2;
   STORE_TRUNK = j.trunk || "main";
+  STORE_ATTACH = j.attach || "claude attach {id}";
+  AGENT = j.agent || "Claude";
+  if (j.models) MODELS = j.models;
   STORE_PICKUP_COLUMN = j.pickupColumn || "";
   $("#storeName").textContent = STORE_NAME;
   $("#fileSel").innerHTML = j.files.map(f => `<button type="button" role="tab" data-file="${esc(f)}" title="${esc(f)}">${esc(boardLabel(f))}</button>`).join("");
@@ -2338,16 +2392,16 @@ async function postPickup(body) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
   if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs }; render(); }
-  return r.ok ? j : (flash("Claude wasn't started: " + (j.error || r.status)), null);
+  return r.ok ? j : (flash(`${AGENT} wasn't started: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });
 // Restart: resume the tile's session, or have a new one take over if it can't be resumed.
 async function restartPickup(key) {
-  setStatus(`Restarting Claude on ${key}…`);
+  setStatus(`Restarting ${AGENT} on ${key}…`);
   const j = await postPickup({ key, restart: true }).catch(() => (flash("Restart failed: server down?"), null));
   const job = j && pickupFor(key);
-  if (job?.state === "started") flash(`Claude is back on ${key}. Open it with: claude attach ${job.id}`);
-  else if (job?.state === "failed") flash(`Claude couldn't be restarted on ${key}: ${job.error}`);
+  if (job?.state === "started") flash(`${AGENT} is back on ${key}. Open it with: ${attachCmd(job.id)}`);
+  else if (job?.state === "failed") flash(`${AGENT} couldn't be restarted on ${key}: ${job.error}`);
   setStatus(j ? "Restarted " + key : "Not restarted", !j);
 }
 // The Status button: the server checks the story's session and branch now and writes what it
@@ -2366,9 +2420,9 @@ async function refreshStatus(key) {
   spin(false);
   if (!j) return setStatus("Not checked", true);
   setStatus("Status of " + key + " refreshed");
-  // Pressed on the board, the status is told in the banner. An open tile shows it itself: it
+  // Pressed on the board, the status is told in a toast. An open tile shows it itself: it
   // stays open and is refilled where it is, so the dialog doesn't blink.
-  if (!wasOpen || !dlg.open) return flash(`${key}: ${j.status.replace(/`/g, "")}`);
+  if (!wasOpen || !dlg.open) return flash(statusToast(j.status), `${key} status`);
   const f = findCardByKey(key);
   if (!f) return dlg.close("cancel");
   editing = { card: f.c, sec: f.s };
@@ -2385,7 +2439,7 @@ async function offerPickup(job, unasked = false) {
   if (!job || job.state !== "waiting" || (unasked && job.master) || askDlg.open) return;
   const ahead = job.behind || "another tile";
   if (await ask({ title: `Start ${job.key} now?`, ok: "Start in parallel", cancel: "Leave it queued",
-    body: [`<b>${esc(job.key)}</b> ${esc(job.title)}`, `It is in flight, but Claude is still working on ${esc(ahead)}.`],
+    body: [`<b>${esc(job.key)}</b> ${esc(job.title)}`, `It is in flight, but ${AGENT} is still working on ${esc(ahead)}.`],
     note: `Queued, it starts when the session on ${esc(ahead)} ends.` })) startPickup(job.key);
 }
 async function pollPickups() {
@@ -2397,11 +2451,11 @@ async function pollPickups() {
     if (toldPickups.has(pickupId(job) + job.state + (job.waiting || "") + (job.ready ? "ready" : ""))) continue;
     toldPickups.add(pickupId(job) + job.state + (job.waiting || "") + (job.ready ? "ready" : ""));
     if (first) continue;  // what happened before this page opened isn't news
-    if (job.state === "started") flash(`Claude picked up ${job.key}. Open it with: claude attach ${job.id}`);
-    if (job.state === "failed") flash(`Claude couldn't be started for ${job.key}: ${job.error}`);
-    if (job.state === "lost") flash(`The Claude session on ${job.key} is gone. Restart is on its tile.`);
+    if (job.state === "started") flash(`${AGENT} picked up ${job.key}. Open it with: ${attachCmd(job.id)}`);
+    if (job.state === "failed") flash(`${AGENT} couldn't be started for ${job.key}: ${job.error}`);
+    if (job.state === "lost") flash(`The ${AGENT} session on ${job.key} is gone. Restart is on its tile.`);
     if (job.ready) flash(`${job.key} is ready for review: its tile is outlined in green.`);
-    else if (job.state === "idle" && job.waiting) flash(`Claude is waiting for your input on ${job.key}: ${WAITING[job.waiting]}. Open it with: claude attach ${job.id}`);
+    else if (job.state === "idle" && job.waiting) flash(`${AGENT} is waiting for your input on ${job.key}: ${WAITING[job.waiting]}. Open it with: ${attachCmd(job.id)}`);
   }
   if (dragging || editing) return;
   if (changed) render();

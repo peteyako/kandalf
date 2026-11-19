@@ -49,7 +49,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import claude_code as agent
+from . import agent
 from . import gitlog
 
 # The columns that mean under way, however they are spelt: In flight, in-flight, In progress (or a slip
@@ -102,12 +102,14 @@ def why_off(store, *, installed=agent.installed, lacks=_lacks):
         return naming
     if store.repo_problem:
         return f'Pickup is off: {store.repo_problem}, so fix "repos" in board.json.'
+    if store.agent_problem:
+        return f'Pickup is off: {store.agent_problem}, so fix "agent" in board.json.'
     if not installed():
-        return "Pickup is off: `claude` isn't on your PATH, so install Claude Code or put it there and restart the board."
+        return f"Pickup is off: `{agent.cli()}` isn't on your PATH, so install {agent.label()} or put it there and restart the board."
     lacking = lacks()
     if lacking:
         named = ", ".join(lacking[:-1]) + " and " + lacking[-1] if len(lacking) > 1 else lacking[0]
-        return f"Pickup is off: the installed Claude Code lacks {named}, so update it (`claude update`) and restart the board."
+        return f"Pickup is off: the installed {agent.label()} lacks {named}, so update it ({agent.update_hint()}) and restart the board."
     return None
 
 
@@ -484,7 +486,7 @@ def _launch(store, job, args, cwd, text: str, extra: dict, dirs=()) -> dict:
     from the store's .claude/settings.json when it has them, and the folders in dirs added
     to what it can work in: the fields to set on the job."""
     hooks = ["--settings", str(store.hooks_file)] if store.hooks_file.is_file() else []
-    began = agent.start([*hooks, *args], cwd, store.permission, text, dirs)
+    began = agent.start([*hooks, *args], cwd, store.permission, text, dirs, store_dir=store.dir)
     if "error" in began:
         return {"state": "failed", "error": began["error"], **extra}
     return {"state": "started", "id": began["id"], "session": full_id(began["id"]), **extra}
@@ -594,7 +596,7 @@ def _add_repos(store, job, repos, session) -> dict:
     return {**resume(store, {**job, "session": session, "repos": every}, text), "repos": every, "branch": name}
 
 
-WAITING = {"interrupted": "it was interrupted", "question": "it asked a question"}
+WAITING = {"interrupted": "it was interrupted", "question": "it asked a question", "error": "it ended on an error"}
 
 
 def session_screen(sid: str) -> str:
@@ -651,12 +653,20 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
     no session is at work. Returns the state."""
     with _lock:
         state = load(store)
-        keys = [t["key"] for t in tiles]
+        jobs = state["jobs"]
+        by_key = {t["key"]: t for t in tiles}
+        # A tile that says No pickup isn't counted as seen, so it is picked up once the words go.
+        live = {j["key"] for j in jobs if j["state"] == "waiting" or j["state"] in TRACKED}
+        held = [k for k in by_key if k not in live and OPT_OUT_RE.search(family_text(by_key, k))]
+        for k in held:
+            if k not in state.get("held", []):
+                log(f"{k} is in flight but says No pickup: left alone until those words go")
+        state["held"] = held
+        keys = [k for k in by_key if k not in held]
         if state["inflight"] is None:  # the first look: what is in flight already is someone's
             state["inflight"] = keys
             save(store, state)
             return state
-        jobs = state["jobs"]
         # One tile, one session: a tile that already has a session (at work, idle or lost) or
         # a place in the queue isn't picked up again, however it came to look newly arrived.
         taken = {j["key"] for j in jobs if j["state"] == "waiting" or j["state"] in TRACKED}
@@ -668,9 +678,9 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
                 jobs.append({**job, "model": model_for(store, job["text"]), "state": "waiting", "at": int(now()),
                              **({"want": want} if want is not None else {})})
         for j in jobs:
-            if j["state"] == "waiting" and j["key"] not in keys:
+            if j["state"] == "waiting" and j["key"] not in by_key:
                 log(f"{j['key']} left In flight before its turn: dropped from the queue")
-        jobs[:] = [j for j in jobs if j["state"] != "waiting" or j["key"] in keys]
+        jobs[:] = [j for j in jobs if j["state"] != "waiting" or j["key"] in by_key]
         state["inflight"] = keys
         waiting = [j for j in jobs if j["state"] == "waiting"]
         latest = {j["key"]: j for j in jobs}
@@ -681,7 +691,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
 
         def closed_early(j):
             """ "ended" on a tile still in flight: how the first version of pickup left a stopped session."""
-            return j["state"] == "ended" and j["key"] in keys and latest[j["key"]] is j and bool(j.get("id"))
+            return j["state"] == "ended" and j["key"] in by_key and latest[j["key"]] is j and bool(j.get("id"))
 
         tracked = [j for j in jobs if j["state"] in TRACKED or closed_early(j)]
         by_key = {t["key"]: t for t in tiles}
@@ -692,7 +702,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
             there = sessions()
             if there is not None:
                 for j in tracked:
-                    _look(j, there.get(j.get("id")), j["key"] in keys, now(), why)
+                    _look(j, there.get(j.get("id")), j["key"] in by_key, now(), why)
                 for j in [*tracked, *waiting]:
                     if j["key"] in by_key and j["state"] in ("waiting", *TRACKED):
                         text, was = family_text(by_key, j["key"]), j.get("model")
@@ -868,8 +878,8 @@ def restart(store, key: str, *, start=start, resume=resume, lookup=full_id, on_s
 
 
 # ---------- tidying up after an archived story ----------
-TILE_BRANCH_RE = re.compile(r"Claude session `[0-9a-f]+`.*?Branch `([^`]+)`, worktree `([^`]+)`")
-TILE_REPOS_RE = re.compile(r"Claude session `[0-9a-f]+`.*?Branch `([^`]+)`, worktrees ([^`,]+? `[^`]+`(?:, [^`,]+? `[^`]+`)*)\.")
+TILE_BRANCH_RE = re.compile(r"(?:Claude|Copilot) session `[0-9a-f]+`.*?Branch `([^`]+)`, worktree `([^`]+)`")
+TILE_REPOS_RE = re.compile(r"(?:Claude|Copilot) session `[0-9a-f]+`.*?Branch `([^`]+)`, worktrees ([^`,]+? `[^`]+`(?:, [^`,]+? `[^`]+`)*)\.")
 
 
 def retire(session: str) -> bool:
@@ -979,7 +989,67 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
     return done
 
 
-TILE_SESSION_RE = re.compile(r"Claude session `([0-9a-f]+)`")  # the line the server writes into a tile
+def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
+    """A deleted story's work is thrown away: its session stopped and removed, its worktree in
+    each repo removed with whatever is uncommitted in it, and its feature branch deleted where
+    it has no commits of its own (one that has is kept, so no commit is lost). Its jobs end, so
+    nothing restarts or queues it. Returns what was done, as lines for the console."""
+    with _lock:
+        state = load(store)
+        jobs = [j for j in state["jobs"] if j["key"] == key]
+        for j in jobs:
+            j["state"] = "ended"
+        save(store, state)
+    if not jobs and not TILE_SESSION_RE.search(tile_text):
+        return []
+    got = _tidy_cuts(store, tile_text, job_for(store, key))
+    sessions = {j["id"] for j in jobs if j.get("id")} | ({got[1]} if got and got[1] else set())
+    done = [f"closed session {sid}" for sid in sorted(sessions) if retire(sid)]
+    if not got:
+        return done
+    name, _, cuts = got
+    link = f"docs/{store.link}"
+    for _, repo, path in cuts:
+        if not repo or not path or path.resolve() == repo.path:
+            continue
+        at = f" in {repo.name}" if len(cuts) > 1 else ""
+        listed = _git(repo.path, "worktree", "list", "--porcelain").stdout.split("\n")
+        if path.is_dir() and f"worktree {path.resolve()}" in listed:
+            if (path / link).is_symlink() and _git(path, "ls-files", "--error-unmatch", link).returncode != 0:
+                (path / link).unlink()
+            gone = _git(repo.path, "worktree", "remove", "--force", str(path))
+            done.append(f"removed worktree {path.name}{at}" if gone.returncode == 0
+                        else f"kept worktree {path.name}{at}: {gone.stderr.strip() or 'git worktree remove failed'}")
+        _git(repo.path, "worktree", "prune")
+        if name == repo.trunk or _git(repo.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode != 0:
+            continue
+        ahead = _git(repo.path, "rev-list", "--count", f"{repo.trunk}..{name}").stdout.strip()
+        if ahead not in ("", "0"):
+            done.append(f"kept branch {name}{at}: {ahead} commit{'s' if ahead != '1' else ''} not in {repo.trunk}")
+            continue
+        cut = _git(repo.path, "branch", "-D", name)
+        done.append(f"deleted branch {name}{at}" if cut.returncode == 0
+                    else f"kept branch {name}{at}: {cut.stderr.strip() or 'git branch -D failed'}")
+    return done
+
+
+TILE_SESSION_RE = re.compile(r"(?:Claude|Copilot) session `([0-9a-f]+)`")  # the line the server writes into a tile
+
+
+def adopt(store, tiles) -> list:
+    """At the server's start: the In flight tiles that never had a session (no job, no session
+    line on the tile, no sub-story in flight) are taken out of what the board saw last, so its
+    next look picks them up as if they had just landed. Returns their keys."""
+    with _lock:
+        state = load(store)
+        had = {j["key"] for j in state["jobs"]}
+        masters = {t["parent"] for t in tiles if t.get("parent")}
+        fresh = [t["key"] for t in tiles if t["key"] not in had and t["key"] not in masters
+                 and not TILE_SESSION_RE.search(t["text"]) and not OPT_OUT_RE.search(t["text"])]
+        seen = state["inflight"] if state["inflight"] is not None else [t["key"] for t in tiles]
+        state["inflight"] = [k for k in seen if k not in fresh]
+        save(store, state)
+        return fresh
 
 
 def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
@@ -991,7 +1061,7 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
 
     def doing(sid):
         if there is None:
-            return f"session {sid} (the Claude sessions could not be listed)"
+            return f"session {sid} (the {agent.short()} sessions could not be listed)"
         if sid not in there:
             return f"session {sid} gone (Restart is on its tile)"
         if there[sid] != "idle":
@@ -1007,8 +1077,10 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
             what = f"queued behind {job['behind']}" if job.get("behind") else "queued"
         elif job and job["state"] == "failed":
             what = f"not started: {job.get('error')}"
+        elif sid:
+            what = doing(sid)
         else:
-            what = doing(sid) if sid else "no session"
+            what = "no session: its tile says No pickup" if OPT_OUT_RE.search(t["text"]) else "no session"
         if ready_note(t["text"]) is not None:
             what += ", ready for review"
         lines.append(f"  {t['key']} \"{t['title']}\": {what}")
