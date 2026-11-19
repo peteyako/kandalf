@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kandalf"
+dynamic = ["version"]
+description = "A wizard for your backlog, straight from middle management: a markdown kanban board that hands stories to coding agents."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+kandalf = "kandalf.cli:main"
+
+[tool.setuptools]
+packages = ["kandalf"]
+
+[tool.setuptools.dynamic]
+version = { attr = "kandalf.__version__" }
+
+[tool.setuptools.package-data]
+kandalf = ["board.html", "marked.min.js", "check.js", "favicon.ico", "favicon.svg", "fonts/*.woff2", "templates/*.md"]

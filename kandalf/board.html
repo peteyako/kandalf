@@ -1,0 +1,2420 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plans Board</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" href="/favicon.ico">
+<style>
+/* Fonts the themes use, bundled (Latin only) so the board needs no network: see THIRD_PARTY. */
+@font-face { font-family: "Baloo 2"; font-style: normal; font-weight: 500 800; font-display: swap; src: url(/fonts/baloo-2.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Cinzel"; font-style: normal; font-weight: 500 700; font-display: swap; src: url(/fonts/cinzel.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(/fonts/dm-sans.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(/fonts/inter.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/jetbrains-mono.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Nunito"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(/fonts/nunito.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Quicksand"; font-style: normal; font-weight: 500 700; font-display: swap; src: url(/fonts/quicksand.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 500 700; font-display: swap; src: url(/fonts/space-grotesk.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Spectral"; font-style: italic; font-weight: 400; font-display: swap; src: url(/fonts/spectral-italic-400.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Spectral"; font-style: italic; font-weight: 600; font-display: swap; src: url(/fonts/spectral-italic-600.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Spectral"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/spectral-400.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Spectral"; font-style: normal; font-weight: 600; font-display: swap; src: url(/fonts/spectral-600.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }  /* #board's display:flex would otherwise win over hidden */
+html, body { height: 100%; margin: 0; }
+
+/* ---------- Classic: the board's original look, and its dark mode ---------- */
+:root[data-theme="classic"] {
+  --bg: #f4f5f7; --col: #ebecf0; --card: #ffffff; --text: #172b4d; --muted: #5e6c84;
+  --line: #dfe1e6; --accent: #0c66e4; --accent-soft: #e9f2ff; --done: #1f845a; --warn: #c9372c; --warn-soft: #ffeceb;
+  --shadow: 0 1px 1px rgba(9,30,66,.25), 0 0 1px rgba(9,30,66,.31);
+  --code: #f1f2f4; --story: #22a06b; --p2: #c25100; --p3: #946f00; --yellow: #f5cd47;
+  --purple: #6e5dc6; --magenta: #ae2e8a; --teal: #1d7f8c;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="classic"] {
+    --bg: #1d2125; --col: #161a1d; --card: #22272b; --text: #b6c2cf; --muted: #8c9bab;
+    --line: #2c333a; --accent: #579dff; --accent-soft: #1c2b41; --done: #4bce97; --warn: #f87168; --warn-soft: #42221f;
+    --shadow: 0 1px 1px rgba(0,0,0,.5), 0 0 1px rgba(0,0,0,.5);
+    --code: #2c333a; --story: #4bce97; --p2: #fea362; --p3: #e2b203; --yellow: #e2b203;
+    --purple: #9f8fef; --magenta: #e774bb; --teal: #6cc3e0;
+  }
+}
+:root[data-theme="classic"] body { background: var(--bg); color: var(--text); font: 14px/1.42 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+:root[data-theme="classic"] header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+/* A fixed width, so the board buttons beside the title stay put from page to page; a longer title (a plan doc's) is cut short, in full on hover. */
+:root[data-theme="classic"] #storeName { font-size: 18px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+:root[data-theme="classic"] #storeName:empty { display: none; }
+:root[data-theme="classic"] header h1 { font-size: 18px; margin: 0 12px 0 0; flex: 0 0 9em; width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-theme="classic"] select, :root[data-theme="classic"] button, :root[data-theme="classic"] input, :root[data-theme="classic"] textarea { font: inherit; color: inherit; }
+:root[data-theme="classic"] select, :root[data-theme="classic"] input[type=text] { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
+:root[data-theme="classic"] button { background: var(--col); border: 0; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+:root[data-theme="classic"] button:hover { filter: brightness(.95); }
+:root[data-theme="classic"] button.primary { background: var(--accent); color: #fff; }
+:root[data-theme="classic"] button.danger { color: var(--warn); }
+:root[data-theme="classic"] #status { margin-left: auto; color: var(--muted); font-size: 12px; }
+:root[data-theme="classic"] #status.err { color: var(--warn); }
+:root[data-theme="classic"] #banner { display: none; background: var(--accent-soft); padding: 8px 20px; border-bottom: 1px solid var(--line); }
+:root[data-theme="classic"] #banner.show { display: block; }
+:root[data-theme="classic"] #search { width: 200px; }
+:root[data-theme="classic"] #fileSel { display: flex; gap: 4px; flex-wrap: wrap; }
+:root[data-theme="classic"] #fileSel button { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+:root[data-theme="classic"] #fileSel button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="classic"] #board { flex: 1; display: flex; gap: 12px; padding: 16px 20px; overflow-x: auto; align-items: flex-start; }
+:root[data-theme="classic"] .column { --colc: var(--line); flex: 1 1 280px; min-width: 280px; background: color-mix(in srgb, var(--colc) 7%, var(--col)); border-top: 3px solid var(--colc); border-radius: 6px; display: flex; flex-direction: column; max-height: 100%; }
+:root[data-theme="classic"] .column.dragging { opacity: .4; }
+/* Column colours, by name (columns and the move zones beside Archive): an unnamed status keeps the neutral --line edge. */
+:root[data-theme="classic"] [data-kind="backlog"] { --colc: var(--muted); }
+:root[data-theme="classic"] [data-kind="bugs"] { --colc: var(--warn); }
+:root[data-theme="classic"] [data-kind="to-do"] { --colc: var(--yellow); }
+:root[data-theme="classic"] [data-kind="in-flight"] { --colc: var(--accent); }
+:root[data-theme="classic"] [data-kind="done"] { --colc: var(--done); }
+/* The backlog board's kinds of work. */
+:root[data-theme="classic"] [data-kind="design-decision"] { --colc: var(--purple); }
+:root[data-theme="classic"] [data-kind="major-feature"] { --colc: var(--magenta); }
+:root[data-theme="classic"] [data-kind="feature"] { --colc: var(--accent); }
+:root[data-theme="classic"] [data-kind="change"] { --colc: var(--teal); }
+/* A coloured column names itself in its colour; any other column keeps the muted name. */
+:root[data-theme="classic"] .column { --colt: var(--muted); }
+:root[data-theme="classic"] .column:is([data-kind="backlog"], [data-kind="bugs"], [data-kind="in-flight"], [data-kind="done"],
+  [data-kind="design-decision"], [data-kind="major-feature"], [data-kind="feature"], [data-kind="change"]) { --colt: var(--colc); }
+:root[data-theme="classic"] .column[data-kind="to-do"] { --colt: var(--p3); }  /* bright yellow text is unreadable on the light column */
+:root[data-theme="classic"] .column .col-name { color: var(--colt); }
+:root[data-theme="classic"] .col-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 6px 12px; cursor: grab; }
+:root[data-theme="classic"] .col-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-theme="classic"] .col-count { font-size: 12px; color: var(--muted); }
+:root[data-theme="classic"] .col-head button { padding: 2px 6px; background: transparent; color: var(--muted); }
+:root[data-theme="classic"] .col-head .col-clear { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+:root[data-theme="classic"] .col-head .col-clear:hover { color: var(--accent); }
+:root[data-theme="classic"] .col-intro { margin: 0 12px 6px; font-size: 12px; color: var(--muted); }
+:root[data-theme="classic"] .col-intro summary { cursor: pointer; }
+/* Why pickup is off: one muted line at the top of In flight, with a × that hides it. */
+:root[data-theme="classic"] .pickup-why { display: flex; align-items: flex-start; gap: 6px; margin: 0 12px 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+:root[data-theme="classic"] .pickup-why span { flex: 1; }
+:root[data-theme="classic"] .pickup-why button { padding: 0 4px; background: transparent; color: var(--muted); line-height: 1.42; }
+:root[data-theme="classic"] .col-intro div { white-space: pre-wrap; margin-top: 4px; max-height: 160px; overflow: auto; }
+:root[data-theme="classic"] .cards { padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 6px; min-height: 40px; overflow-y: auto; }
+:root[data-theme="classic"] .card { background: var(--card); border-radius: 4px; box-shadow: var(--shadow); padding: 8px 10px; cursor: pointer; user-select: none; overflow-wrap: anywhere; }
+:root[data-theme="classic"] .card:hover { background: var(--accent-soft); }
+:root[data-theme="classic"] .card.dragging { opacity: .35; }
+:root[data-theme="classic"] .card .title { font-weight: 600; }
+:root[data-theme="classic"] .card .desc { color: var(--muted); font-size: 13px; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+:root[data-theme="classic"] .card .meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--muted); }
+:root[data-theme="classic"] .card.done .title { text-decoration: line-through; color: var(--muted); }
+:root[data-theme="classic"] .check { width: 14px; height: 14px; border: 1.5px solid var(--muted); border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+:root[data-theme="classic"] .check.on { background: var(--done); border-color: var(--done); color: #fff; }
+:root[data-theme="classic"] .key { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+:root[data-theme="classic"] .card.done .key { text-decoration: line-through; }
+:root[data-theme="classic"] .prio { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 3px; white-space: nowrap; color: var(--p); background: color-mix(in srgb, var(--p) 14%, transparent); }
+:root[data-theme="classic"] .est { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+:root[data-theme="classic"] .linked { display: inline-flex; align-items: center; color: var(--accent); cursor: help; }
+:root[data-theme="classic"] .linked svg { width: 12px; height: 12px; }
+:root[data-theme="classic"] .model { font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--muted); }
+:root[data-theme="classic"] .repos-pick { display: inline-flex; align-items: center; gap: 6px; }
+:root[data-theme="classic"] .repos-pick label { display: inline-flex; align-items: center; gap: 3px; }
+:root[data-theme="classic"] .repos { font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--muted); }
+:root[data-theme="classic"] .pickup { font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--muted); }
+:root[data-theme="classic"] .pickup.on { color: var(--story); }
+:root[data-theme="classic"] .pickup.bad { color: var(--warn); }
+:root[data-theme="classic"] .pickup[data-act] { cursor: pointer; }
+/* The Claude session working a tile: its own block, apart from the description. */
+:root[data-theme="classic"] .session { margin-top: 6px; padding: 5px 8px; border-radius: 4px; border-left: 3px solid var(--story); background: color-mix(in srgb, var(--story) 10%, transparent); font-size: 12px; cursor: default; }
+:root[data-theme="classic"] .session-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+:root[data-theme="classic"] .session-id { font-weight: 600; white-space: nowrap; }
+:root[data-theme="classic"] .session-state { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+:root[data-theme="classic"] .session-state.s-started { color: var(--story); }
+:root[data-theme="classic"] .session-state.s-lost { color: var(--warn); }
+:root[data-theme="classic"] .session-acts { display: inline-flex; gap: 4px; margin-left: auto; white-space: nowrap; }  /* the buttons wrap together, never one by one */
+:root[data-theme="classic"] .session button, :root[data-theme="classic"] .pickup-restart { padding: 1px 6px; font-size: 11px; }
+:root[data-theme="classic"] .session button .spin { display: inline-block; }
+:root[data-theme="classic"] .session button.busy .spin { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+:root[data-theme="classic"] .session-rest { margin-top: 3px; color: var(--muted); overflow-wrap: anywhere; }
+:root[data-theme="classic"] .session.lost { border-left-color: var(--warn); background: var(--warn-soft); }
+/* It waits for input: an amber block and outline that stay until it is answered. */
+:root[data-theme="classic"] .session.waiting { border-left-color: var(--p2); background: color-mix(in srgb, var(--p2) 16%, transparent); }
+:root[data-theme="classic"] .session-state.s-waiting { color: var(--p2); }
+:root[data-theme="classic"] .session-ask { margin-top: 4px; font-weight: 700; color: var(--text); }
+:root[data-theme="classic"] .card.needs-you { outline: 2px solid var(--p2); outline-offset: -2px; }
+/* Finished and waiting for review: a green outline and note, until the tile is in Done. */
+:root[data-theme="classic"] .card.ready { outline: 3px solid var(--done); outline-offset: -3px; }
+:root[data-theme="classic"] .ready-note, :root[data-theme="classic"] .tv-ready { margin-top: 6px; padding: 5px 8px; border-radius: 4px; border-left: 3px solid var(--done); background: color-mix(in srgb, var(--done) 14%, transparent); font-size: 12px; }
+:root[data-theme="classic"] .ready-note { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+:root[data-theme="classic"] .ready-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--done); }
+:root[data-theme="classic"] .tv-ready { margin: 6px 0 12px; font-size: 14px; }
+/* The story's latest status: a yellow tile under the session block. */
+:root[data-theme="classic"] .tv-status { margin: 6px 0 12px; padding: 8px 10px; border-radius: 4px; border-left: 3px solid var(--yellow); background: color-mix(in srgb, var(--yellow) 28%, var(--card)); }
+:root[data-theme="classic"] .tv-status .tv-status-next { margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--yellow) 60%, var(--card)); }
+:root[data-theme="classic"] .tv-status dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; margin: 2px 0 0; }
+:root[data-theme="classic"] .tv-status dt { font-size: 11px; font-weight: 700; color: var(--muted); padding-top: 2px; }
+:root[data-theme="classic"] .tv-status dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+:root[data-theme="classic"] .tv-status dt:empty { display: none; }
+:root[data-theme="classic"] .tv-status dt:empty + dd { grid-column: 1 / -1; }
+:root[data-theme="classic"] .tv-status dl:not(.note) dt:first-child + dd { font-weight: 700; }
+:root[data-theme="classic"] .tv-status .tv-status-at { display: block; margin-bottom: 2px; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+/* Its session is gone: the tile flashes until it is restarted or moved on. */
+:root[data-theme="classic"] .card.lost { animation: lost 1.1s ease-in-out infinite; }
+@keyframes lost { 0%, 100% { outline: 2px solid var(--warn); outline-offset: -2px; background: var(--warn-soft); } 50% { outline: 2px solid transparent; outline-offset: -2px; background: var(--card); } }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="classic"] .card.lost { animation: none; outline: 2px solid var(--warn); outline-offset: -2px; } }
+:root[data-theme="classic"] .keyref { color: var(--accent); cursor: pointer; }
+:root[data-theme="classic"] .keyref:hover { text-decoration: underline; }
+:root[data-theme="classic"] .master-mark { color: var(--story); font-size: 11px; cursor: help; }
+:root[data-theme="classic"] .parent { font-size: 11px; font-weight: 600; white-space: nowrap; }
+:root[data-theme="classic"] .kids .kstate { flex: none; width: 14px; text-align: center; color: var(--muted); }
+:root[data-theme="classic"] .kids li.done .kstate { color: var(--done); }
+:root[data-theme="classic"] .kids li.done > span:nth-child(2) { color: var(--muted); }
+:root[data-theme="classic"] .kids .where { margin-left: auto; padding-left: 6px; white-space: nowrap; }
+:root[data-theme="classic"] .card.jumped, :root[data-theme="classic"] .lcard.jumped { animation: jumped 1.8s ease-out; }
+@keyframes jumped { 0%, 60% { outline: 3px solid var(--accent); outline-offset: 1px; } 100% { outline: 3px solid transparent; outline-offset: 1px; } }
+:root[data-theme="classic"] .card .card { box-shadow: none; border: 1px solid var(--line); }
+:root[data-theme="classic"] .fold { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+/* A sub-story away from its master sits under a greyed stub of the master, which jumps to it. */
+:root[data-theme="classic"] .ghost { display: flex; flex-direction: column; gap: 4px; padding: 4px; border: 1px dashed var(--muted); border-radius: 6px; }
+:root[data-theme="classic"] .ghost-head { display: flex; gap: 6px; align-items: baseline; padding: 4px 6px; border-radius: 4px; border-left: 3px solid var(--story); background: var(--card); font-size: 12px; font-weight: 600; color: var(--muted); opacity: .55; cursor: pointer; overflow-wrap: anywhere; }
+:root[data-theme="classic"] .ghost-head span:first-child { white-space: nowrap; }
+:root[data-theme="classic"] .ghost-head:hover { opacity: 1; color: var(--accent); }
+:root[data-theme="classic"] .ghost-head em { margin-left: auto; font-style: normal; font-weight: 400; font-size: 11px; white-space: nowrap; }
+:root[data-theme="classic"] .tv-family { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 10px; }
+:root[data-theme="classic"] .tv-family .subs { border-top: 0; margin: 0 0 10px; padding: 0; }
+:root[data-theme="classic"] .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+:root[data-theme="classic"] #cardEst::placeholder { color: var(--muted); font-style: italic; opacity: .7; }
+:root[data-theme="classic"] #cardEst.bad { border-color: var(--warn); outline-color: var(--warn); }
+:root[data-theme="classic"] .prio-P1 { --p: var(--warn); } :root[data-theme="classic"] .prio-P2 { --p: var(--p2); } :root[data-theme="classic"] .prio-P3 { --p: var(--p3); } :root[data-theme="classic"] .prio-P4 { --p: var(--accent); }
+:root[data-theme="classic"] .card .kind { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--story); margin-bottom: 2px; }
+:root[data-theme="classic"] .card.story { border-left: 3px solid var(--story); }
+:root[data-theme="classic"] .card.unmerged, :root[data-theme="classic"] .card.unmerged:hover { background: var(--warn-soft); outline: 2px solid var(--warn); outline-offset: -2px; }  /* in Done, but its branch isn't in dev yet */
+:root[data-theme="classic"] .progress { height: 4px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+:root[data-theme="classic"] .progress span { display: block; height: 100%; background: var(--done); }
+:root[data-theme="classic"] .progress.review span { background: var(--purple); }
+:root[data-theme="classic"] .progress.gates span { background: repeating-linear-gradient(-45deg, var(--p2) 0 6px, color-mix(in srgb, var(--p2) 45%, var(--line)) 6px 12px); }
+:root[data-theme="classic"] .expand { background: transparent; padding: 0; color: var(--muted); font-size: 11px; }
+:root[data-theme="classic"] .subs { list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+:root[data-theme="classic"] .subs li { display: flex; gap: 6px; align-items: flex-start; }
+:root[data-theme="classic"] .subs li .check { flex: none; margin-top: 3px; cursor: pointer; }
+:root[data-theme="classic"] .subs li.done > span:last-child { text-decoration: line-through; color: var(--muted); }
+:root[data-theme="classic"] .subs em { color: var(--muted); font-style: normal; font-size: 11px; }
+:root[data-theme="classic"] .add-sub { background: transparent; padding: 0; color: var(--muted); font-size: 12px; }
+:root[data-theme="classic"] .card a { color: var(--accent); }
+:root[data-theme="classic"] .add-card { margin: 0 8px 8px; text-align: left; background: transparent; color: var(--muted); }
+:root[data-theme="classic"] .add-card:hover { background: var(--line); }
+:root[data-theme="classic"] .placeholder { border: 2px dashed var(--accent); border-radius: 4px; min-height: 36px; background: var(--accent-soft); }
+:root[data-theme="classic"] .col-placeholder { flex: 0 0 280px; border: 2px dashed var(--accent); border-radius: 6px; align-self: stretch; }
+/* The right-hand column: Archive, and under it the other board's columns to send a tile to. */
+:root[data-theme="classic"] .side-col { flex: 0 0 220px; display: flex; flex-direction: column; gap: 12px; align-self: stretch; }
+:root[data-theme="classic"] .archive-col { border: 2px dashed var(--line); border-radius: 6px; padding: 10px 12px; color: var(--muted); font-size: 13px; }
+:root[data-theme="classic"] .archive-col p { margin: 6px 0 10px; }
+:root[data-theme="classic"] .archive-col a { color: var(--accent); }
+:root[data-theme="classic"] .archive-col.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+:root[data-theme="classic"] .move-zone { margin: 6px 0; padding: 8px 10px; border: 2px dashed color-mix(in srgb, var(--colc, var(--line)) 50%, transparent); border-left: 4px solid var(--colc, var(--line)); border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text); }
+:root[data-theme="classic"] .move-zone.over { border-style: solid; background: color-mix(in srgb, var(--colc, var(--line)) 18%, var(--card)); }
+/* The archive log reads as a list: wide cards, clamped to 10 rows until clicked. */
+:root[data-theme="classic"] #board.as-list { flex-direction: column; align-items: center; overflow-x: hidden; overflow-y: auto; }
+:root[data-theme="classic"] .list-group { width: 66.667vw; display: flex; flex-direction: column; gap: 10px; padding-bottom: 24px; }
+:root[data-theme="classic"] .list-head { display: flex; align-items: center; gap: 10px; }
+:root[data-theme="classic"] .list-head .col-name { flex: none; }
+:root[data-theme="classic"] .list-head .spacer { flex: 1; }
+:root[data-theme="classic"] .list-head label { font-size: 12px; color: var(--muted); }
+:root[data-theme="classic"] .lcard { background: var(--card); border-radius: 6px; box-shadow: var(--shadow); padding: 12px 16px; }
+:root[data-theme="classic"] .lcard.story { border-left: 3px solid var(--story); }
+:root[data-theme="classic"] .lcard.clamped { cursor: pointer; }
+:root[data-theme="classic"] .lcard.clamped:hover { background: var(--accent-soft); }
+:root[data-theme="classic"] .lcard .lc-body { max-height: 14.2em; overflow: hidden; }  /* 10 rows at the 1.42 line height */
+:root[data-theme="classic"] .lcard.clamped:not(.open) .lc-body { -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+:root[data-theme="classic"] .lcard.open .lc-body { max-height: none; }
+:root[data-theme="classic"] .lcard .lc-body h3 { font-size: 16px; }
+:root[data-theme="classic"] .lcard .lc-body p:last-child, :root[data-theme="classic"] .lcard .lc-body ul:last-child { margin-bottom: 0; }
+:root[data-theme="classic"] .lcard .tv-tasks .check { cursor: inherit; }
+:root[data-theme="classic"] .lc-foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+:root[data-theme="classic"] .lc-foot .spacer { flex: 1; }
+:root[data-theme="classic"] .lc-foot button { padding: 2px 8px; font-size: 12px; }
+:root[data-theme="classic"] .lc-more { color: var(--accent); }
+:root[data-theme="classic"] .lcard:not(.clamped) .lc-more { display: none; }
+@media (max-width: 900px) { :root[data-theme="classic"] .list-group { width: 100%; } }
+:root[data-theme="classic"] code { background: var(--code); padding: 0 4px; border-radius: 3px; font-size: 12px; }
+:root[data-theme="classic"] .hidden { display: none !important; }
+:root[data-theme="classic"] dialog { border: 0; border-radius: 8px; padding: 0; width: min(780px, 94vw); background: var(--card); color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,.35); }
+:root[data-theme="classic"] dialog::backdrop { background: rgba(9,30,66,.5); }
+:root[data-theme="classic"] dialog.ask { width: min(460px, 94vw); }
+:root[data-theme="classic"] .ask h3 { margin: 0; font-size: 16px; }
+:root[data-theme="classic"] .ask #askBody { font-size: 13px; line-height: 1.5; color: var(--text); }
+:root[data-theme="classic"] .ask #askBody p { margin: 0 0 8px; }
+:root[data-theme="classic"] .ask #askBody p:last-child { margin-bottom: 0; }
+:root[data-theme="classic"] .ask #askBody .ask-note { color: var(--muted); }
+:root[data-theme="classic"] .ask #askField { display: flex; align-items: center; gap: 8px; }
+:root[data-theme="classic"] .ask #askField[hidden] { display: none; }
+:root[data-theme="classic"] .ask #askInput { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; font: inherit; }
+:root[data-theme="classic"] .ask #askInput[type=number] { flex: 0 0 72px; }
+:root[data-theme="classic"] .ask button.primary.danger { background: var(--warn); color: #fff; }
+:root[data-theme="classic"] .dlg { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+:root[data-theme="classic"] .dlg label { font-size: 12px; font-weight: 600; color: var(--muted); }
+:root[data-theme="classic"] #cardDlg[data-mode="view"] .edit-only, :root[data-theme="classic"] #cardDlg[data-mode="edit"] .tile-view { display: none; }
+:root[data-theme="classic"] .tile-view { max-height: 60vh; overflow: auto; font-size: 14px; }
+:root[data-theme="classic"] .tile-view .tv-head { display: flex; align-items: baseline; gap: 8px; }
+:root[data-theme="classic"] .tile-view h3 { margin: 0 0 6px; font-size: 18px; }
+:root[data-theme="classic"] .tile-view p { margin: 0 0 10px; }
+:root[data-theme="classic"] .tile-view a { color: var(--accent); }
+:root[data-theme="classic"] .tv-tasks, :root[data-theme="classic"] .tv-bullets { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 6px; }
+:root[data-theme="classic"] .tv-tasks li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: start; }
+:root[data-theme="classic"] .tv-tasks .check { margin-top: 3px; cursor: pointer; }
+:root[data-theme="classic"] .tv-tasks li.done > span:nth-child(2) { text-decoration: line-through; color: var(--muted); }
+:root[data-theme="classic"] .tv-sub { grid-column: 2; color: var(--muted); font-size: 13px; }
+:root[data-theme="classic"] .tv-bullets li::before { content: "• "; color: var(--muted); }
+:root[data-theme="classic"] #docView { flex: 1; overflow: auto; padding: 16px 20px 40px; }
+:root[data-theme="classic"] .doc-bar { display: flex; align-items: center; gap: 10px; max-width: 900px; margin: 0 auto 12px; }
+:root[data-theme="classic"] .doc-bar .spacer { flex: 1; }
+:root[data-theme="classic"] .doc-path { color: var(--muted); font-size: 12px; }
+:root[data-theme="classic"] #docText { display: block; width: 100%; max-width: 900px; margin: 0 auto; min-height: 70vh; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 14px; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+:root[data-theme="classic"] .md-doc { max-width: 900px; margin: 0 auto; background: var(--card); border-radius: 8px; box-shadow: var(--shadow); padding: 28px 36px; line-height: 1.6; font-size: 15px; overflow-wrap: anywhere; }
+:root[data-theme="classic"] .md-doc h1 { font-size: 26px; margin: 0 0 16px; } :root[data-theme="classic"] .md-doc h2 { font-size: 20px; margin: 28px 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+:root[data-theme="classic"] .md-doc h3 { font-size: 17px; margin: 22px 0 8px; } :root[data-theme="classic"] .md-doc h4 { font-size: 15px; margin: 18px 0 6px; }
+:root[data-theme="classic"] .md-doc a { color: var(--accent); }
+:root[data-theme="classic"] .md-doc pre { background: var(--code); padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.45; }
+:root[data-theme="classic"] .md-doc pre code { background: none; padding: 0; }
+:root[data-theme="classic"] .md-doc table { border-collapse: collapse; margin: 12px 0; font-size: 14px; display: block; overflow-x: auto; }
+:root[data-theme="classic"] .md-doc th, :root[data-theme="classic"] .md-doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+:root[data-theme="classic"] .md-doc th { background: var(--col); }
+:root[data-theme="classic"] .md-doc blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); background: var(--accent-soft); border-radius: 0 4px 4px 0; }
+:root[data-theme="classic"] .md-doc ul, :root[data-theme="classic"] .md-doc ol { padding-left: 24px; } :root[data-theme="classic"] .md-doc li { margin: 3px 0; }
+:root[data-theme="classic"] .md-doc hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
+:root[data-theme="classic"] .md-doc input[type=checkbox] { margin-right: 6px; }
+@media (max-width: 600px) { :root[data-theme="classic"] .md-doc { padding: 18px 16px; } }
+:root[data-theme="classic"] .dlg textarea { width: 100%; min-height: 260px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+:root[data-theme="classic"] .dlg .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+:root[data-theme="classic"] .dlg .row label { white-space: nowrap; }
+:root[data-theme="classic"] .dlg .row .spacer { flex: 1; }
+:root[data-theme="classic"] .hint { font-size: 12px; color: var(--muted); }
+@media (max-width: 600px) { :root[data-theme="classic"] header { padding: 10px 16px; } :root[data-theme="classic"] #board { padding: 12px 16px; } :root[data-theme="classic"] #search { width: 100%; } }
+/* The theme menu sits in Classic's header too; the logo, accents and tagline belong to the other themes. */
+:root[data-theme="classic"] #themePick { display: flex; align-items: center; gap: 8px; }
+:root[data-theme="classic"] #tagline, :root[data-theme="classic"] #accentSel { display: none; }
+:root[data-theme="classic"] .logo { flex: none; display: inline-flex; margin-right: -4px; }
+:root[data-theme="classic"] .logo svg { display: block; width: 28px; height: 28px; }
+:root[data-theme="classic"] .logo .l-hat { fill: var(--text); } :root[data-theme="classic"] .logo .l-brim { stroke: var(--bg); } :root[data-theme="classic"] .logo .l-star { fill: #dcbb62; }
+
+/* ---------- the other themes ---------- */
+/* The themes. Every look other than Classic is one set of the tokens below, picked by <html data-theme> (the header's Theme
+   menu; see BOARD_THEMES). The defaults below are a sticker look
+   (ink outlines, hard shadows, a glossy top half on every control and chip) that each theme reshapes. A theme's accent can be swapped by an inline --accent. */
+:root:not([data-theme="classic"]) {
+  /* type */
+  --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --head: var(--sans); --title-font: var(--head); --btn-font: var(--sans);
+  --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --body-size: 15px; --title-size: 17px; --desc-size: 14px;
+  --name-size: 18px; --name-weight: 700; --name-case: none; --name-track: normal;
+  --btn-case: none; --btn-track: normal; --btn-weight: 700;
+  /* colour */
+  --bg: #f8f3e8; --ground: var(--bg);
+  --col: #efe8da; --card: #ffffff; --text: #1c1c1a; --muted: #5f5f59; --link: #2f4bd8;
+  --ink: #1c1c1a;                                  /* text on any coloured, glossy surface */
+  --bugs: #ff9584; --todo: #ffd257; --flight: #9db1ff; --done: #8fdca6; --accent: #9db1ff;
+  --on-accent: var(--ink);
+  --ok: #1c6b3a;                                   /* "done" / success text */
+  --neutral: var(--card);                          /* a plain ("white") button or chip */
+  --p1: var(--bugs); --p1-fg: var(--ink); --p2: var(--todo); --p2-fg: var(--ink);
+  --st-work: var(--done); --st-wait: var(--todo); --st-gone: var(--bugs);
+  --ok-bg: var(--done); --ok-fg: var(--ink);       /* a ticked box, the Ready for review chip */
+  --danger: var(--bugs); --danger-fg: var(--ink);
+  --code: var(--col);
+  /* outlines and shadows */
+  --edge: #1c1c1a; --shadow-c: #1c1c1a; --dash: rgba(28,28,26,.45); --check-bc: var(--edge); --solid-edge: var(--edge);
+  --bw: 1.5px; --ctl-radius: 6px;
+  --ctl-shadow: 1px 1px 0 var(--shadow-c); --ctl-shadow-hover: 2px 2px 0 var(--shadow-c); --chip-shadow: var(--ctl-shadow);
+  --input-bc: var(--edge);
+  --gloss: linear-gradient(180deg, rgba(255,255,255,.65) 0%, rgba(255,255,255,.18) 49%, rgba(255,255,255,0) 50%, rgba(0,0,0,.07) 100%);
+  --gloss-hi: inset 0 1px 0 rgba(255,255,255,.9);
+  --gloss-n: var(--gloss); --gloss-n-hi: var(--gloss-hi);   /* on a neutral surface: quieter in Tidy's dark */
+  /* columns and tiles */
+  --cards-pad: 0 3px 3px 0; --col-bd: 0 solid transparent; --col-radius: 18px; --col-shadow: none; --col-tint: 0%; --col-gap: 14px;
+  --card-bw: 1.5px; --card-bc: var(--edge); --card-radius: 12px; --card-pad: 14px;
+  --card-shadow: 2px 2px 0 var(--shadow-c); --card-shadow-hover: 3px 3px 0 var(--shadow-c); --dlg-shadow: 4px 4px 0 var(--shadow-c);
+  --state-bw: 2.5px; --wait-bc: var(--edge); --ready-bc: var(--edge); --warn-bc: var(--edge);
+  --tint: 25%;
+  --waiting-bg: #fff3c4;
+  --ready-bg: color-mix(in srgb, var(--done) var(--tint), var(--card));
+  --warn-bg: color-mix(in srgb, var(--bugs) var(--tint), var(--card));
+  --accent-bg: color-mix(in srgb, var(--accent) 25%, transparent);
+  --rule: 1px dashed var(--dash);
+  --track: var(--col); --track-bd: 1.5px solid var(--edge); --bar-h: 10px; --bar-radius: 6px;
+  --bar: var(--done); --bar-review: var(--accent); --bar-gates: var(--todo); --bar-gloss: var(--gloss);
+  --add-bd: 2px dashed var(--dash); --add-radius: 12px; --add-style: normal;
+  --zone-bd: 2px dashed var(--dash); --zone-radius: 18px;
+  /* header */
+  --hdr-bg: #6b665b; --hdr-bd: 1.5px solid var(--ink); --hdr-name: #fffaf0; --hdr-text: #f1ebde;
+  --hdr-edge: var(--ink); --hdr-ctl-shadow: 1px 1px 0 rgba(248,243,232,.35); --hdr-ctl-shadow-hover: 2px 2px 0 rgba(248,243,232,.35);
+  --store-font: var(--head); --store-size: 22px; --store-weight: 700; --store-case: none; --store-track: normal;
+  --h1-font: var(--sans); --h1-size: 18px; --h1-weight: 600; --h1-style: normal;
+  --tab-bg: var(--neutral); --tab-fg: var(--text);
+  /* the logo: the bare mark, or (Realm) a medallion */
+  --logo-size: 42px; --logo-svg: 42px; --logo-bg: transparent; --logo-gloss: none;
+  --logo-bd: 0 solid transparent; --logo-radius: 10px; --logo-shadow: none;
+  --logo-hat: #1c1c1a; --logo-brim: #ffffff; --logo-star: #ffd257;
+}
+:root[data-theme="light"] {   /* C · Clean and light: flat, hairline borders, coloured words instead of chips */
+  --solid-edge: #5f5f59;
+  --head: "Space Grotesk", var(--sans); --title-font: var(--sans); --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --body-size: 14px; --title-size: 14px; --desc-size: 13px; --name-size: 15px; --name-weight: 600; --btn-weight: 600;
+  --bg: #f5f5f1; --col: #ecece7; --text: #1c1c1a; --muted: #5f5f59; --link: #2f4bd8;
+  --bugs: #b93a2e; --todo: #1c1c1a; --flight: var(--accent); --done: #1a7448; --design: #6b3fd0; --major: #a3306e; --feature: #2f4bd8; --change: #0f6a73; --accent: #2f4bd8; --on-accent: #ffffff;
+  --ok: #1a7448; --neutral: transparent;
+  --p1: #b93a2e; --p2: #a85a00; --st-work: #1a7448; --st-wait: #a85a00; --st-gone: #b93a2e;
+  --ok-bg: #1a7448; --ok-fg: #ffffff; --danger: #b93a2e; --danger-fg: #ffffff; --code: #ecece7;
+  --edge: #dcdcd5; --shadow-c: transparent; --dash: #8f8f86; --check-bc: #8f8f86; --bw: 1px; --ctl-radius: 10px;
+  --ctl-shadow: 0 0 0 transparent; --ctl-shadow-hover: 0 1px 3px rgba(28,28,26,.12); --input-bc: #dcdcd5;
+  --gloss: none; --gloss-hi: inset 0 0 0 transparent;
+  --col-radius: 14px; --col-gap: 12px;
+  --card-bw: 1px; --card-bc: #dcdcd5; --card-radius: 10px; --card-pad: 12px;
+  --card-shadow: 0 0 0 transparent; --card-shadow-hover: 0 2px 6px rgba(28,28,26,.10); --dlg-shadow: 0 12px 32px rgba(28,28,26,.18);
+  --state-bw: 2px; --wait-bc: #a85a00; --ready-bc: #1a7448; --warn-bc: #b93a2e;
+  --waiting-bg: #ffffff; --tint: 6%;
+  --rule: 1px solid #dcdcd5;
+  --track: #dcdcd5; --track-bd: 0 solid transparent; --bar-h: 4px; --bar-radius: 2px; --bar-gates: #a85a00;
+  --add-bd: 0 solid transparent; --add-radius: 10px; --zone-bd: 1px dashed #5f5f59; --zone-radius: 10px;
+  --hdr-bg: transparent; --hdr-bd: 1px solid #dcdcd5; --hdr-name: var(--accent); --hdr-text: #5f5f59;
+  --hdr-edge: #dcdcd5; --hdr-ctl-shadow: 0 0 0 transparent; --hdr-ctl-shadow-hover: 0 1px 3px rgba(28,28,26,.12);
+  --store-size: 20px; --store-weight: 600; --h1-size: 14px; --h1-weight: 500;
+  --tab-fg: #5f5f59;
+  --logo-size: 38px; --logo-svg: 38px;
+  --logo-hat: #1c1c1a; --logo-brim: #f5f5f1; --logo-star: #dcbb62;
+}
+:root[data-theme="aqua"] {    /* F · Aqua bubble: sky gradient, frosted columns, soft-shadowed glossy chips */
+  --solid-edge: #0c2a3e;
+  --sans: Nunito, "Segoe UI", sans-serif; --head: Quicksand, "Trebuchet MS", sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --bg: #e6fbff; --ground: linear-gradient(180deg, #bfe9ff 0%, #e6fbff 50%, #d8ffd9 100%);
+  --col: rgba(255,255,255,.55); --text: #0c2a3e; --muted: #3f5a6b; --link: #0a5fa8; --ink: #0c2a3e;
+  --bugs: #ff8d7a; --todo: #ffd95a; --flight: #6cc8ff; --done: #7fe38f; --design: #c9b0ff; --major: #ff9ecb; --feature: #6cc8ff; --change: #6fe0cf; --accent: #3fb6ff;
+  --ok: #0f6b2e; --neutral: #e3f6ff; --code: #e3f6ff;
+  --edge: rgba(12,42,62,.3); --shadow-c: rgba(12,42,62,.2); --dash: rgba(12,42,62,.4); --check-bc: rgba(12,42,62,.6);
+  --bw: 1px; --ctl-radius: 8px; --input-bc: rgba(12,42,62,.35);
+  --ctl-shadow: 0 2px 4px rgba(12,42,62,.2); --ctl-shadow-hover: 0 3px 7px rgba(12,42,62,.25); --chip-shadow: 0 0 0 transparent;
+  --col-bd: 1px solid rgba(255,255,255,.95); --col-radius: 12px; --cards-pad: 0 4px 10px 0; --col-shadow: 0 8px 24px rgba(20,110,170,.14);
+  --card-bw: 1px; --card-bc: rgba(12,42,62,.14); --card-radius: 8px;
+  --card-shadow: 0 6px 14px rgba(20,110,170,.16), inset 0 1px 0 #ffffff; --card-shadow-hover: 0 9px 20px rgba(20,110,170,.24), inset 0 1px 0 #ffffff;
+  --dlg-shadow: 0 18px 44px rgba(20,110,170,.28);
+  --state-bw: 2px; --wait-bc: #b56a00; --ready-bc: #0f6b2e; --warn-bc: #b8402f;
+  --track: #dff0f7; --track-bd: 1px solid rgba(12,42,62,.3); --bar-radius: 8px;
+  --add-bd: 2px dashed rgba(12,42,62,.4); --add-radius: 8px; --zone-bd: 2px dashed rgba(12,42,62,.4); --zone-radius: 12px;
+  --hdr-bg: rgba(255,255,255,.65); --hdr-bd: 1px solid rgba(255,255,255,.95); --hdr-name: #0c2a3e; --hdr-text: #3f5a6b;
+  --hdr-edge: rgba(12,42,62,.3); --hdr-ctl-shadow: var(--ctl-shadow); --hdr-ctl-shadow-hover: var(--ctl-shadow-hover);
+  --h1-font: var(--head); --h1-weight: 500;
+  --logo-hat: #0c2a3e; --logo-brim: #e6fbff; --logo-star: #dcbb62;
+}
+:root[data-theme="sticker"] { /* G · Sticker pop: dotted paper, thick brown ink, big hard shadows */
+  --sans: "DM Sans", "Segoe UI", sans-serif; --head: "Baloo 2", "Trebuchet MS", sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --bg: #ffe2b3; --ground: radial-gradient(rgba(43,24,16,.14) 1.5px, transparent 1.5px) 0 0 / 22px 22px, #ffe2b3;
+  --col: rgba(255,255,255,.4); --text: #2b1810; --muted: #6b4a3a; --link: #a3301d; --ink: #2b1810;
+  --bugs: #ff6b57; --todo: #ffc21a; --flight: #3dd6c4; --done: #7ddc6f; --design: #9d7bff; --major: #ff5a8a; --feature: #4fb8ff; --change: #3dd6c4; --accent: #ff5a8a;
+  --ok: #1d6b17; --neutral: #fff6e6; --code: #fff6e6;
+  --edge: #2b1810; --shadow-c: #2b1810; --dash: rgba(43,24,16,.5); --bw: 2px; --ctl-radius: 8px;
+  --ctl-shadow: 2px 2px 0 var(--shadow-c); --ctl-shadow-hover: 3px 3px 0 var(--shadow-c); --chip-shadow: 0 0 0 transparent;
+  --col-bd: 2px solid #2b1810; --col-radius: 12px; --cards-pad: 0 5px 5px 0;
+  --card-bw: 2px; --card-radius: 8px; --card-shadow: 4px 4px 0 var(--shadow-c); --card-shadow-hover: 5px 5px 0 var(--shadow-c);
+  --dlg-shadow: 6px 6px 0 var(--shadow-c);
+  --state-bw: 3px; --waiting-bg: #fff0b0; --tint: 30%;
+  --track: #f3e3c8; --track-bd: 2px solid #2b1810; --bar-radius: 8px;
+  --add-bd: 2px dashed rgba(43,24,16,.5); --add-radius: 8px; --zone-bd: 2px dashed rgba(43,24,16,.5); --zone-radius: 12px;
+  --hdr-bg: #fff6e6; --hdr-bd: 2px solid #2b1810; --hdr-name: #2b1810; --hdr-text: #6b4a3a;
+  --hdr-edge: #2b1810; --hdr-ctl-shadow: var(--ctl-shadow); --hdr-ctl-shadow-hover: var(--ctl-shadow-hover);
+  --store-size: 24px; --h1-font: var(--head); --h1-weight: 500;
+  --logo-hat: #2b1810; --logo-brim: #fff6e6; --logo-star: #dcbb62;
+}
+:root[data-theme="realm"] {   /* I · Realm ledger: parchment, Cinzel capitals, ruled columns, a gilt header */
+  --solid-edge: #5d5340;
+  --sans: Spectral, Georgia, serif; --head: Cinzel, "Times New Roman", serif; --title-font: var(--sans); --btn-font: var(--head);
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --body-size: 16px; --title-size: 18px; --desc-size: 15px;
+  --name-size: 15px; --name-case: uppercase; --name-track: .12em; --btn-case: uppercase; --btn-track: .08em;
+  --bg: #efe6d0; --ground: radial-gradient(ellipse at 50% 30%, #f4ecd8 0%, #efe6d0 60%, #e4d8ba 100%);
+  --col: transparent; --card: #fbf6e6; --text: #2a2418; --muted: #5d5340; --link: #7a2a22; --ink: #2a2418;
+  --bugs: #7a2a22; --todo: #2a2418; --flight: #1f4a5a; --done: #35592a; --design: #4a2f5e; --major: #7a2a22; --feature: #1f4a5a; --change: #5a4410; --accent: #7a2a22; --on-accent: #fbf6e6;
+  --ok: #35592a; --neutral: #fbf6e6; --code: #efe6d0;
+  --p1: #7a2a22; --p1-fg: #fbf6e6; --p2: #e9c46a; --p2-fg: #2a2418;
+  --st-work: #35592a; --st-wait: #8a5a00; --st-gone: #7a2a22;
+  --ok-bg: #35592a; --ok-fg: #fbf6e6; --danger: #7a2a22; --danger-fg: #fbf6e6;
+  --edge: #5d5340; --shadow-c: transparent; --dash: #c9b98f; --check-bc: #5d5340; --bw: 1px; --ctl-radius: 3px;
+  --ctl-shadow: 0 0 0 transparent; --ctl-shadow-hover: 0 1px 3px rgba(42,36,24,.25); --input-bc: #dcbb62;
+  --gloss: none; --gloss-hi: inset 0 0 0 transparent;
+  --col-radius: 0; --col-gap: 16px;
+  --card-bw: 1px; --card-bc: #c9b98f; --card-radius: 3px;
+  --card-shadow: inset 0 0 0 3px var(--card), inset 0 0 0 4px #c9b98f, 0 1px 2px rgba(42,36,24,.18);
+  --card-shadow-hover: inset 0 0 0 3px var(--card), inset 0 0 0 4px #c9b98f, 0 3px 8px rgba(42,36,24,.25);
+  --dlg-shadow: 0 14px 36px rgba(42,36,24,.35);
+  --state-bw: 2px; --wait-bc: #8a5a00; --ready-bc: #35592a; --warn-bc: #7a2a22;
+  --waiting-bg: #fbeec2; --tint: 12%;
+  --ready-bg: color-mix(in srgb, #35592a 12%, var(--card)); --warn-bg: color-mix(in srgb, #7a2a22 10%, var(--card));
+  --rule: 1px solid #c9b98f;
+  --track: #e0d3b0; --track-bd: 1px solid #c9b98f; --bar-h: 6px; --bar-radius: 0; --bar-gloss: none; --bar-gates: #8a5a00;
+  --add-bd: 0 solid transparent; --add-radius: 3px; --add-style: italic; --zone-bd: 1px dashed #5d5340; --zone-radius: 3px;
+  --hdr-bg: #24382c; --hdr-bd: 3px double #dcbb62; --hdr-name: #dcbb62; --hdr-text: #eadfc2;
+  --hdr-edge: rgba(220,187,98,.5); --hdr-ctl-shadow: 0 0 0 transparent; --hdr-ctl-shadow-hover: 0 0 0 transparent;
+  --store-size: 20px; --store-case: uppercase; --store-track: .14em;
+  --h1-size: 14px; --h1-weight: 400; --h1-style: italic;
+  --tab-bg: transparent; --tab-fg: #eadfc2;
+  --logo-size: 44px; --logo-svg: 30px; --logo-bd: 1px solid #dcbb62; --logo-radius: 50%;
+  --logo-shadow: inset 0 0 0 3px #24382c, inset 0 0 0 4px rgba(220,187,98,.6);
+  --logo-hat: #dcbb62; --logo-brim: #24382c; --logo-star: #24382c;
+}
+:root[data-theme="soft"] {    /* J · Soft and sunny: pastel-tinted columns, flat chips, no outlines */
+  --solid-edge: #635d52;
+  --head: "Space Grotesk", var(--sans); --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --bg: #fbf7ef; --col: #fffdf8; --text: #25221d; --muted: #635d52; --link: #5a3fd0; --ink: #25221d;
+  --bugs: #ffb3a6; --todo: #ffdc7a; --flight: #c3b8ff; --done: #a9e3b9; --design: #c3b8ff; --major: #ffb3a6; --feature: #a9d6f5; --change: #a9e3b9; --accent: #c3b8ff;
+  --ok: #1c6b3a; --neutral: #f3eee4; --code: #f3eee4;
+  --edge: transparent; --shadow-c: transparent; --dash: rgba(37,34,29,.4); --check-bc: #8f8778; --bw: 1px; --ctl-radius: 8px;
+  --ctl-shadow: 0 0 0 transparent; --ctl-shadow-hover: 0 2px 5px rgba(37,34,29,.14); --input-bc: #8f8778;
+  --gloss: none; --gloss-hi: inset 0 0 0 transparent;
+  --col-radius: 14px; --col-tint: 24%;
+  --card-bw: 1px; --card-bc: transparent; --card-radius: 10px;
+  --card-shadow: 0 1px 2px rgba(37,34,29,.1); --card-shadow-hover: 0 4px 10px rgba(37,34,29,.14); --dlg-shadow: 0 14px 36px rgba(37,34,29,.2);
+  --state-bw: 2px; --wait-bc: #b56a00; --ready-bc: #1c6b3a; --warn-bc: #b5483a; --tint: 40%;
+  --track: #f3eee4; --track-bd: 1px solid transparent; --bar-radius: 8px;
+  --add-bd: 2px dashed rgba(37,34,29,.4); --add-radius: 10px; --zone-bd: 2px dashed rgba(37,34,29,.4); --zone-radius: 14px;
+  --hdr-bg: transparent; --hdr-bd: 1px solid #e6dfd0; --hdr-name: #25221d; --hdr-text: #635d52;
+  --hdr-edge: transparent; --hdr-ctl-shadow: 0 0 0 transparent; --hdr-ctl-shadow-hover: var(--ctl-shadow-hover);
+  --h1-font: var(--head); --h1-weight: 500;
+  --logo-hat: #25221d; --logo-brim: #fbf7ef; --logo-star: #dcbb62;
+}
+
+:root:not([data-theme="classic"]) body { background: var(--ground); color: var(--text); font: var(--body-size)/1.42 var(--sans); display: flex; flex-direction: column; }
+:root:not([data-theme="classic"]) a { color: var(--link); }
+:root:not([data-theme="classic"]) :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+:root:not([data-theme="classic"]) code { background: var(--code); padding: 0 4px; border-radius: 4px; font: 0.86em var(--mono); }
+:root:not([data-theme="classic"]) .hidden { display: none !important; }
+
+/* ---------- the sticker: outline, shadow, gloss ---------- */
+/* A sticker's colour comes from --sb (background) and --sf (text); a coloured one sets both, and
+   --sg to the full gloss. Left alone it is a neutral one. */
+:root:not([data-theme="classic"]) select, :root:not([data-theme="classic"]) button, :root:not([data-theme="classic"]) input, :root:not([data-theme="classic"]) textarea { font: inherit; color: inherit; }
+:root:not([data-theme="classic"]) button, :root:not([data-theme="classic"]) .prio, :root:not([data-theme="classic"]) .session-state, :root:not([data-theme="classic"]) .pickup, :root:not([data-theme="classic"]) .ready-label, :root:not([data-theme="classic"]) .col-head .col-name, :root:not([data-theme="classic"]) .list-head .col-name, :root:not([data-theme="classic"]) .check {
+  background-color: var(--sb, var(--neutral)); color: var(--sf, var(--text));
+  background-image: var(--sg, var(--gloss-n));
+  border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius);
+  box-shadow: var(--sh, var(--gloss-n-hi)), var(--ctl-shadow);
+}
+:root:not([data-theme="classic"]) .prio, :root:not([data-theme="classic"]) .session-state, :root:not([data-theme="classic"]) .pickup, :root:not([data-theme="classic"]) .ready-label, :root:not([data-theme="classic"]) .check { box-shadow: var(--sh, var(--gloss-n-hi)), var(--chip-shadow); }
+:root:not([data-theme="classic"]) button { padding: 6px 12px; font-family: var(--btn-font); font-weight: var(--btn-weight); text-transform: var(--btn-case); letter-spacing: var(--btn-track); cursor: pointer; }
+:root:not([data-theme="classic"]) button:hover { box-shadow: var(--sh, var(--gloss-n-hi)), var(--ctl-shadow-hover); }
+:root:not([data-theme="classic"]) button:active { transform: translate(1px, 1px); box-shadow: var(--sh, var(--gloss-n-hi)), 0 0 0 transparent; }
+:root:not([data-theme="classic"]) button:disabled { cursor: default; opacity: .7; transform: none; }
+/* Every coloured sticker has the full gloss and its own text colour; each one below sets only its --sb. */
+:root:not([data-theme="classic"]) button.primary, :root:not([data-theme="classic"]) button.danger:hover, :root:not([data-theme="classic"]) #fileSel button.on, :root:not([data-theme="classic"]) .check.on, :root:not([data-theme="classic"]) .prio-P1, :root:not([data-theme="classic"]) .prio-P2, :root:not([data-theme="classic"]) .pickup.on, :root:not([data-theme="classic"]) .pickup.bad, :root:not([data-theme="classic"]) .ready-label, :root:not([data-theme="classic"]) .column:is([data-kind="bugs"], [data-kind="to-do"], [data-kind="in-flight"], [data-kind="done"], [data-kind="design-decision"], [data-kind="major-feature"], [data-kind="feature"], [data-kind="change"]) .col-name, :root:not([data-theme="classic"]) .session-state:is(.s-started, .s-waiting, .s-lost) { --sf: var(--ink); --sg: var(--gloss); --sh: var(--gloss-hi); }
+:root:not([data-theme="classic"]) button.primary, :root:not([data-theme="classic"]) #fileSel button.on { --sb: var(--accent); --sf: var(--on-accent); }
+:root:not([data-theme="classic"]) button.danger:hover, :root:not([data-theme="classic"]) button.primary.danger { --sb: var(--danger); --sf: var(--danger-fg); }
+/* Inline text buttons stay flat: no sticker until hovered. */
+:root:not([data-theme="classic"]) .col-head button, :root:not([data-theme="classic"]) .expand, :root:not([data-theme="classic"]) .add-sub, :root:not([data-theme="classic"]) .pickup-why button {
+  background: transparent; border-color: transparent; box-shadow: none; color: var(--muted);
+  font-family: var(--sans); text-transform: none; letter-spacing: normal;
+}
+:root:not([data-theme="classic"]) .col-head button:hover, :root:not([data-theme="classic"]) .pickup-why button:hover { border-color: var(--edge); color: var(--text); box-shadow: var(--ctl-shadow); }
+:root:not([data-theme="classic"]) .expand:hover, :root:not([data-theme="classic"]) .add-sub:hover { box-shadow: none; color: var(--text); text-decoration: underline; }
+:root:not([data-theme="classic"]) .expand:active, :root:not([data-theme="classic"]) .add-sub:active { transform: none; }
+:root:not([data-theme="classic"]) select, :root:not([data-theme="classic"]) input[type=text], :root:not([data-theme="classic"]) input:not([type]), :root:not([data-theme="classic"]) input[type=number] {
+  background: var(--card); color: var(--text); border: var(--bw) solid var(--input-bc); border-radius: var(--ctl-radius); padding: 5px 9px;
+}
+:root:not([data-theme="classic"]) textarea { background: var(--card); color: var(--text); border: var(--bw) solid var(--input-bc); border-radius: var(--ctl-radius); }
+
+/* ---------- header ---------- */
+:root:not([data-theme="classic"]) header { display: flex; align-items: center; gap: 12px; padding: 18px 24px; background: var(--hdr-bg); color: var(--hdr-text); border-bottom: var(--hdr-bd); flex-wrap: wrap; }
+:root:not([data-theme="classic"]) .logo { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--logo-size); height: var(--logo-size); border-radius: var(--logo-radius);
+  background-color: var(--logo-bg); background-image: var(--logo-gloss); border: var(--logo-bd); box-shadow: var(--logo-shadow); }
+:root:not([data-theme="classic"]) .logo svg { display: block; width: var(--logo-svg); height: var(--logo-svg); }
+:root:not([data-theme="classic"]) .logo .l-hat { fill: var(--logo-hat); } :root:not([data-theme="classic"]) .logo .l-brim { stroke: var(--logo-brim); } :root:not([data-theme="classic"]) .logo .l-star { fill: var(--logo-star); }
+:root:not([data-theme="classic"]) #storeName { font: var(--store-weight) var(--store-size)/1.42 var(--store-font); text-transform: var(--store-case); letter-spacing: var(--store-track); color: var(--hdr-name); white-space: nowrap; }
+:root:not([data-theme="classic"]) #storeName:empty { display: none; }
+/* A fixed width, so the board buttons beside the title stay put from page to page; a longer title (a plan doc's) is cut short, in full on hover. */
+:root:not([data-theme="classic"]) header h1 { font: var(--h1-style) var(--h1-weight) var(--h1-size)/1.42 var(--h1-font); color: var(--hdr-text); margin: 0 12px 0 0; flex: 0 0 9em; width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root:not([data-theme="classic"]) header .hint { color: var(--hdr-text); font-size: 14px; }
+/* Header controls take the header's edge and shadow (in Tidy, a pale line rather than ink). */
+:root:not([data-theme="classic"]) header button { border-color: var(--hdr-edge); }
+:root:not([data-theme="classic"]) header :is(button, select, input) { min-height: 38px; }
+:root:not([data-theme="classic"]) header button { box-shadow: var(--sh, var(--gloss-n-hi)), var(--hdr-ctl-shadow); }
+:root:not([data-theme="classic"]) header button:hover { box-shadow: var(--sh, var(--gloss-n-hi)), var(--hdr-ctl-shadow-hover); }
+:root:not([data-theme="classic"]) header select, :root:not([data-theme="classic"]) header input { box-shadow: var(--hdr-ctl-shadow); }
+:root:not([data-theme="classic"]) #status { margin-left: auto; color: var(--hdr-text); font: 12px var(--mono); }
+:root:not([data-theme="classic"]) #status.err { color: var(--danger-fg); background-color: var(--danger); background-image: var(--gloss); border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius); padding: 3px 8px; font-weight: 700; }
+:root:not([data-theme="classic"]) #banner { display: none; background: color-mix(in srgb, var(--accent) 45%, var(--bg)); color: var(--text); padding: 8px 24px; border-bottom: var(--bw) solid var(--edge); }
+:root:not([data-theme="classic"]) #banner.show { display: block; }
+:root:not([data-theme="classic"]) #search { width: 200px; }
+:root:not([data-theme="classic"]) #fileSel { display: flex; gap: 6px; flex-wrap: wrap; }
+:root:not([data-theme="classic"]) #fileSel button { font-size: 14px; padding: 6px 14px; background-color: var(--sb, var(--tab-bg)); color: var(--sf, var(--tab-fg)); }
+/* The Theme menu and its accent swatches. */
+:root:not([data-theme="classic"]) #themePick { display: flex; align-items: center; gap: 8px; }
+:root:not([data-theme="classic"]) #accentSel { display: flex; gap: 5px; }
+:root:not([data-theme="classic"]) #accentSel button { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; background-image: none; border: 1.5px solid var(--hdr-edge);
+  background-color: var(--swatch); box-shadow: none; }
+:root:not([data-theme="classic"]) #accentSel button[aria-pressed="true"] { outline: 2px solid var(--hdr-text); outline-offset: 2px; }
+:root:not([data-theme="classic"]) #accentSel button:hover { box-shadow: none; transform: scale(1.1); }
+
+/* ---------- board and columns ---------- */
+:root:not([data-theme="classic"]) #board { flex: 1; display: flex; gap: var(--col-gap); padding: 28px 24px 20px; overflow-x: auto; align-items: flex-start; }
+:root:not([data-theme="classic"]) .column { flex: 1 1 280px; min-width: 280px; background: color-mix(in srgb, var(--colc, var(--col)) var(--col-tint), var(--col));
+  border: var(--col-bd); border-radius: var(--col-radius); box-shadow: var(--col-shadow); padding: 12px; display: flex; flex-direction: column; max-height: 100%; }
+:root:not([data-theme="classic"]) .column.dragging { opacity: .4; }
+/* Column colours, by name (columns and the move zones beside Archive): any other column keeps a neutral chip. */
+:root:not([data-theme="classic"]) [data-kind="bugs"] { --colc: var(--bugs); }
+:root:not([data-theme="classic"]) [data-kind="to-do"] { --colc: var(--todo); }
+:root:not([data-theme="classic"]) [data-kind="in-flight"] { --colc: var(--flight); }
+:root:not([data-theme="classic"]) [data-kind="done"] { --colc: var(--done); }
+:root:not([data-theme="classic"]) [data-kind="design-decision"] { --colc: var(--design); }
+:root:not([data-theme="classic"]) [data-kind="major-feature"] { --colc: var(--major); }
+:root:not([data-theme="classic"]) [data-kind="feature"] { --colc: var(--feature); }
+:root:not([data-theme="classic"]) [data-kind="change"] { --colc: var(--change); }
+:root:not([data-theme="classic"]) .column:is([data-kind="bugs"], [data-kind="to-do"], [data-kind="in-flight"], [data-kind="done"], [data-kind="design-decision"], [data-kind="major-feature"], [data-kind="feature"], [data-kind="change"]) .col-name { --sb: var(--colc); }
+:root:not([data-theme="classic"]) .col-head { display: flex; align-items: center; gap: 8px; padding: 0 0 12px; cursor: grab; }
+:root:not([data-theme="classic"]) .col-name { font: var(--name-weight) var(--name-size)/1.42 var(--head); text-transform: var(--name-case); letter-spacing: var(--name-track); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root:not([data-theme="classic"]) .col-head .col-name, :root:not([data-theme="classic"]) .list-head .col-name { flex: 0 1 auto; min-width: 0; padding: 5px 16px; line-height: 1.25; }
+:root:not([data-theme="classic"]) .col-count { font: 13px var(--mono); color: var(--muted); }
+:root:not([data-theme="classic"]) .col-head .col-count { margin-right: auto; }
+:root:not([data-theme="classic"]) .col-head button { padding: 2px 6px; min-height: 28px; font-weight: 600; }
+:root:not([data-theme="classic"]) .col-head .col-clear { font-size: 13px; font-weight: 700; }
+:root:not([data-theme="classic"]) .col-intro { margin: 0 2px 10px; font-size: 13px; color: var(--muted); }
+:root:not([data-theme="classic"]) .col-intro summary { cursor: pointer; }
+:root:not([data-theme="classic"]) .col-intro div { white-space: pre-wrap; margin-top: 4px; max-height: 160px; overflow: auto; }
+/* Why pickup is off: one muted line at the top of In flight, with a × that hides it. */
+:root:not([data-theme="classic"]) .pickup-why { display: flex; align-items: flex-start; gap: 6px; margin: 0 2px 10px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+:root:not([data-theme="classic"]) .pickup-why span { flex: 1; }
+:root:not([data-theme="classic"]) .pickup-why button { padding: 0 6px; line-height: 1.42; }
+/* Room on the right and below for the tiles' shadows, which overflow would otherwise clip. */
+:root:not([data-theme="classic"]) .cards { padding: var(--cards-pad); display: flex; flex-direction: column; gap: 12px; min-height: 40px; overflow-y: auto; }
+:root:not([data-theme="classic"]) .add-card { margin-top: 12px; width: 100%; min-height: 40px; text-align: left; padding: 8px 14px; font-family: var(--sans); text-transform: none; letter-spacing: normal;
+  background: transparent; border: var(--add-bd); border-radius: var(--add-radius); box-shadow: none; color: var(--muted); font-size: 14px; font-weight: 700; font-style: var(--add-style); }
+:root:not([data-theme="classic"]) .add-card:hover { border-color: var(--edge); color: var(--text); box-shadow: none; }
+
+/* ---------- tiles ---------- */
+/* A tile's state swaps its background and outline (--this-bg, --bw-now, --bc-now); the padding gives back what a heavier outline takes. */
+:root:not([data-theme="classic"]) .card { --this-bg: var(--card); --bw-now: var(--card-bw); --bc-now: var(--card-bc);
+  background: var(--this-bg); border: var(--bw-now) solid var(--bc-now); border-radius: var(--card-radius); box-shadow: var(--card-shadow);
+  padding: calc(var(--card-pad) + var(--card-bw) - var(--bw-now)); display: flex; flex-direction: column; gap: 7px; cursor: pointer; user-select: none; overflow-wrap: anywhere; }
+:root:not([data-theme="classic"]) .card:hover { box-shadow: var(--card-shadow-hover); }
+:root:not([data-theme="classic"]) .card.dragging { opacity: .35; }
+:root:not([data-theme="classic"]) .card > .meta { order: -1; }  /* the key, priority and estimate read first */
+:root:not([data-theme="classic"]) .card .title { font: 600 var(--title-size)/1.3 var(--title-font); }
+:root:not([data-theme="classic"]) .card .desc { color: var(--muted); font-size: var(--desc-size); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+:root:not([data-theme="classic"]) .card .meta { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; font: 11px var(--mono); color: var(--muted); }
+:root:not([data-theme="classic"]) .card.done .title { text-decoration: line-through; color: var(--muted); }
+:root:not([data-theme="classic"]) .card.done .key { text-decoration: line-through; }
+:root:not([data-theme="classic"]) .card .kind { font: 600 11px var(--mono); color: var(--muted); }
+:root:not([data-theme="classic"]) .card .card { --card-shadow: var(--card-shadow-nested, var(--ctl-shadow)); --card-shadow-hover: var(--ctl-shadow-hover); }
+:root:not([data-theme="classic"]) .check { width: 16px; height: 16px; padding: 0; border-radius: 4px; border-color: var(--check-bc); box-shadow: var(--chip-shadow); display: inline-flex; align-items: center; justify-content: center; font: 700 10px var(--sans); }
+:root:not([data-theme="classic"]) .check.on { --sb: var(--ok-bg); --sf: var(--ok-fg); border-color: var(--edge); }
+:root:not([data-theme="classic"]) .key { font: 600 11px var(--mono); color: var(--text); }
+:root:not([data-theme="classic"]) .est, :root:not([data-theme="classic"]) .model, :root:not([data-theme="classic"]) .repos { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+:root:not([data-theme="classic"]) .repos-pick { display: inline-flex; align-items: center; gap: 6px; }
+:root:not([data-theme="classic"]) .repos-pick label { display: inline-flex; align-items: center; gap: 3px; }
+/* Small chips: priority, pickup and session state. */
+:root:not([data-theme="classic"]) .prio, :root:not([data-theme="classic"]) .session-state, :root:not([data-theme="classic"]) .pickup { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; min-height: 18px; font: 700 11px var(--mono); white-space: nowrap; line-height: 1.3; }
+:root:not([data-theme="classic"]) .prio-P1 { --sb: var(--p1); --sf: var(--p1-fg); }
+:root:not([data-theme="classic"]) .prio-P2 { --sb: var(--p2); --sf: var(--p2-fg); }
+:root:not([data-theme="classic"]) .linked { display: inline-flex; align-items: center; color: var(--link); cursor: help; }
+:root:not([data-theme="classic"]) .linked svg { width: 12px; height: 12px; }
+:root:not([data-theme="classic"]) .pickup.on { --sb: var(--st-work); }   /* ✦ Claude: working */
+:root:not([data-theme="classic"]) .pickup.bad { --sb: var(--st-gone); }  /* idle, gone, not started */
+:root:not([data-theme="classic"]) .pickup[data-act] { cursor: pointer; border-style: dashed; border-color: var(--check-bc); }  /* ◌ queued */
+:root:not([data-theme="classic"]) .keyref { color: var(--link); cursor: pointer; }
+:root:not([data-theme="classic"]) .keyref:hover { text-decoration: underline; }
+:root:not([data-theme="classic"]) .master-mark { color: var(--text); font-size: 11px; cursor: help; }
+:root:not([data-theme="classic"]) .parent { font: 600 11px var(--mono); white-space: nowrap; }
+:root:not([data-theme="classic"]) .card a { color: var(--link); }
+
+/* The Claude session working a tile: its own block under a rule. */
+:root:not([data-theme="classic"]) .session { padding-top: 8px; border-top: var(--rule); font-size: 13px; cursor: default; }
+:root:not([data-theme="classic"]) .session-top { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; }
+:root:not([data-theme="classic"]) .session-state { order: -1; }
+:root:not([data-theme="classic"]) .session-state.s-started { --sb: var(--st-work); }   /* working */
+:root:not([data-theme="classic"]) .session-state.s-waiting { --sb: var(--st-wait); }   /* waiting for you */
+:root:not([data-theme="classic"]) .session-state.s-lost { --sb: var(--st-gone); }      /* gone */
+:root:not([data-theme="classic"]) .session-id { font-size: 12px; color: var(--muted); white-space: nowrap; }
+:root:not([data-theme="classic"]) .session-id code { background: none; padding: 0; font: 600 12px var(--mono); color: var(--text); }
+:root:not([data-theme="classic"]) .session-acts { display: flex; flex-wrap: wrap; flex-basis: 100%; gap: 6px; margin-top: 2px; }  /* the buttons on a row of their own, as the designs draw them */
+:root:not([data-theme="classic"]) .session button, :root:not([data-theme="classic"]) .pickup-restart { min-height: 32px; padding: 3px 10px; font-size: 13px; line-height: normal; }
+:root:not([data-theme="classic"]) .session button .spin { display: inline-block; }
+:root:not([data-theme="classic"]) .session button.busy .spin { animation: spin .7s linear infinite; }
+:root:not([data-theme="classic"]) .session-rest { margin-top: 5px; color: var(--muted); overflow-wrap: anywhere; }
+:root:not([data-theme="classic"]) .session-ask { margin-top: 6px; font-size: 14px; font-weight: 700; color: var(--text); }
+/* It waits for input: the whole tile changes, with a heavier outline, until it is answered. */
+:root:not([data-theme="classic"]) .card.needs-you { --this-bg: var(--waiting-bg); --bw-now: var(--state-bw); --bc-now: var(--wait-bc); }
+/* Finished and waiting for review: a green tile and note, until the tile is in Done. */
+:root:not([data-theme="classic"]) .card.ready { --this-bg: var(--ready-bg); --bw-now: var(--state-bw); --bc-now: var(--ready-bc); }
+:root:not([data-theme="classic"]) .ready-note, :root:not([data-theme="classic"]) .tv-ready { font-size: 13px; }
+:root:not([data-theme="classic"]) .ready-note { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+:root:not([data-theme="classic"]) .ready-label { display: inline-block; margin-right: 6px; padding: 0 6px; font: 700 11px var(--mono); line-height: 1.5; --sb: var(--ok-bg); --sf: var(--ok-fg); }
+:root:not([data-theme="classic"]) .tv-ready { margin: 6px 0 12px; font-size: 14px; }
+/* In Done, but its branch isn't in the trunk yet: a red tile, and a label to say so. */
+:root:not([data-theme="classic"]) .card.unmerged { --this-bg: var(--warn-bg); --bw-now: var(--state-bw); --bc-now: var(--warn-bc); }
+:root:not([data-theme="classic"]) .card.unmerged > .meta::after { content: "not merged"; padding: 0 6px; border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius); font-weight: 700; color: var(--danger-fg);
+  background-color: var(--danger); background-image: var(--gloss); box-shadow: var(--gloss-hi), var(--chip-shadow); }
+/* Its session is gone: the tile flashes until it is restarted or moved on. */
+:root:not([data-theme="classic"]) .card.lost { --bw-now: var(--state-bw); --bc-now: var(--warn-bc); animation: t-lost 1.1s ease-in-out infinite; }
+@keyframes t-lost { 0%, 100% { background: var(--warn-bg); } 50% { background: var(--card); } }
+@media (prefers-reduced-motion: reduce) { :root:not([data-theme="classic"]) .card.lost { animation: none; --this-bg: var(--warn-bg); } }
+:root:not([data-theme="classic"]) .card.jumped, :root:not([data-theme="classic"]) .lcard.jumped { animation: t-jumped 1.8s ease-out; }
+@keyframes t-jumped { 0%, 60% { outline: 3px solid var(--link); outline-offset: 2px; } 100% { outline: 3px solid transparent; outline-offset: 2px; } }
+
+/* A story's progress: a track, a fill, and the count beside it. */
+:root:not([data-theme="classic"]) .progress { position: relative; height: var(--bar-h); margin-right: 52px; background: var(--track); border: var(--track-bd); border-radius: var(--bar-radius); }
+:root:not([data-theme="classic"]) .progress span { display: block; height: 100%; border-radius: max(0px, calc(var(--bar-radius) - 2px)); background-color: var(--bar); background-image: var(--bar-gloss); }
+:root:not([data-theme="classic"]) .progress::after { content: attr(data-count); position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 8px; font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+:root:not([data-theme="classic"]) .progress.review span { background-color: var(--bar-review); }
+:root:not([data-theme="classic"]) .progress.gates span { background-image: var(--bar-gloss), repeating-linear-gradient(-45deg, var(--bar-gates) 0 6px, color-mix(in srgb, var(--bar-gates) 45%, var(--card)) 6px 12px); }
+:root:not([data-theme="classic"]) .expand { padding: 0; min-height: 0; font: 11px var(--mono); }
+:root:not([data-theme="classic"]) .subs { list-style: none; margin: 0; padding: 8px 0 0; border-top: var(--rule); display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+:root:not([data-theme="classic"]) .subs li { display: flex; gap: 6px; align-items: flex-start; }
+:root:not([data-theme="classic"]) .subs li .check { flex: none; margin-top: 2px; cursor: pointer; }
+:root:not([data-theme="classic"]) .subs li.done > span:last-child { text-decoration: line-through; color: var(--muted); }
+:root:not([data-theme="classic"]) .subs em { color: var(--muted); font: 11px var(--mono); }
+:root:not([data-theme="classic"]) .add-sub { padding: 0; min-height: 0; font-size: 12px; font-weight: 700; }
+:root:not([data-theme="classic"]) .kids .kstate { flex: none; width: 14px; text-align: center; color: var(--muted); }
+:root:not([data-theme="classic"]) .kids li.done .kstate { color: var(--ok); font-weight: 700; }
+:root:not([data-theme="classic"]) .kids li.done > span:nth-child(2) { color: var(--muted); }
+:root:not([data-theme="classic"]) .kids .where { margin-left: auto; padding-left: 6px; white-space: nowrap; }
+:root:not([data-theme="classic"]) .fold { display: flex; flex-direction: column; gap: 8px; }
+/* A sub-story away from its master sits under a quiet stub of the master, which jumps to it. */
+:root:not([data-theme="classic"]) .ghost { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 2px dashed var(--dash); border-radius: calc(var(--card-radius) + 2px); }
+:root:not([data-theme="classic"]) .ghost-head { display: flex; gap: 6px; align-items: baseline; padding: 2px 6px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; overflow-wrap: anywhere; }
+:root:not([data-theme="classic"]) .ghost-head span:first-child { white-space: nowrap; font-family: var(--mono); }
+:root:not([data-theme="classic"]) .ghost-head:hover { color: var(--text); text-decoration: underline; }
+:root:not([data-theme="classic"]) .ghost-head em { margin-left: auto; font: 11px var(--mono); white-space: nowrap; }
+
+/* ---------- drag targets ---------- */
+:root:not([data-theme="classic"]) .placeholder { border: 2px dashed var(--solid-edge); border-radius: var(--card-radius); min-height: 36px; background: var(--accent-bg); }
+:root:not([data-theme="classic"]) .col-placeholder { flex: 0 0 280px; border: 2px dashed var(--solid-edge); border-radius: var(--col-radius); align-self: stretch; background: var(--accent-bg); }
+/* The right-hand column: Archive, and under it the other board's columns to send a tile to. */
+:root:not([data-theme="classic"]) .side-col { flex: 0 0 220px; display: flex; flex-direction: column; gap: 14px; align-self: stretch; }
+:root:not([data-theme="classic"]) .archive-col { background: transparent; border: var(--zone-bd); border-radius: var(--zone-radius); padding: 14px 16px; color: var(--muted); font-size: 14px; }
+:root:not([data-theme="classic"]) .archive-col > .col-name { font-size: var(--name-size); color: var(--text); }
+:root:not([data-theme="classic"]) .archive-col p { margin: 6px 0 10px; }
+:root:not([data-theme="classic"]) .archive-col.over { border-color: var(--solid-edge); background: var(--accent-bg); color: var(--text); }
+:root:not([data-theme="classic"]) .move-zone { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 8px 12px; border: var(--zone-bd); border-radius: var(--add-radius); font-size: 14px; font-weight: 700; color: var(--text); }
+:root:not([data-theme="classic"]) .move-zone::before { content: ""; flex: none; width: 12px; height: 12px; border: 1.5px solid var(--solid-edge); border-radius: 4px; background-color: var(--colc, var(--neutral)); background-image: var(--gloss); }
+:root:not([data-theme="classic"]) .move-zone.over { border-style: solid; border-color: var(--solid-edge); background: var(--accent-bg); }
+
+/* ---------- the archive log, as a list: wide cards, clamped to 10 rows until clicked ---------- */
+:root:not([data-theme="classic"]) #board.as-list { flex-direction: column; align-items: center; overflow-x: hidden; overflow-y: auto; }
+:root:not([data-theme="classic"]) .list-group { width: 66.667vw; display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px; }
+:root:not([data-theme="classic"]) .list-head { display: flex; align-items: center; gap: 10px; }
+:root:not([data-theme="classic"]) .list-head .spacer { flex: 1; }
+:root:not([data-theme="classic"]) .list-head label { font-size: 13px; color: var(--muted); }
+:root:not([data-theme="classic"]) .lcard { background: var(--card); border: var(--card-bw) solid var(--card-bc); border-radius: var(--card-radius); box-shadow: var(--card-shadow); padding: 14px 18px; }
+:root:not([data-theme="classic"]) .lcard.clamped { cursor: pointer; }
+:root:not([data-theme="classic"]) .lcard.clamped:hover { box-shadow: var(--card-shadow-hover); }
+:root:not([data-theme="classic"]) .lcard .lc-body { max-height: 14.2em; overflow: hidden; }  /* 10 rows at the 1.42 line height */
+:root:not([data-theme="classic"]) .lcard.clamped:not(.open) .lc-body { -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+:root:not([data-theme="classic"]) .lcard.open .lc-body { max-height: none; }
+:root:not([data-theme="classic"]) .lcard .lc-body h3 { font: 600 var(--title-size)/1.42 var(--title-font); }
+:root:not([data-theme="classic"]) .lcard .lc-body p:last-child, :root:not([data-theme="classic"]) .lcard .lc-body ul:last-child { margin-bottom: 0; }
+:root:not([data-theme="classic"]) .lcard .tv-tasks .check { cursor: inherit; }
+:root:not([data-theme="classic"]) .lc-foot { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding-top: 8px; border-top: var(--rule); font: 12px var(--mono); color: var(--muted); }
+:root:not([data-theme="classic"]) .lc-foot .spacer { flex: 1; }
+:root:not([data-theme="classic"]) .lc-foot button { padding: 2px 10px; min-height: 28px; font-size: 13px; line-height: normal; }
+:root:not([data-theme="classic"]) .lc-more { color: var(--link); }
+:root:not([data-theme="classic"]) .lcard:not(.clamped) .lc-more { display: none; }
+@media (max-width: 900px) { :root:not([data-theme="classic"]) .list-group { width: 100%; } }
+
+/* ---------- dialogs ---------- */
+:root:not([data-theme="classic"]) dialog { border: var(--card-bw) solid var(--card-bc); border-radius: var(--card-radius); padding: 0; width: min(780px, 94vw); background: var(--card); color: var(--text); box-shadow: var(--dlg-shadow); }
+:root:not([data-theme="classic"]) dialog::backdrop { background: rgba(28,28,26,.45); }
+:root:not([data-theme="classic"]) dialog.ask { width: min(460px, 94vw); }
+:root:not([data-theme="classic"]) .ask h3 { margin: 0; font: 700 17px/1.42 var(--head); }
+:root:not([data-theme="classic"]) .ask #askBody { font-size: 14px; line-height: 1.5; color: var(--text); }
+:root:not([data-theme="classic"]) .ask #askBody p { margin: 0 0 8px; }
+:root:not([data-theme="classic"]) .ask #askBody p:last-child { margin-bottom: 0; }
+:root:not([data-theme="classic"]) .ask #askBody .ask-note { color: var(--muted); }
+:root:not([data-theme="classic"]) .ask #askField { display: flex; align-items: center; gap: 8px; }
+:root:not([data-theme="classic"]) .ask #askField[hidden] { display: none; }
+:root:not([data-theme="classic"]) .ask #askInput { flex: 1; min-width: 0; padding: 6px 9px; font: inherit; }
+:root:not([data-theme="classic"]) .ask #askInput[type=number] { flex: 0 0 72px; }
+:root:not([data-theme="classic"]) .dlg { padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; }
+:root:not([data-theme="classic"]) .dlg label { font-size: 13px; font-weight: 600; color: var(--muted); }
+:root:not([data-theme="classic"]) .dlg select, :root:not([data-theme="classic"]) .dlg input[type=text] { min-height: 32px; }
+:root:not([data-theme="classic"]) .dlg textarea { width: 100%; min-height: 260px; padding: 9px; font: 13px/1.5 var(--mono); resize: vertical; }
+:root:not([data-theme="classic"]) .dlg .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+:root:not([data-theme="classic"]) .dlg .row label { white-space: nowrap; }
+:root:not([data-theme="classic"]) .dlg .row .spacer { flex: 1; }
+:root:not([data-theme="classic"]) #cardEst::placeholder { color: var(--muted); font-style: italic; }
+:root:not([data-theme="classic"]) #cardEst.bad { border-color: var(--warn-bc); border-width: 2.5px; background: var(--warn-bg); }
+:root:not([data-theme="classic"]) #cardDlg[data-mode="view"] .edit-only, :root:not([data-theme="classic"]) #cardDlg[data-mode="edit"] .tile-view { display: none; }
+:root:not([data-theme="classic"]) .tile-view { max-height: 60vh; overflow: auto; font-size: var(--body-size); }
+:root:not([data-theme="classic"]) .tile-view .tv-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+:root:not([data-theme="classic"]) .tile-view .tv-head .key { font-size: 12px; }
+:root:not([data-theme="classic"]) .tile-view h3 { margin: 0 0 6px; font: 700 20px/1.42 var(--title-font); }
+:root:not([data-theme="classic"]) .tile-view p { margin: 0 0 10px; }
+:root:not([data-theme="classic"]) .tile-view a { color: var(--link); }
+:root:not([data-theme="classic"]) .tv-tasks, :root:not([data-theme="classic"]) .tv-bullets { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 6px; }
+:root:not([data-theme="classic"]) .tv-tasks li { display: grid; grid-template-columns: 20px 1fr; gap: 6px; align-items: start; }
+:root:not([data-theme="classic"]) .tv-tasks .check { margin-top: 2px; cursor: pointer; }
+:root:not([data-theme="classic"]) .tv-tasks li.done > span:nth-child(2) { text-decoration: line-through; color: var(--muted); }
+:root:not([data-theme="classic"]) .tv-sub { grid-column: 2; color: var(--muted); font-size: 14px; }
+:root:not([data-theme="classic"]) .tv-bullets li::before { content: "• "; color: var(--muted); }
+/* The story's latest status: a yellow note under the session block. */
+:root:not([data-theme="classic"]) .tv-status { margin: 6px 0 12px; padding: 10px 12px; border: var(--card-bw) solid var(--wait-bc); border-radius: var(--card-radius); background: var(--waiting-bg); }
+:root:not([data-theme="classic"]) .tv-status .tv-status-next { margin-top: 10px; padding-top: 8px; border-top: var(--rule); }
+:root:not([data-theme="classic"]) .tv-status dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; margin: 2px 0 0; }
+:root:not([data-theme="classic"]) .tv-status dt { font: 700 11px var(--mono); color: var(--muted); padding-top: 3px; }
+:root:not([data-theme="classic"]) .tv-status dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+:root:not([data-theme="classic"]) .tv-status dt:empty { display: none; }
+:root:not([data-theme="classic"]) .tv-status dt:empty + dd { grid-column: 1 / -1; }
+:root:not([data-theme="classic"]) .tv-status dl:not(.note) dt:first-child + dd { font-weight: 700; }
+:root:not([data-theme="classic"]) .tv-status .tv-status-at { display: block; margin-bottom: 2px; font: 11px var(--mono); color: var(--muted); }
+:root:not([data-theme="classic"]) .tv-family { border-top: var(--rule); margin-top: 4px; padding-top: 10px; }
+:root:not([data-theme="classic"]) .tv-family .subs { border-top: 0; margin: 0 0 10px; padding: 0; }
+:root:not([data-theme="classic"]) .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 14px; }
+:root:not([data-theme="classic"]) .hint { font-size: 13px; color: var(--muted); }
+
+/* ---------- a plan doc ---------- */
+:root:not([data-theme="classic"]) #docView { flex: 1; overflow: auto; padding: 20px 24px 40px; }
+:root:not([data-theme="classic"]) .doc-bar { display: flex; align-items: center; gap: 10px; max-width: 900px; margin: 0 auto 14px; }
+:root:not([data-theme="classic"]) .doc-bar .spacer { flex: 1; }
+:root:not([data-theme="classic"]) .doc-path { color: var(--muted); font-size: 12px; background: none; }
+:root:not([data-theme="classic"]) #docText { display: block; width: 100%; max-width: 900px; margin: 0 auto; min-height: 70vh; padding: 14px; font: 13px/1.55 var(--mono); }
+:root:not([data-theme="classic"]) .md-doc { max-width: 900px; margin: 0 auto; background: var(--card); border: var(--card-bw) solid var(--card-bc); border-radius: var(--card-radius); box-shadow: var(--card-shadow); padding: 28px 36px; line-height: 1.6; font-size: var(--body-size); overflow-wrap: anywhere; }
+:root:not([data-theme="classic"]) .md-doc :is(h1, h2, h3, h4) { font-family: var(--head); }
+:root:not([data-theme="classic"]) .md-doc h1 { font-size: 26px; margin: 0 0 16px; } :root:not([data-theme="classic"]) .md-doc h2 { font-size: 20px; margin: 28px 0 10px; border-bottom: var(--rule); padding-bottom: 4px; }
+:root:not([data-theme="classic"]) .md-doc h3 { font-size: 17px; margin: 22px 0 8px; } :root:not([data-theme="classic"]) .md-doc h4 { font-size: 15px; margin: 18px 0 6px; }
+:root:not([data-theme="classic"]) .md-doc a { color: var(--link); }
+:root:not([data-theme="classic"]) .md-doc pre { background: var(--code); border: var(--bw) solid var(--edge); padding: 12px 14px; border-radius: var(--ctl-radius); overflow-x: auto; font-size: 13px; line-height: 1.45; }
+:root:not([data-theme="classic"]) .md-doc pre code { background: none; padding: 0; }
+:root:not([data-theme="classic"]) .md-doc table { border-collapse: collapse; margin: 12px 0; font-size: 14px; display: block; overflow-x: auto; }
+:root:not([data-theme="classic"]) .md-doc th, :root:not([data-theme="classic"]) .md-doc td { border: 1px solid var(--dash); padding: 6px 10px; text-align: left; vertical-align: top; }
+:root:not([data-theme="classic"]) .md-doc th { background: var(--code); }
+:root:not([data-theme="classic"]) .md-doc blockquote { margin: 12px 0; padding: 6px 14px; border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius); color: var(--muted); background: var(--code); }
+:root:not([data-theme="classic"]) .md-doc ul, :root:not([data-theme="classic"]) .md-doc ol { padding-left: 24px; } :root:not([data-theme="classic"]) .md-doc li { margin: 3px 0; }
+:root:not([data-theme="classic"]) .md-doc hr { border: 0; border-top: var(--rule); margin: 24px 0; }
+:root:not([data-theme="classic"]) .md-doc input[type=checkbox] { margin-right: 6px; }
+@media (max-width: 600px) { :root:not([data-theme="classic"]) .md-doc { padding: 18px 16px; } }
+:root:not([data-theme="classic"]) #tagline { display: none; padding: 0 24px 18px; font-size: 14px; color: var(--muted); }
+@media (max-width: 600px) { :root:not([data-theme="classic"]) header { padding: 10px 16px; } :root:not([data-theme="classic"]) #board { padding: 12px 16px; } :root:not([data-theme="classic"]) #search { width: 100%; } }
+
+/* ---------- what a theme's tokens can't say ---------- */
+/* Clean and light, Realm ledger: column names, priorities and session states are coloured words, not chips. */
+:root:is([data-theme="light"], [data-theme="realm"]) :is(.col-head, .list-head) .col-name,
+:root:is([data-theme="light"], [data-theme="realm"]) :is(.session-state, .pickup),
+:root[data-theme="light"] .prio {
+  background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: var(--sb, var(--muted));
+}
+:root:is([data-theme="light"], [data-theme="realm"]) .column .col-name { color: var(--colc, var(--text)); }
+:root:is([data-theme="light"], [data-theme="realm"]) .list-head .col-name { color: var(--text); }
+:root:is([data-theme="light"], [data-theme="realm"]) :is(.session-state, .pickup)::before { content: ""; width: 8px; height: 8px; margin-right: 3px; border-radius: 50%; background: currentColor; }
+:root:is([data-theme="light"], [data-theme="realm"]) .pickup[data-act] { text-decoration: underline dotted; }
+:root[data-theme="light"] #fileSel button.on { border-color: var(--accent); }
+/* Clean and light: the add button is a plain line of text. */
+:root[data-theme="light"] .add-card { padding: 8px; min-height: 36px; margin-top: 4px; font-weight: 400; font-size: 13px; }
+/* Realm ledger: no column panels; columns are ruled apart, each named under a double rule with a diamond. */
+:root[data-theme="realm"] .column { padding: 0 0 0 16px; border-left: 1px solid #c9b98f; }
+:root[data-theme="realm"] .column:first-child { padding-left: 0; border-left: 0; }
+:root[data-theme="realm"] .col-head { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 3px double #c9b98f; }
+:root[data-theme="realm"] .column .col-name::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 10px 2px 2px; transform: rotate(45deg); background: currentColor; }
+:root[data-theme="realm"] :is(.session-state, .pickup) { font-family: var(--head); text-transform: uppercase; letter-spacing: .08em; }
+:root[data-theme="realm"] :is(.session-state, .pickup)::before { border-radius: 0; transform: rotate(45deg); }
+:root[data-theme="realm"] .card { --card-shadow: inset 0 0 0 3px var(--this-bg), inset 0 0 0 4px #c9b98f, 0 1px 2px rgba(42,36,24,.18);
+  --card-shadow-hover: inset 0 0 0 3px var(--this-bg), inset 0 0 0 4px #c9b98f, 0 3px 8px rgba(42,36,24,.25); }
+:root[data-theme="realm"] .prio { border-color: var(--p-bc, #5d5340); }
+:root[data-theme="realm"] .prio-P1 { --p-bc: #7a2a22; } :root[data-theme="realm"] .prio-P2 { --p-bc: #8a6a12; }
+:root[data-theme="realm"] button, :root[data-theme="realm"] #fileSel button { font-size: 12px; }
+:root[data-theme="realm"] .session button, :root[data-theme="realm"] .pickup-restart { font-size: 11px; }
+:root[data-theme="realm"] #fileSel button.on { border-color: #dcbb62; }
+:root[data-theme="realm"] .add-card { padding: 8px; font-weight: 400; font-size: 15px; }
+:root[data-theme="realm"] .archive-col > .col-name { font: 700 15px var(--head); text-transform: uppercase; letter-spacing: .12em; }
+/* Aqua bubble: frosted header and columns. */
+:root[data-theme="aqua"] header, :root[data-theme="aqua"] .column { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+/* The tagline under the board, in the two themes that have one. */
+:root:is([data-theme="realm"], [data-theme="sticker"]) #tagline { display: block; }
+:root[data-theme="realm"] #tagline { font-style: italic; font-size: 15px; }
+:root[data-theme="sticker"] #tagline { font-family: var(--head); }
+</style>
+<script>
+// The board's looks: Clean and light (the default: the first one here), Classic (the original),
+// then the rest of the style block's [data-theme] blocks, each with the accents it offers, its
+// default first. The pick is kept in this browser and applied here, before the first paint.
+const BOARD_THEMES = {
+  light: { name: "Clean and light", accents: [["#2f4bd8", "Blue"], ["#6b3fd0", "Violet"], ["#0f6a73", "Teal"], ["#a3306e", "Berry"]] },
+  classic: { name: "Classic", accents: [["#0c66e4", "Blue"]] },
+  aqua: { name: "Aqua bubble", accents: [["#3fb6ff", "Sky"], ["#7fe38f", "Lime"], ["#ffd95a", "Lemon"], ["#ff9ecb", "Bubblegum"]] },
+  sticker: { name: "Sticker pop", accents: [["#ff5a8a", "Pink"], ["#3dd6c4", "Teal"], ["#ffc21a", "Yellow"], ["#9d7bff", "Violet"]] },
+  realm: { name: "Realm ledger", accents: [["#7a2a22", "Oxblood"], ["#1f4a5a", "Deep teal"], ["#4a2f5e", "Plum"], ["#5a4410", "Umber"]] },
+  soft: { name: "Soft and sunny", accents: [["#c3b8ff", "Lavender"], ["#ffb3a6", "Peach"], ["#a9e3b9", "Mint"], ["#ffdc7a", "Butter"]] },
+};
+function storedTheme() {
+  let theme = "";
+  try { theme = localStorage.getItem("board.theme") || ""; } catch {}
+  return Object.prototype.hasOwnProperty.call(BOARD_THEMES, theme) ? theme : Object.keys(BOARD_THEMES)[0];
+}
+function storedAccent(theme) {
+  let accent = "";
+  try { accent = localStorage.getItem("board.accent." + theme) || ""; } catch {}
+  const offered = BOARD_THEMES[theme].accents;
+  return offered.some(([c]) => c === accent) ? accent : offered[0][0];
+}
+// A theme's own accent needs no inline value; another of its accents overrides --accent.
+function applyTheme(theme, accent) {
+  const root = document.documentElement;
+  root.dataset.theme = theme;
+  if (accent === BOARD_THEMES[theme].accents[0][0]) root.style.removeProperty("--accent");
+  else root.style.setProperty("--accent", accent);
+}
+let themeNow = storedTheme(), accentNow = storedAccent(themeNow);
+applyTheme(themeNow, accentNow);
+</script>
+</head>
+<body>
+<header>
+  <span class="logo"><svg role="img" aria-label="kandalf" width="34" height="34" viewBox="0 0 32 32"><path class="l-hat" d="M9 22 C11 14 14 7 22 4 C19.5 9 21.5 15 23 22 Z" fill="#1c1c1a"/><ellipse class="l-hat" cx="16" cy="24" rx="13" ry="3.6" fill="#1c1c1a"/><path class="l-brim" d="M9.8 19.8 C13 21.4 19 21.4 22.4 19.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path class="l-star" d="M15.5 10 l1 2 2 1 -2 1 -1 2 -1 -2 -2 -1 2 -1 Z" fill="#dcbb62"/></svg></span>
+  <span id="storeName" title="The project this board belongs to (its store's board.json name)"></span>
+  <h1 id="docTitle">Plans board</h1>
+  <nav id="fileSel" role="tablist" aria-label="Boards"></nav>
+  <input id="search" type="text" placeholder="Filter tiles…">
+  <label id="colSortLabel" class="hint">Sort <select id="colSort" title="Order tiles in every column (display only; the file keeps its order)">
+    <option value="file">Board order</option><option value="prio">Priority, highest first</option>
+    <option value="est-asc">Estimate, shortest first</option><option value="est-desc">Estimate, longest first</option>
+    <option value="filed-new">First committed, newest first</option><option value="filed-old">First committed, oldest first</option></select></label>
+  <label id="listSortLabel" class="hint" hidden>Sort <select id="listSort" title="Order the archive (display only; the file keeps its order)">
+    <option value="file">Newest archived</option><option value="desc">Key, high to low</option><option value="asc">Key, low to high</option></select></label>
+  <span id="themePick"><label class="hint">Theme <select id="themeSel" title="The board's look, remembered in this browser"></select></label><span id="accentSel" role="group" aria-label="Accent colour"></span></span>
+  <span id="status">Loading…</span>
+</header>
+<div id="banner"></div>
+<main id="board"></main>
+<section id="docView" hidden></section>
+<footer id="tagline">A wizard for your backlog, straight from middle management.</footer>
+<script src="/marked.min.js"></script>
+
+<dialog id="cardDlg">
+  <form method="dialog" class="dlg" id="cardForm">
+    <div class="row">
+      <label><input type="checkbox" id="cardCheck"> Checked off</label>
+      <span class="spacer"></span>
+      <label>Priority <select id="cardPrio"><option value="">None</option>
+        <option value="P1">⇈ P1 Highest</option><option value="P2">↑ P2 High</option>
+        <option value="P3">= P3 Medium</option><option value="P4">↓ P4 Low</option></select></label>
+      <label id="cardModelLabel" title="The model the Claude session for this story runs on, when the tile is picked up from In flight">Model <select id="cardModel"></select></label>
+      <span id="cardRepos" class="repos-pick hidden" title="The repos the Claude session for this story works in (the Repos line on the tile)">Repos <span id="cardReposBoxes"></span></span>
+      <label>Estimate <input type="text" id="cardEst" size="6" placeholder="none" title="Wall-clock time: hours (4h), days of 24 h (1.5d) or weeks (1w); a range like 12-18h works"></label>
+      <label>Column <select id="cardCol"></select></label>
+    </div>
+    <div id="cardView" class="tile-view"></div>
+    <label for="cardText" class="edit-only">Tile (markdown — first line is the tile, indented lines below it are its body; indented <code>  - [ ] </code> lines are sub-tasks and make it a story; <code>Part of PLN-NN</code> makes it a sub-story of that tile)</label>
+    <textarea id="cardText" class="edit-only" spellcheck="true"></textarea>
+    <div class="row">
+      <button type="button" class="danger" id="cardDelete">Delete</button>
+      <button type="button" id="cardMode">Edit</button>
+      <button type="button" id="cardAddKid" title="Save this tile, then start a new tile that is part of it. This tile becomes its master and shows its progress.">+ Sub-story</button>
+      <span class="spacer"></span>
+      <span class="hint">⌘↵ to save</span>
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="save" class="primary" id="cardSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="askDlg" class="ask">
+  <form method="dialog" class="dlg">
+    <h3 id="askTitle"></h3>
+    <div id="askBody"></div>
+    <label id="askField" hidden><span id="askLabel"></span> <input id="askInput" autocomplete="off"></label>
+    <div class="row">
+      <span class="spacer"></span>
+      <button value="cancel" formnovalidate id="askCancel">Cancel</button>
+      <button value="ok" class="primary" id="askOk">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+let rawText = "", docEditing = false, lastBoard = "plans.md";
+let readonly = false, file = null, mtime = null, doc = null, dirty = false, saving = false, dragging = null, editing = null;
+let nextId = 1;
+const $ = s => document.querySelector(s);
+const boardEl = $("#board"), statusEl = $("#status"), bannerEl = $("#banner");
+
+// ---------- markdown <-> board ----------
+function parse(text) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const d = { preamble: [], sections: [] };
+  let sec = null, card = null;
+  for (const line of lines) {
+    const h = line.match(/^## (.*)$/);
+    if (h) { sec = { id: nextId++, name: h[1].trim(), intro: [], cards: [] }; d.sections.push(sec); card = null; continue; }
+    if (!sec) { d.preamble.push(line); continue; }
+    const c = line.match(/^[-*] (?:\[( |x|X)\] )?(.*)$/);
+    if (c) {
+      card = { id: nextId++, check: c[1] === undefined ? null : c[1] !== " ", text: c[2], body: [] };
+      sec.cards.push(card); continue;
+    }
+    if (card && (line.trim() === "" || /^\s/.test(line))) { card.body.push(line); continue; }
+    card = null;
+    sec.intro.push(line);
+  }
+  return d;
+}
+const trimBlank = a => { a = a.slice(); while (a.length && !a[0].trim()) a.shift(); while (a.length && !a[a.length - 1].trim()) a.pop(); return a; };
+function cardMarkdown(c) {
+  const box = c.check === null ? "" : c.check ? "[x] " : "[ ] ";
+  return ["- " + box + c.text, ...trimBlank(c.body)].join("\n");
+}
+function serialize(d) {
+  const parts = [];
+  const pre = trimBlank(d.preamble);
+  if (pre.length) parts.push(pre.join("\n"));
+  for (const s of d.sections) {
+    const chunk = ["## " + s.name];
+    const intro = trimBlank(s.intro);
+    if (intro.length) chunk.push(intro.join("\n"));
+    if (s.cards.length) chunk.push(s.cards.map(cardMarkdown).join("\n"));
+    parts.push(chunk.join("\n\n"));
+  }
+  return parts.join("\n\n") + "\n";
+}
+
+// ---------- rendering ----------
+// ---------- the columns a board has one of ----------
+// In flight and Done, under whatever name: In flight, in-flight, In progress (or a slip of it,
+// "In progrees"), Doing, WIP...; Done, Shipped, Completed, Merged... Never a name that says
+// "not". A board has one of each at most: renaming a column refuses a second, and kandalf
+// check (check.js) fails a board that has two.
+const IN_FLIGHT_RE = /^(?!.*\bnot\b).*\b(?:in[\s_-]*flight|progre\w*|doing|wip|working|under[\s_-]*way|ongoing|active)\b/i;  // pickup.py
+const DONE_COL_RE = /^(?!.*\bnot\b).*\b(?:done|shipped|completed?|finished|closed|merged|released|deployed|delivered|resolved)\b/i;  // serve.py
+const isDoneCol = name => DONE_COL_RE.test(name);
+function columnKind(name) {
+  if (IN_FLIGHT_RE.test(name)) return "In flight";
+  if (DONE_COL_RE.test(name)) return "Done";
+  return "";
+}
+// The column, other than sec, that already is the kind the name would make sec, or null.
+function kindTaken(sections, name, sec) {
+  const kind = columnKind(name);
+  return kind ? sections.find(s => s !== sec && columnKind(s.name) === kind) || null : null;
+}
+// Each kind the board has more than one of, with those columns' names: [["Done", ["Done", "Shipped"]]].
+function doubledKinds(sections) {
+  return ["In flight", "Done"].map(kind => [kind, sections.filter(s => columnKind(s.name) === kind).map(s => s.name)])
+    .filter(([, names]) => names.length > 1);
+}
+
+const esc = s => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+// A markdown link to another plan in this folder opens it on the board; a web link opens in a
+// new tab; any other link shows its text.
+function linkHTML(_, text, href) {
+  if (/^((active|archive)\/)?[\w.-]+\.md$/.test(href)) return `<a href="?file=${encodeURIComponent(href)}" target="_blank" rel="noopener" data-act="open" data-file="${href}">${text}</a>`;
+  if (/^https?:\/\//.test(href)) return `<a href="${href}" target="_blank" rel="noopener" data-act="open">${text}</a>`;
+  return `<span title="${href}">${text}</span>`;
+}
+const inline = s => keyLinks(esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, linkHTML));
+// A tile key in running text ("after PLN-41") is a link that jumps to that tile (jumpTo).
+// Keys inside a link, code or a tag's attributes stay as they are.
+const keyLinks = html => html.replace(KEY_LINK_RE, (m, skip) => skip ? m : `<a class="keyref" data-act="jump" data-key="${m}">${m}</a>`);
+// A tile line reads "PLN-07 P2 ~2-3d **Title.** description"; the key, the priority, the
+// estimate and the bold title are all optional.
+const PRIOS = { P1: "Highest", P2: "High", P3: "Medium", P4: "Low" };
+const PRIO_ICON = { P1: "⇈", P2: "↑", P3: "=", P4: "↓" };
+const EST = String.raw`\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw]`;  // 4h, 1.5d, 2-3d, 1w
+const EST_RE = new RegExp(`^${EST}$`);
+// The store's key prefix (PLN, FLY, …) and name; /api/files reports them (listFiles).
+let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main";  // STORE_MODEL: what a story's session runs on unless its tile says
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
+let HEAD_RE, KEY_NUM_RE, LINK_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
+// Linked tiles: a tile whose text says "Moves with PLN-74" (or "PLN-74, PLN-75 and PLN-76")
+// moves with those tiles. serve.py reads the same wording (link_re there).
+const linkRe = k => new RegExp(String.raw`\bmoves with\s+(${reEsc(k)}-\d+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)${reEsc(k)}-\d+)*)`, "gi");
+const keyAnyRe = k => new RegExp(String.raw`\b${reEsc(k)}-\d+\b`, "g");
+// Master tiles: a tile whose text says "Part of PLN-70" is a sub-story of PLN-70; only the
+// first one counts. serve.py reads the same wording (part_re there).
+const partRe = k => new RegExp(String.raw`\bpart of\s+(${reEsc(k)}-\d+)\b`, "gi");
+const keyLinkRe = k => new RegExp(String.raw`(<a\b[^>]*>.*?</a>|<code>.*?</code>|<[^>]+>)|(?<![\w-])${reEsc(k)}-\d+\b`, "g");
+function setKey(k) {
+  KEY = k; HEAD_RE = headRe(k); KEY_NUM_RE = new RegExp(`^${reEsc(k)}-(\\d+) `);
+  LINK_RE = linkRe(k); KEY_ANY_RE = keyAnyRe(k); KEY_LINK_RE = keyLinkRe(k); PART_RE = partRe(k);
+}
+setKey(KEY);
+function splitCard(text) {
+  const [, k, prio = "", est = "", rest] = text.match(HEAD_RE);
+  const key = k.trim(), m = rest.match(/^\*\*(.+?)\*\*[:.]?\s*(.*)$/);
+  return m ? { key, prio, est, title: m[1].replace(/[.:]$/, ""), desc: m[2] } : { key, prio, est, title: rest, desc: "" };
+}
+// Set (or with "" clear) a tile line's priority or estimate, keeping the rest of the line.
+const withHead = (text, ch) => text.replace(HEAD_RE, (_, k, p = "", e = "", rest) => {
+  p = ch.prio ?? p; e = ch.est ?? e;
+  return k + (p ? p + " " : "") + (e ? "~" + e + " " : "") + rest;
+});
+// An estimate in hours, for sorting: a range counts as its midpoint. Estimates are wall-clock
+// time, so a day is 24 h and a week 7 days.
+function estHours(est) {
+  const m = est.match(/^([\d.]+)(?:-([\d.]+))?([hdw])$/);
+  return m ? (+m[1] + +(m[2] || m[1])) / 2 * { h: 1, d: 24, w: 168 }[m[3]] : null;
+}
+const prioTag = p => p ? `<span class="prio prio-${p}" title="Priority: ${PRIOS[p]}">${PRIO_ICON[p]} ${p}</span>` : "";
+const estTag = e => e ? `<span class="est" title="Estimate: ${e} wall clock">⏱ ${e}</span>` : "";
+const LINK_ICON = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6.8 9.2a3 3 0 0 0 4.2 0l2.2-2.2A3 3 0 0 0 9 2.8L8 3.8"/><path d="M9.2 6.8a3 3 0 0 0-4.2 0L2.8 9A3 3 0 0 0 7 13.2l1-1"/></svg>`;
+const linkTag = keys => keys.length ? `<span class="linked" title="Moves with ${keys.join(", ")}" aria-label="Moves with ${keys.join(", ")}">${LINK_ICON}</span>` : "";
+
+// ---------- linked tiles ----------
+// The links come from two places: the tiles on this board as they read right now, and the
+// server's map (serverLinks), which also knows the tiles on the other board. A link counts
+// in both directions and chains, so only one tile of a group has to say it.
+let serverLinks = null;  // {"PLN-NN": [keys]}; null from a server too old to move linked tiles
+const cardKey = c => splitCard(c.text).key;
+function linkEdges() {
+  const edges = new Map();
+  const oneWay = (a, b) => { if (!edges.has(a)) edges.set(a, new Set()); edges.get(a).add(b); };
+  const add = (a, b) => { if (a !== b) { oneWay(a, b); oneWay(b, a); } };
+  // The server's word on a tile that is on this board is as old as the last save; the tile itself is current.
+  const here = new Set(doc.sections.flatMap(s => s.cards).map(cardKey).filter(Boolean));
+  for (const [k, others] of Object.entries(serverLinks || {})) for (const o of others) if (!here.has(k) || !here.has(o)) add(k, o);
+  for (const s of doc.sections) for (const c of s.cards) {
+    const k = cardKey(c); if (!k) continue;
+    for (const m of [c.text, ...c.body].join("\n").matchAll(LINK_RE)) for (const o of m[1].match(KEY_ANY_RE)) add(k, o);
+  }
+  return edges;
+}
+// The keys a tile moves with, sorted.
+function linkedTo(key, edges = linkEdges()) {
+  if (!key || !edges.has(key)) return [];
+  const seen = new Set([key]), todo = [key];
+  while (todo.length) for (const o of edges.get(todo.pop()) || []) if (!seen.has(o)) { seen.add(o); todo.push(o); }
+  seen.delete(key);
+  return [...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+function findCardByKey(key) {
+  for (const s of doc.sections) { const i = s.cards.findIndex(c => cardKey(c) === key); if (i >= 0) return { s, i, c: s.cards[i] }; }
+}
+const keyList = keys => keys.length > 1 ? keys.slice(0, -1).join(", ") + " and " + keys[keys.length - 1] : keys[0] || "";
+
+// ---------- master tiles, sub-stories and related tiles ----------
+// None of this moves a tile. The index holds every keyed tile: the ones on this board as
+// they read right now, and the server's word (serverTiles) on the other boards' tiles.
+let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions}} (serve.py: tile_index)
+const byKeyOrder = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+// What a tile's own text says: its master, and the other keys it names.
+function tileFacts(key, text) {
+  const parent = [...text.matchAll(PART_RE)].map(m => m[1]).find(k => k !== key) ?? null;
+  return { parent, mentions: [...new Set(text.match(KEY_ANY_RE) || [])].filter(k => k !== key).sort(byKeyOrder) };
+}
+function tileIndex() {
+  const index = new Map();
+  for (const s of doc.sections) for (const c of s.cards) {
+    const k = cardKey(c); if (!k || index.has(k)) continue;
+    index.set(k, { title: splitCard(c.text).title.replace(/\*\*|`/g, ""), file, column: s.name,
+      done: file === ARCHIVE_LOG || isDoneCol(s.name), ...tileFacts(k, [c.text, ...c.body].join("\n")) });
+  }
+  // The server's word on this board's own tiles is as old as the last save.
+  for (const [k, t] of Object.entries(serverTiles)) if (t.file !== file && !index.has(k)) index.set(k, { ...t });
+  // Two tiles that name each other as master (or a longer ring) would each fold into the
+  // other and vanish: the first of them stands as the master.
+  for (const [k, t] of index) {
+    let p = t.parent;
+    const seen = new Set();
+    while (p && p !== k && !seen.has(p)) { seen.add(p); p = index.get(p)?.parent; }
+    if (p === k) t.parent = null;
+  }
+  return index;
+}
+// A master's sub-stories: the tiles that say they are part of it, in key order.
+const kidsOf = (key, index) => !key ? [] : [...index].filter(([, t]) => t.parent === key).map(([k, t]) => ({ key: k, ...t })).sort((a, b) => byKeyOrder(a.key, b.key));
+// The tiles a tile mentions or is mentioned by, other than its master, its sub-stories and
+// the tiles it moves with (linked): those show in their own ways.
+function relatedTo(key, text, index, linked) {
+  const mine = tileFacts(key, text), out = new Set(mine.mentions);
+  for (const [k, t] of index) if (k !== key && t.mentions.includes(key)) out.add(k);
+  for (const k of [mine.parent, ...kidsOf(key, index).map(t => t.key), ...linked]) out.delete(k);
+  return [...out].sort(byKeyOrder);
+}
+// A master holds its sub-stories: the ones in its own column are folded into its tile.
+// The tiles folded into a master, in file order: its sub-stories among these cards (its
+// column's), and theirs. They move when it moves.
+// A master's own sub-stories among these cards.
+function foldedKids(card, cards, index) {
+  const key = cardKey(card);
+  return key ? cards.filter(c => c !== card && index.get(cardKey(c))?.parent === key) : [];
+}
+function foldedTree(card, cards, index) {
+  const found = new Set(), todo = [card];
+  while (todo.length) {
+    for (const kid of foldedKids(todo.shift(), cards, index)) {
+      if (!found.has(kid)) { found.add(kid); todo.push(kid); }
+    }
+  }
+  return cards.filter(c => found.has(c));
+}
+// What a column shows for these cards (the ones passing the filter, in display order):
+// {card} for a tile on its own, or {ghost: master key, cards} for the sub-stories whose
+// master isn't shown in this column (it is in another column, on another board, archived or
+// filtered out). A sub-story whose master is shown here is left out: it is inside its master.
+function columnLayout(shown, index) {
+  const here = new Set(shown.map(cardKey).filter(Boolean)), items = [], ghosts = new Map();
+  for (const c of shown) {
+    const master = index.get(cardKey(c))?.parent;
+    if (!master || !index.has(master)) { items.push({ card: c }); continue; }
+    if (here.has(master)) continue;
+    if (!ghosts.has(master)) { ghosts.set(master, { ghost: master, cards: [] }); items.push(ghosts.get(master)); }
+    ghosts.get(master).cards.push(c);
+  }
+  return items;
+}
+function whereLabel(t) {
+  if (t.file === file) return t.column;  // on this board: its column says most
+  if (t.file === ARCHIVE_LOG) return "Archived";
+  if (t.file === BACKLOG) return "Backlog";
+  return t.column;
+}
+
+const kidsDone = kids => kids.filter(t => t.done).length;
+const kidCount = kids => `${kidsDone(kids)}/${kids.length} sub-stor${kids.length > 1 ? "ies" : "y"}`;
+const masterTag = kids => kids.length ? `<span class="master-mark" title="Master story: ${kidCount(kids)} done">◆</span>` : "";
+const keyRef = (key, label = key, cls = "", title = "") => `<a class="keyref${cls}" data-act="jump" data-key="${key}"${title ? ` title="${esc(title)}"` : ""}>${label}</a>`;
+const parentTag = (parent, index) => parent ? keyRef(parent, "◇ " + parent, " parent", `Part of ${parent}` + (index.has(parent) ? ": " + index.get(parent).title : "")) : "";
+// A sub-story's row in its master: done, under way, or not started; its key and title; where it is.
+function kidState(t) {
+  if (t.done) return "✓";
+  const underWay = t.file !== BACKLOG && (IN_FLIGHT_RE.test(t.column) || /\bstarted\b/i.test(t.column) || isPickupColumn(t.column));
+  return underWay ? "◐" : "○";
+}
+const kidsHTML = kids => kids.map(t => `<li class="${t.done ? "done" : ""}"><span class="kstate">${kidState(t)}</span><span>${keyRef(t.key)} ${esc(t.title)}</span><em class="where">${esc(whereLabel(t))}</em></li>`).join("");
+
+// ---------- pickup ----------
+// A tile that lands in In flight is handed to a background Claude Code session by the
+// server (pickup.py), one at a time. The page shows where each one stands, and asks before
+// a second session is started beside a live one.
+const PICKUP_BOARD = "plans.md";
+let STORE_PICKUP_COLUMN = "";  // the store's "pickupColumn" (/api/files); "": any In flight column
+// Whether a column's tiles are picked up: the store's pickupColumn by name, in any case, else
+// any In flight column (pickup.is_pickup_column).
+const isPickupColumn = name => STORE_PICKUP_COLUMN ? name.trim().toLowerCase() === STORE_PICKUP_COLUMN.trim().toLowerCase() : IN_FLIGHT_RE.test(name);
+let pickups = { enabled: false, why: null, jobs: [] };  // /api/pickup: why pickup is off (null: on), and jobs of {key, title, with, state, behind, id, branch, error}
+// The line at the top of the plans board's In flight column saying why pickup is off, unless
+// this browser hid that very sentence (× on it; a new reason shows again).
+const pickupHintShows = (board, colName, why, hidden) => board === PICKUP_BOARD && isPickupColumn(colName) && !!why && why !== hidden;
+const HINT_KEY = () => "board.pickupHintHidden." + STORE_NAME;
+function hiddenHint() { try { return localStorage.getItem(HINT_KEY()) || ""; } catch { return ""; } }
+const pickupHintHTML = sec => pickupHintShows(file, sec.name, pickups.why, hiddenHint())
+  ? `<div class="pickup-why"><span>${inline(pickups.why)}</span><button type="button" data-act="hidewhy" title="Hide this note in this browser">×</button></div>` : "";
+const pickupFor = key => key ? pickups.jobs.findLast(j => j.key === key || (j.with || []).includes(key)) : undefined;
+const reposTag = repos => repos.length ? `<span class="repos" title="Its Claude session works in ${esc(repos.join(", "))}">⎇ ${esc(repos.join(", "))}</span>` : "";
+const modelTag = model => model ? `<span class="model" title="Its Claude session runs on ${esc(model)}, not the store's default (${esc(STORE_MODEL)})">◈ ${esc(model)}</span>` : "";
+const STOPPED = { idle: "idle", lost: "gone" };  // a session that isn't at work, as the tile says it
+const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? "Try starting Claude on this tile again" : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
+// The job behind a tile's session line, if the board started that session.
+function sessionJob(session, key) {
+  const job = session && pickupFor(key);
+  return job && job.id === session.id ? job : undefined;
+}
+// A tile's session as a block: which session, what it is doing, the command that opens it,
+// and Restart once it has stopped.
+const WAITING = { interrupted: "it was interrupted", question: "it asked a question" };  // pickup.py: WAITING
+// What a job's session is doing, in a word or two, for the block's label.
+function sessionState(job) {
+  if (!job) return "";
+  if (job.state === "started") return "working";
+  if (job.state === "idle" && job.waiting) return "waiting for you";
+  return STOPPED[job.state] || "";
+}
+function sessionHTML(session, key) {
+  if (!session) return "";
+  const job = sessionJob(session, key), state = sessionState(job), waiting = job?.state === "idle" && job.waiting;
+  const attach = `claude attach ${session.id}`;
+  const look = job?.state === "lost" ? " lost" : waiting ? " waiting" : "";
+  return `<div class="session${look}"><div class="session-top">
+      <span class="session-id">✦ Claude session <code>${session.id}</code></span>
+      ${state ? `<span class="session-state s-${waiting ? "waiting" : job.state}">${state}</span>` : ""}<span class="session-acts">
+      <button type="button" data-act="copy" data-copy="${attach}" title="Copy the command that opens this session: ${attach}">Copy attach</button>
+      ${key ? `<button type="button" data-act="status" data-key="${key}" title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
+      ${job && STOPPED[job.state] ? restartButton(job) : ""}</span></div>
+    ${waiting ? `<div class="session-ask">⏸ Waiting for your input: ${WAITING[job.waiting] || "it stopped"}. Open it (Copy attach) to answer.</div>` : ""}
+    ${session.rest ? `<div class="session-rest">${inline(session.rest)}</div>` : ""}</div>`;
+}
+// Where a pickup stands, for a tile whose text doesn't show it in a session block.
+function pickupTag(key, sec, session) {
+  const job = pickupFor(key);
+  if (!job || sessionJob(session, key)) return "";
+  if (job.state === "started") return `<span class="pickup on" title="${esc(`Claude is working on this. Open it with: claude attach ${job.id}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ Claude</span>`;
+  if (!isPickupColumn(sec.name)) return "";  // the rest only matters while the tile is in flight
+  if (STOPPED[job.state]) return `<span class="pickup bad" title="${esc(`Claude session ${job.id} is ${STOPPED[job.state]}`)}">✦ Claude ${STOPPED[job.state]}</span>` + restartButton(job);
+  if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: Claude starts this when ${job.behind || "the current"} session ends. Click to start it now.`)}">◌ queued</span>`;
+  if (job.state === "failed") return `<span class="pickup bad" title="${esc("Claude couldn't be started: " + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
+  return "";
+}
+
+// Columns can show their tiles by priority or by estimate. Display only: the file keeps
+// its order, and a tile without the value sorts last.
+let colSort = "file";
+try { colSort = localStorage.getItem("board.colSort") || "file"; } catch {}
+// When each tile was first committed, by key (Unix seconds, from the server's git history).
+// A tile not committed yet counts as just filed.
+let firstCommitted = {};
+let unmerged = {};  // {"PLN-NN": [branch]}: Done tiles whose feature branch isn't merged (serve.py)
+const filedAt = c => firstCommitted[splitCard(c.text).key] ?? Date.now() / 1000;
+const SORTS = {
+  prio: c => +(splitCard(c.text).prio.slice(1) || 9),
+  "est-asc": c => estHours(splitCard(c.text).est) ?? Infinity,
+  "est-desc": c => -(estHours(splitCard(c.text).est) ?? -Infinity),
+  "filed-new": c => -filedAt(c),
+  "filed-old": c => filedAt(c),
+};
+const fmtFiled = c => { const t = firstCommitted[splitCard(c.text).key]; return t ? "First committed " + new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Not committed yet"; };
+const sortCards = cards => colSort in SORTS ? cards.slice().sort((a, b) => SORTS[colSort](a) - SORTS[colSort](b)) : cards;
+// The next free key: one past the highest in this board and its archive log (the server reports that).
+let maxKey = 0;
+function nextKey() {
+  const inBoard = doc.sections.flatMap(s => s.cards).map(c => +(c.text.match(KEY_NUM_RE) || [0, 0])[1]);
+  return KEY + "-" + String(Math.max(maxKey, ...inBoard) + 1).padStart(2, "0");
+}
+// A tile becomes a story once its body has indented "  - [ ] " lines: those are its
+// sub-tasks. Lines indented deeper belong to the sub-task above; other lines are the
+// story's description. Sub-tasks are edited in place by body line index, so the
+// file round-trips unchanged.
+const SUB_RE = /^  [-*] \[( |x|X)\] (.*)$/;
+// The line the server writes into a tile when a Claude session starts on it (serve.py:
+// with_session): "Claude session `id`: `claude attach id`. Branch ..., worktree .... Started ...".
+// It shows as a block of its own, not as part of the description.
+const SESSION_RE = /^\s*Claude session `([0-9a-f]{6,})`: `claude attach [0-9a-f]+`\.?\s*(.*)$/;
+function sessionLine(line) {
+  const m = line.match(SESSION_RE);
+  return m ? { id: m[1], rest: m[2] } : null;
+}
+// A tile picks the model its Claude session runs on with a line of its own, "Model: sonnet";
+// without one it is the store's default (pickup.py: MODEL_RE, model_for). The dialog's Model
+// dropdown writes and removes that line.
+const MODEL_RE = /^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$/i;
+// A "Repos: api, web" line names the repos a story works in; without one it is the main repo
+// (pickup.py: REPOS_RE, repo_names). The dialog's Repos boxes write and remove that line.
+const REPOS_RE = /^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$/i;
+const reposIn = line => {
+  const m = line.match(REPOS_RE), names = [];
+  for (const n of m ? m[1].replace(/`/g, "").split(/[,\s]+/) : []) if (n && !names.some(k => k.toLowerCase() === n.toLowerCase())) names.push(n);
+  return m ? names : null;
+};
+// A master's "Sessions: 3" line: how many of its sub-stories have a session at work at once
+// (pickup.py: SESSIONS_RE). No line is the store's number. These take a tile's body lines.
+const SESSIONS_RE = /^\s+sessions:\s*`?(\d+)`?\.?\s*$/i;
+const sessionsOf = body => +(body.map(line => line.match(SESSIONS_RE)).find(Boolean)?.[1] || 0);
+function withSessions(body, n) {
+  const lines = body.filter(line => !SESSIONS_RE.test(line));
+  if (n === STORE_SESSIONS) return lines;
+  const sub = lines.findIndex(line => /^  [-*] /.test(line));  // before the first sub-task, as the Model line is
+  lines.splice(sub >= 0 ? sub : lines.length, 0, "  Sessions: " + n);
+  return lines;
+}
+const modelOf = md => md.split("\n").slice(1).map(line => line.match(MODEL_RE)).find(Boolean)?.[1] || "";
+function withModel(md, model) {
+  const lines = md.split("\n"), at = lines.findIndex((line, i) => i > 0 && MODEL_RE.test(line));
+  if (at >= 0 && model) lines[at] = "  Model: " + model;
+  else if (at >= 0) lines.splice(at, 1);
+  else if (model) {
+    // After the description (and the session line), before the first sub-task.
+    const sub = lines.findIndex((line, i) => i > 0 && /^  [-*] /.test(line));
+    lines.splice(sub >= 0 ? sub : lines.length, 0, "  Model: " + model);
+  }
+  return lines.join("\n");
+}
+const reposOf = md => md.split("\n").slice(1).map(reposIn).find(Boolean) || [];
+function withRepos(md, names) {
+  const want = new Set(names.map(n => n.toLowerCase())), main = STORE_REPOS.find(r => r.main)?.name.toLowerCase();
+  const known = n => STORE_REPOS.some(r => r.name.toLowerCase() === n.toLowerCase());
+  const lines = md.split("\n"), at = lines.findIndex((line, i) => i > 0 && REPOS_RE.test(line));
+  const have = reposOf(md), strays = have.filter(n => !known(n));  // names the store doesn't know stay on the line
+  const ticked = STORE_REPOS.map(r => r.name).filter(n => want.has(n.toLowerCase()));
+  const first = ticked.findIndex(n => have[0] && n.toLowerCase() === have[0].toLowerCase());  // a hand-chosen first repo stays first
+  if (first > 0) ticked.unshift(...ticked.splice(first, 1));
+  const all = [...ticked, ...strays];
+  const none = !strays.length && (!ticked.length || (ticked.length === 1 && ticked[0].toLowerCase() === main));
+  if (at >= 0 && none) lines.splice(at, 1);
+  else if (at >= 0) {
+    const same = have.length === all.length && all.every(n => have.some(h => h.toLowerCase() === n.toLowerCase()));
+    if (!same) lines[at] = "  Repos: " + all.join(", ");
+  } else if (!none) {
+    const sub = lines.findIndex((line, i) => i > 0 && /^  [-*] /.test(line));
+    lines.splice(sub >= 0 ? sub : lines.length, 0, "  Repos: " + all.join(", "));
+  }
+  return lines.join("\n");
+}
+// The line the Status button has the server write as a tile's last line (serve.py:
+// with_status): "**Status 2026-11-18 14:58:** session `id` at work. Branch ...". It shows in
+// bold right under the session block of the opened tile, not in the description.
+const STATUS_RE = /^\s*\*\*Status (\d{4}-\d\d-\d\d \d\d:\d\d):\*\*\s*(.*)$/;
+function statusLine(line) {
+  const m = line.match(STATUS_RE);
+  return m ? { at: m[1], text: m[2] } : null;
+}
+// A story that is finished and waiting for review says so on a line of its own that starts
+// "Ready for review" (its session writes "**Ready for review:** <gate results>"; pickup.py:
+// READY_RE). The tile is outlined until it moves to Done.
+const READY_RE = /^\s+(?:\*\*)?Ready for review\b[:.]?(?:\*\*)?[:.]?[ \t]*(.*)$/i;
+function readyLine(line) {
+  const m = line.match(READY_RE);
+  return m ? m[1].trim() : null;
+}
+// The session keeps one "Handoff:" line on its tile: what is done, what it is doing, what is
+// next (pickup.py: HANDOFF). The opened tile shows it in the status tile, as Claude's own word
+// beside what the board measured. A session that calls its note "Status:" means the same thing;
+// the board's own status line is dated ("Status 2026-11-18 14:58:"), so the two don't mix.
+const HANDOFF_RE = /^ {2}(?:\*\*)?(?:Handoff|Status):(?:\*\*)?\s*(.*)$/i;
+function handoffLine(line) {
+  const m = line.match(HANDOFF_RE);
+  return m ? m[1].trim() : null;
+}
+// The board's status line, cut into its facts for the status tile: [{label, text}]. The line
+// is pickup.py's status(): session, branch, uncommitted files, sub-tasks and ETA, screen.
+// A line that doesn't read that way comes back whole, with no label.
+function statusParts(text) {
+  const cuts = [
+    ["Session", /^session (`[^`]+` .*?)\.(?= |$)/],
+    ["Branch", /^(?:Branch (.*?(?:: ".*?"|yet))\.|Its (worktree isn't there)\.)(?= |$)/],
+    ["Files", /^(\d+ files? not committed|Nothing uncommitted)\.(?= |$)/],
+    ["Progress", /^((?!On its screen).+?)(?= On its screen \(rough\): "|$)/],
+    ["Screen", /^On its screen \(rough\): "(.*)"\.$/],
+  ];
+  const parts = [];
+  let rest = text.trim();
+  for (const [label, re] of cuts) {
+    const m = rest.match(re);
+    if (!m) continue;
+    parts.push({ label, text: (m[1] ?? m[2]).trim().replace(/\.$/, "") });
+    rest = rest.slice(m[0].length).trim();
+  }
+  return rest || !parts.some(p => p.label === "Session") ? [{ label: "", text: text.trim() }] : parts;
+}
+// The session's own note, cut at its "Now:" and "Next:" into what is done, what it is doing
+// and what comes next. A note without them comes back whole.
+function noteParts(text) {
+  const m = text.match(/^(.*?)(?:\s*\bNow:\s*(.*?))?(?:\s*\bNext:\s*(.*))?$/s);
+  if (!m || (m[2] === undefined && m[3] === undefined)) return [{ label: "", text }];
+  return [["Done", m[1]], ["Now", m[2]], ["Next", m[3]]].filter(([, t]) => t && t.trim()).map(([label, t]) => ({ label, text: t.trim() }));
+}
+function storyParts(card) {
+  const subs = [], desc = [];
+  let session = null, model = "", repos = [], status = null, ready = null;
+  card.body.forEach((line, i) => {
+    const m = line.match(SUB_RE);
+    if (m) subs.push({ i, done: m[1] !== " ", text: m[2], extra: 0 });
+    else if (statusLine(line)) status = statusLine(line);
+    else if (readyLine(line) !== null) ready = readyLine(line);
+    else if (subs.length && /^ {4,}\S/.test(line)) subs[subs.length - 1].extra++;
+    else if (sessionLine(line)) session = sessionLine(line);
+    else if (MODEL_RE.test(line)) model = line.match(MODEL_RE)[1];
+    else if (REPOS_RE.test(line)) repos = reposIn(line);
+    else if (line.trim()) desc.push(line.trim());
+  });
+  return { subs, desc, session, model, repos, status, ready };
+}
+let expanded = new Set();
+try { expanded = new Set(JSON.parse(localStorage.getItem("board.expanded") || "[]")); } catch {}
+function toggleExpanded(key) {
+  expanded.has(key) ? expanded.delete(key) : expanded.add(key);
+  try { localStorage.setItem("board.expanded", JSON.stringify([...expanded])); } catch {}
+}
+const matchesFilter = (c, q) => !q || (c.text + "\n" + c.body.join("\n")).toLowerCase().includes(q);
+
+// A plan doc (anything in active/ or archive/ but the archive log, or any file that isn't
+// board-shaped) shows as a formatted document, not as columns.
+function isDocFile() { return (file.includes("/") && file !== "archive/archived.md") || readonly; }
+function render() {
+  const asDoc = isDocFile();
+  boardEl.hidden = asDoc; $("#docView").hidden = !asDoc; $("#search").hidden = asDoc;
+  $("#colSortLabel").hidden = asDoc || file === ARCHIVE_LOG;  // the archive list has its own sort
+  $("#listSortLabel").hidden = asDoc || file !== ARCHIVE_LOG;
+  if (asDoc) return renderDoc();
+  lastBoard = file;
+  const q = $("#search").value.trim().toLowerCase();
+  const h1 = doc.preamble.find(l => /^# /.test(l));
+  $("#docTitle").textContent = $("#docTitle").title = h1 ? h1.slice(2) : file;
+  document.title = (h1 ? h1.slice(2) : file) + " · " + (STORE_NAME || "Board");
+  boardEl.innerHTML = "";
+  renderEdges = linkEdges(); renderIndex = tileIndex();
+  boardEl.classList.toggle("as-list", file === ARCHIVE_LOG);
+  if (file === ARCHIVE_LOG) return renderList(q);
+  for (const s of doc.sections) {
+    const col = document.createElement("section");
+    col.className = "column"; col.dataset.id = s.id;
+    const kind = columnKind(s.name) || s.name.trim();  // In progress, Shipped...: coloured as In flight, Done
+    col.dataset.kind = kind.toLowerCase().replace(/\s+/g, "-");
+    const shown = sortCards(s.cards.filter(c => matchesFilter(c, q)));
+    col.innerHTML = `
+      <div class="col-head" draggable="true" title="Drag to reorder columns">
+        <span class="col-name">${esc(s.name)}</span><span class="col-count">${q ? shown.length + "/" : ""}${s.cards.length}</span>
+        ${clearButtons(s)}<button data-act="rename" title="Rename column">✎</button><button data-act="delcol" title="Delete column">✕</button>
+      </div>
+      ${pickupHintHTML(s)}
+      ${trimBlank(s.intro).length ? `<details class="col-intro"><summary>Notes</summary><div>${inline(trimBlank(s.intro).join("\n"))}</div></details>` : ""}
+      <div class="cards"></div>
+      <button class="add-card">+ Create</button>`;
+    const list = col.querySelector(".cards");
+    for (const item of columnLayout(shown, renderIndex)) list.appendChild(item.ghost ? renderGhost(item, s) : renderCard(item.card, s));
+    boardEl.appendChild(col);
+  }
+  // The right-hand column holds drop targets, not sections of the file: a tile dropped on one
+  // leaves the board. Archive, then (on plans.md and backlog.md) the other board's columns.
+  if (!file.includes("/") && !readonly) {
+    const side = document.createElement("div");
+    side.className = "side-col";
+    side.innerHTML = `<section class="archive-col drop" data-drop="archive"><div class="col-name">Archive</div>
+      <p>Drop a tile here to archive it. It leaves the board, and the plan docs it links move from <code>active/</code> into <code>archive/</code>.</p>
+      <a href="?file=${encodeURIComponent("archive/archived.md")}" data-act="open" data-file="archive/archived.md">Open the archive</a></section>`;
+    if (moveTo.columns?.length) side.appendChild(moveColumn());
+    boardEl.appendChild(side);
+  }
+}
+
+let renderEdges = new Map(), renderIndex = new Map();  // linkEdges() and tileIndex() as of the last render
+// The greyed stub of a master that isn't in this column, holding its sub-stories that are.
+// A click on it jumps to the master itself.
+function renderGhost({ ghost, cards }, sec) {
+  const t = renderIndex.get(ghost), el = document.createElement("div");
+  el.className = "ghost"; el.dataset.id = cards[0].id;  // where a tile dropped above it goes
+  el.innerHTML = `<div class="ghost-head" data-act="jump" data-key="${ghost}" title="${esc(`${cards.length > 1 ? "These are sub-stories" : "This is a sub-story"} of ${ghost}, which is in ${whereLabel(t)}. Click to go to it.`)}">
+    <span>◆ ${ghost}</span><span>${esc(t.title)}</span><em>${esc(whereLabel(t))}</em></div>`;
+  for (const c of cards) el.appendChild(renderCard(c, sec));
+  return el;
+}
+// sec: the card's column, whose other cards may be folded into it.
+function renderCard(c, sec) {
+  const { key, prio, est, title, desc } = splitCard(c.text);
+  const { subs, desc: storyDesc, session, model, repos, ready } = storyParts(c);
+  const kids = kidsOf(key, renderIndex), isStory = subs.length > 0 || kids.length > 0;
+  // Its sub-stories in this column are folded in as tiles; the rest are listed with where they are.
+  const folded = foldedKids(c, sec.cards, renderIndex);
+  const away = kids.filter(t => !folded.some(k => cardKey(k) === t.key));
+  // Inside its master, or under its ghost, a sub-story needs no chip; one naming a tile that isn't there keeps it.
+  const master = renderIndex.get(key)?.parent, chip = master && !renderIndex.has(master) ? parentTag(master, renderIndex) : "";
+  const el = document.createElement("div");
+  const notMerged = key && unmerged[key];
+  const job = isPickupColumn(sec.name) ? pickupFor(key) : undefined;
+  const lost = job?.state === "lost", needsYou = job?.state === "idle" && job.waiting;  // its session is gone; or waits for input
+  el.className = "card" + (c.check ? " done" : "") + (isStory ? " story" : "") + (notMerged ? " unmerged" : "") + (lost ? " lost" : "") + (needsYou ? " needs-you" : "");
+  // Finished and waiting for you to review, merge and squash: outlined until it is in Done.
+  const forReview = ready !== null && !isDoneCol(sec.name);
+  if (forReview && !lost && !needsYou) el.className += " ready";
+  const readyHTML = forReview ? `<div class="ready-note"><span class="ready-label">✔ Ready for review</span>${ready ? inline(ready) : ""}</div>` : "";
+  el.draggable = true; el.dataset.id = c.id;
+  if (notMerged) el.title = `Done, but not merged into ${STORE_TRUNK} yet: ` + notMerged.join(", ");
+  const check = c.check !== null ? `<span class="check${c.check ? " on" : ""}" data-act="toggle">${c.check ? "✓" : ""}</span>` : "";
+  const keyTag = (key ? `<span class="key" title="${fmtFiled(c)}">${key}</span>` : "") + masterTag(kids) + chip + pickupTag(key, sec, session) + modelTag(model) + reposTag(repos) + linkTag(linkedTo(key, renderEdges)) + prioTag(prio) + estTag(est);
+  if (!isStory) {
+    // A bare title line with the description on the next line reads as one description.
+    const body = trimBlank(c.body).filter(line => !sessionLine(line) && !MODEL_RE.test(line) && !REPOS_RE.test(line) && !statusLine(line) && readyLine(line) === null);
+    let about = desc;
+    if (!about && body.length && /^ {2}\S/.test(body[0])) about = body.shift().trim();
+    el.innerHTML = `<div class="title">${inline(title)}</div>${about ? `<div class="desc">${inline(about)}</div>` : ""}
+      ${readyHTML}${sessionHTML(session, key)}
+      <div class="meta">${check}${keyTag}${body.length ? `<span>+${body.length} line${body.length > 1 ? "s" : ""}</span>` : ""}</div>`;
+    return el;
+  }
+  const done = subs.filter(x => x.done).length, open = expanded.has(c.text);
+  const about = [desc, ...storyDesc].filter(Boolean).join(" ");
+  // A master's bar is its sub-stories; its own sub-tasks are counted beside them.
+  const bar = kids.length ? { n: kidsDone(kids), of: kids.length, what: "sub-stories" } : { n: done, of: subs.length, what: "sub-tasks" };
+  // Every sub-task ticked isn't done while its session still runs the gates: the bar says so
+  // until the tile has its Ready for review line.
+  const gates = !kids.length && session && subs.length && done === subs.length && !readyHTML && isPickupColumn(sec.name);
+  const counts = [kids.length ? kidCount(kids) : "", subs.length ? `${done}/${subs.length} sub-tasks` : "", gates ? "tests and review to go" : forReview ? "ready for review" : ""].filter(Boolean).join(" · ");
+  el.innerHTML = `<div class="kind">${kids.length ? "Master story" : "Story"}</div><div class="title">${inline(title)}</div>
+    ${about ? `<div class="desc">${inline(about)}</div>` : ""}
+    ${readyHTML}${sessionHTML(session, key)}
+    <div class="progress${gates ? " gates" : forReview ? " review" : ""}" data-count="${bar.n}/${bar.of}" title="${bar.n} of ${bar.of} ${bar.what} done${gates ? ", but not ready for review yet: its tests and review are still to finish" : forReview ? ", and ready for review" : ""}"><span style="width:${(100 * bar.n / bar.of).toFixed(0)}%"></span></div>
+    <div class="meta">${check}${keyTag}<button class="expand" data-act="expand">${open ? "▾" : "▸"} ${counts}</button></div>
+    ${open && folded.length ? `<div class="fold"></div>` : ""}
+    ${open ? `<ul class="subs kids">${kidsHTML(away)}${subs.map(x => `<li class="${x.done ? "done" : ""}">
+        <span class="check${x.done ? " on" : ""}" data-act="sub" data-i="${x.i}">${x.done ? "✓" : ""}</span>
+        <span title="${esc(x.text.replace(/\*\*/g, ""))}">${inline(splitCard(x.text).title)}${x.extra ? ` <em>+${x.extra}</em>` : ""}</span></li>`).join("")}
+        <li><button class="add-sub" data-act="addsub">+ Sub-task</button></li></ul>` : ""}`;
+  if (open) for (const k of folded) el.querySelector(".fold").appendChild(renderCard(k, sec));
+  return el;
+}
+
+// ---------- the archive log, as a list ----------
+// Each column of archive/archived.md is a list of wide cards, clamped to 10 rows until
+// clicked. The sort is display-only: the file keeps its newest-archived-first order.
+const ARCHIVE_LOG = "archive/archived.md";
+let listSort = "file";
+try { listSort = localStorage.getItem("board.listSort") || "file"; } catch {}
+const listOpen = new Set();  // tiles expanded in the list, by key (or first line)
+const tileId = c => splitCard(c.text).key || c.text;
+const keyNum = c => { const m = c.text.match(KEY_NUM_RE); return m ? +m[1] : null; };
+const ARCHIVED_RE = /^\s+Archived (\d{4}-\d{2}-\d{2})\.\s*$/;
+function renderList(q) {
+  const dir = listSort === "asc" ? 1 : -1;
+  const byKey = (a, b) => { const x = keyNum(a), y = keyNum(b); return (x === null) - (y === null) || dir * (x - y); };  // unkeyed tiles last
+  const sorted = cards => listSort === "file" ? cards : cards.slice().sort(byKey);
+  const els = [];
+  doc.sections.forEach(s => {
+    const shown = sorted(s.cards.filter(c => matchesFilter(c, q)));
+    const group = document.createElement("section");
+    group.className = "list-group"; group.dataset.id = s.id;
+    group.innerHTML = `<div class="list-head"><span class="col-name">${esc(s.name)}</span><span class="col-count">${q ? shown.length + "/" : ""}${s.cards.length}</span>
+</div>`;
+    for (const c of shown) { const el = renderListCard(c); group.appendChild(el); els.push(el); }
+    boardEl.appendChild(group);
+  });
+  // Only a card taller than its 10 rows gets the fade and the click to expand. Measure every
+  // card while clamped, then open the ones that were open before this render.
+  const tall = els.map(el => { const b = el.querySelector(".lc-body"); return b.scrollHeight > b.clientHeight + 1; });
+  els.forEach((el, i) => {
+    el.classList.toggle("clamped", tall[i]);
+    if (tall[i] && listOpen.has(el.dataset.tile)) setListOpen(el, true);
+  });
+}
+function renderListCard(c) {
+  const body = trimBlank(c.body), last = body.length ? body[body.length - 1].match(ARCHIVED_RE) : null;
+  if (last) body.pop();  // the "Archived <date>." line goes in the footer, where a clamp can't hide it
+  const { subs } = storyParts(c), done = subs.filter(x => x.done).length;
+  const el = document.createElement("article");
+  el.className = "lcard" + (subs.length ? " story" : "");
+  el.dataset.id = c.id; el.dataset.tile = tileId(c);
+  el.innerHTML = `<div class="tile-view lc-body">${tileViewHTML([c.text, ...body].join("\n"))}</div>
+    <div class="lc-foot">${last ? `<span>Archived ${last[1]}</span>` : ""}${subs.length ? `<span>${done}/${subs.length} sub-tasks done</span>` : ""}
+      <span class="spacer"></span><span class="lc-more">Show more ▾</span><button data-act="edit">Edit</button></div>`;
+  return el;
+}
+function setListOpen(el, open) {
+  el.classList.toggle("open", open);
+  el.querySelector(".lc-more").textContent = open ? "Show less ▴" : "Show more ▾";
+  open ? listOpen.add(el.dataset.tile) : listOpen.delete(el.dataset.tile);
+}
+$("#listSort").value = listSort;
+$("#listSort").addEventListener("change", e => {
+  listSort = e.target.value;
+  try { localStorage.setItem("board.listSort", listSort); } catch {}
+  render();
+});
+
+// ---------- plan docs ----------
+const docEl = $("#docView");
+function renderDoc() {
+  const h1 = rawText.match(/^# (.+)$/m);
+  $("#docTitle").textContent = $("#docTitle").title = h1 ? h1[1] : file; document.title = (h1 ? h1[1] : file) + " · " + (STORE_NAME || "Plans");
+  const bar = (buttons) => `<div class="doc-bar"><button data-doc="back">← Board</button><code class="doc-path">${esc(file)}</code><span class="spacer"></span>${buttons}</div>`;
+  if (docEditing) {
+    docEl.innerHTML = bar(`<button data-doc="cancel">Cancel</button><button class="primary" data-doc="save">Save</button>`) +
+      `<textarea id="docText" spellcheck="true"></textarea>`;
+    $("#docText").value = rawText; $("#docText").focus();
+    return;
+  }
+  docEl.innerHTML = bar(`<button data-doc="edit">Edit</button>`) + `<article class="md-doc">${marked.parse(rawText)}</article>`;
+}
+async function saveDoc() {
+  const text = $("#docText").value;
+  const r = await fetch(`/api/board?file=${encodeURIComponent(file)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, mtime }) });
+  const j = await r.json();
+  if (r.status === 409) { flash(`${file} changed on disk; your edit wasn't saved. Reloaded it.`); docEditing = false; adopt(j); return render(); }
+  if (!r.ok) return flash("Save failed: " + (j.error || r.status));
+  mtime = j.mtime; rawText = text; docEditing = false; render(); setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+}
+docEl.addEventListener("click", e => {
+  const act = e.target.closest("[data-doc]")?.dataset.doc;
+  if (act === "back") {
+    const leave = !docEditing || $("#docText").value === rawText ? Promise.resolve(true)
+      : ask({ title: "Leave without saving?", body: "Your edit to this doc isn't saved.", ok: "Leave", danger: true });
+    return leave.then(yes => { if (yes) { docEditing = false; openFile(lastBoard); } });
+  }
+  if (act === "edit") { docEditing = true; return render(); }
+  if (act === "cancel") { docEditing = false; return render(); }
+  if (act === "save") return saveDoc();
+  const a = e.target.closest(".md-doc a[href]");
+  if (!a) return;
+  const href = a.getAttribute("href");
+  if (/^[a-z]+:/i.test(href)) { a.target = "_blank"; a.rel = "noopener"; return; }  // external: new tab
+  if (href.startsWith("#")) return;
+  e.preventDefault();
+  // A relative link resolves against this doc's folder; only files in the plans folder can open here.
+  const path = decodeURIComponent(new URL(href, "http://plans/" + file).pathname.slice(1));
+  if (/^((active|archive)\/)?[\w.-]+\.md$/.test(path) && !href.startsWith("../../")) window.open("?file=" + encodeURIComponent(path), "_blank", "noopener");
+  else flash(`${href} is outside the plans folder; open it in your editor.`);
+});
+
+// ---------- lookup / mutate ----------
+const findSec = id => doc.sections.find(s => s.id == id);
+function findCard(id) {
+  for (const s of doc.sections) { const i = s.cards.findIndex(c => c.id == id); if (i >= 0) return { s, i, c: s.cards[i] }; }
+}
+function moveCard(cardId, toSec, index) {
+  const f = findCard(cardId); if (!f) return;
+  f.s.cards.splice(f.i, 1);
+  if (f.s === toSec && index > f.i) index--;
+  toSec.cards.splice(index, 0, f.c);
+  if (f.s !== toSec && f.c.check !== null) {
+    if (isDoneCol(toSec.name)) f.c.check = true; else if (isDoneCol(f.s.name)) f.c.check = false;
+  }
+}
+// A tile that changed column takes its linked tiles with it, to sit straight after it.
+// Not on the backlog board, whose columns are kinds of work rather than statuses; not into
+// Done or out of it (finishing one story doesn't finish the other); and never to Archive.
+// Returns {moved: keys that followed, away: linked keys that aren't on this board}.
+const BACKLOG = "backlog.md", PULLS_INTO = "plans.md";  // serve.py: MOVES, PULLS
+function follow(card, toSec) {
+  const out = { moved: [], away: [] };
+  if (file === BACKLOG || isDoneCol(toSec.name)) return out;
+  for (const k of linkedTo(cardKey(card))) {
+    const f = findCardByKey(k);
+    if (!f) { out.away.push(k); continue; }
+    if (f.s === toSec || isDoneCol(f.s.name)) continue;
+    moveCard(f.c.id, toSec, toSec.cards.indexOf(card) + 1 + out.moved.length);
+    out.moved.push(k);
+  }
+  return out;
+}
+// A master that changed column takes the sub-stories folded into it (the ones that were in
+// its column, and theirs), to sit straight after it. On any board, and into Done too: they
+// are inside it. A sub-story in another column stays where it was put.
+function bringKids(card, fromSec, toSec) {
+  const kids = foldedTree(card, fromSec.cards, tileIndex());
+  kids.forEach((k, n) => moveCard(k.id, toSec, toSec.cards.indexOf(card) + 1 + n));
+  return kids.map(cardKey);
+}
+// After a tile changed column: bring its linked tiles and its sub-stories, save, and say what came along. A
+// linked tile still on the backlog is fetched by the server (/api/pull), which saves this
+// board in the same step.
+async function movedColumn(card, toSec, fromSec, fromIndex) {
+  // A master pulled into In flight with several sub-stories: each of them gets a Claude
+  // session of its own, so ask how many may be at work at once. Cancel puts the tile back.
+  const family = file === PICKUP_BOARD && pickups.enabled && isPickupColumn(toSec.name) && !isPickupColumn(fromSec.name)
+    ? foldedTree(card, fromSec.cards, tileIndex()) : [];
+  if (family.length > 1) {
+    const n = await ask({ title: `Start ${cardKey(card)} with its ${family.length} sub-stories?`, ok: "Start",
+      body: [`<b>${esc(cardKey(card))}</b> ${esc(splitCard(card.text).title.replace(/\*\*|`/g, ""))}`,
+        "Each sub-story gets its own Claude session, in its own worktree and branch."],
+      note: `The rest queue and start as sessions finish. ${esc(cardKey(card))} itself gets no session.`,
+      input: { label: "Sessions at work at once", type: "number", min: 1, max: 9, value: sessionsOf(card.body) || STORE_SESSIONS } });
+    if (n === null) { moveCard(card.id, fromSec, fromIndex ?? fromSec.cards.length); return render(); }
+    card.body = withSessions(card.body, Math.max(1, parseInt(n, 10) || STORE_SESSIONS));
+  }
+  const key = cardKey(card), { moved: linked, away } = follow(card, toSec);
+  const moved = [...bringKids(card, fromSec, toSec), ...linked];
+  // Nothing stops a master being finished ahead of its sub-stories; the board just says so.
+  const open = isDoneCol(toSec.name) ? kidsOf(key, tileIndex()).filter(t => !t.done).map(t => t.key) : [];
+  const say = keys => {
+    const notes = [];
+    if (keys.length) notes.push(`${keyList(keys)} moved with ${key}.`);
+    if (open.length) notes.push(`${key} is done, but ${open.length} of its sub-stories ${open.length > 1 ? "are" : "is"} still open: ${keyList(open)}.`);
+    if (notes.length) flash(notes.join(" "));
+  };
+  if (!away.length || file !== PULLS_INTO || !serverLinks || readonly || saving) { changed(); return say(moved); }
+  clearTimeout(saveTimer);
+  dirty = true; render();
+  saving = true; setStatus("Moving…");
+  let again = false;
+  try {
+    const r = await fetch(`/api/pull?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mtime, text: serialize(doc), after: key, keys: away }) });
+    const j = await r.json();
+    if (r.ok) {
+      adopt(j); render();
+      setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+      say([...moved, ...j.pulled]);
+    } else if (r.status === 409 && j.text) {
+      adopt(j); render(); setStatus("Reloaded", true);
+      flash(`${file} changed on disk (another session or editor). Reloaded it; redo your last move.`);
+    } else { again = true; say(moved); }  // the board itself still needs saving
+  } catch (err) { again = true; }
+  saving = false;
+  if (again) scheduleSave();
+}
+function changed() {
+  if (readonly) { flash(`${file} isn't a plain board (it has prose, ### headings or code blocks), so it's view-only here. Edit it in your editor.`); return reloadQuiet(); }
+  dirty = true; render(); scheduleSave();
+}
+async function reloadQuiet() { adopt(await (await fetch(`/api/board?file=${encodeURIComponent(file)}`)).json()); render(); }
+// Take a {text, mtime} from the server as the board. A file that doesn't survive
+// parse → serialize unchanged would be rewritten by a save, so it is view-only.
+function adopt(j) {
+  mtime = j.mtime; rawText = j.text; doc = parse(j.text); dirty = false;
+  if (j.maxKey !== undefined) maxKey = j.maxKey;
+  if (j.firstCommitted) firstCommitted = j.firstCommitted;
+  unmerged = j.unmerged || {};
+  if (j.moveTo) moveTo = j.moveTo;
+  serverLinks = j.linked ?? null;
+  serverTiles = j.tiles || {};
+  // A missing final newline (an editor or another tool saved it that way) isn't worth losing the board over.
+  readonly = serialize(doc) !== j.text.replace(/\r\n/g, "\n").replace(/\n*$/, "\n");
+}
+
+// ---------- drag and drop ----------
+// A column's own children: a tile, or a ghost holding sub-stories. (Folded tiles are inside those.)
+const TOP_TILE = ".card:not(.dragging), .ghost";
+let ph = null;
+function placeholder(cls) { if (!ph || ph.className !== cls) { ph?.remove(); ph = document.createElement("div"); ph.className = cls; } return ph; }
+boardEl.addEventListener("dragstart", e => {
+  const card = e.target.closest?.(".card");
+  const head = e.target.closest?.(".col-head");
+  if (card) { dragging = { kind: "card", id: card.dataset.id, el: card }; }
+  else if (head) { const col = head.parentElement; dragging = { kind: "col", id: col.dataset.id, el: col }; }
+  else return;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", dragging.id);
+  requestAnimationFrame(() => dragging?.el.classList.add("dragging"));
+});
+boardEl.addEventListener("dragover", e => {
+  if (!dragging) return;
+  e.preventDefault();
+  const target = dragging.kind === "card" ? e.target.closest(".drop") : null;
+  for (const el of boardEl.querySelectorAll(".drop")) el.classList.toggle("over", el === target);
+  if (target) { ph?.remove(); return; }
+  if (dragging.kind === "card") {
+    const list = e.target.closest(".column")?.querySelector(".cards");
+    if (!list) return;
+    const after = [...list.children].filter(n => n.matches(TOP_TILE)).find(c => {
+      const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2;
+    });
+    const p = placeholder("placeholder");
+    p.style.height = dragging.el.offsetHeight + "px";
+    after ? list.insertBefore(p, after) : list.appendChild(p);
+  } else {
+    const after = [...boardEl.querySelectorAll(".column:not(.dragging)")].find(c => {
+      const r = c.getBoundingClientRect(); return e.clientX < r.left + r.width / 2;
+    });
+    const p = placeholder("col-placeholder");
+    after ? boardEl.insertBefore(p, after) : boardEl.insertBefore(p, boardEl.querySelector(".side-col"));
+  }
+});
+boardEl.addEventListener("drop", e => {
+  const dropEl = dragging?.kind === "card" && e.target.closest(".drop");
+  if (dropEl) {
+    e.preventDefault(); const id = dragging.id; endDrag();
+    return dropEl.dataset.drop === "move" ? sendCard(id, dropEl.dataset.col) : archiveCard(id);
+  }
+  if (!dragging || !ph?.parentElement) return;
+  e.preventDefault();
+  if (dragging.kind === "card") {
+    const col = ph.closest(".column"), sec = findSec(col.dataset.id);
+    // Index among the full card list (the view may be filtered): place before the next visible card.
+    const nextEl = [...ph.parentElement.children].slice([...ph.parentElement.children].indexOf(ph) + 1).find(n => n.matches(TOP_TILE));
+    let index = nextEl ? sec.cards.findIndex(c => c.id == nextEl.dataset.id) : sec.cards.length;
+    if (colSort !== "file" && findCard(dragging.id).s === sec) flash("Columns are sorted, so a move within a column only shows in Board order.");
+    const from = findCard(dragging.id);
+    moveCard(dragging.id, sec, index);
+    if (from.s !== sec) { endDrag(); return movedColumn(from.c, sec, from.s, from.i); }
+  } else {
+    const order = [...boardEl.children].filter(n => n === ph || (n.classList.contains("column") && !n.classList.contains("dragging")));
+    const i = order.indexOf(ph), moving = findSec(dragging.id);
+    doc.sections = doc.sections.filter(s => s !== moving);
+    const before = order[i + 1] ? findSec(order[i + 1].dataset.id) : null;
+    doc.sections.splice(before ? doc.sections.indexOf(before) : doc.sections.length, 0, moving);
+  }
+  endDrag(); changed();
+});
+function endDrag() { ph?.remove(); ph = null; boardEl.querySelectorAll(".drop").forEach(el => el.classList.remove("over")); dragging?.el.classList.remove("dragging"); dragging = null; }
+
+// Tiles move between plans.md and backlog.md: the server says where this board's tiles can go
+// ({file, columns}). From backlog.md that is Promote, to To do; from plans.md, any backlog column.
+let moveTo = {};
+function moveColumn() {
+  const promote = moveTo.file === "plans.md";
+  const el = document.createElement("section");
+  el.className = "archive-col";
+  el.innerHTML = `<div class="col-name">${promote ? "Promote" : "Back to backlog"}</div>
+    <p>${promote ? "Drop a tile here to schedule it. It moves to the top of To do on the plans board."
+                 : "Drop a tile on a column to unschedule it. It moves to the top of that column on the backlog board."}</p>
+    ${moveTo.columns.map(c => `<div class="drop move-zone" data-drop="move" data-col="${esc(c)}" data-kind="${esc(c.toLowerCase().replace(/\s+/g, "-"))}">${esc(c)}</div>`).join("")}
+    <a href="?file=${encodeURIComponent(moveTo.file)}" data-act="open" data-file="${esc(moveTo.file)}">Open the ${promote ? "plans" : "backlog"} board</a>`;
+  return el;
+}
+// Send a tile to the top of a column on the other board (keyed if it has no key).
+async function sendCard(id, column) {
+  const f = findCard(id); if (!f) return;
+  if (saving) return flash("Still saving; try again in a moment.");
+  const title = splitCard(f.c.text).title.replace(/\*\*|`/g, "");
+  // The sub-stories folded into it go with it, and its linked tiles on this board, except finished ones.
+  const kids = foldedTree(f.c, f.s.cards, tileIndex());
+  const partners = serverLinks ? linkedTo(cardKey(f.c)).map(findCardByKey).filter(p => p && !isDoneCol(p.s.name)).map(p => p.c) : [];
+  const along = [...kids, ...partners.filter(c => !kids.includes(c))], withKeys = along.map(cardKey);
+  const where = boardLabel(moveTo.file);
+  if (!await ask({ title: `Move to ${where}?`, ok: "Move",
+    body: [`<b>${esc(cardKey(f.c) || "This tile")}</b> ${esc(title)}`, `It goes to the top of <b>${esc(column)}</b> on the ${esc(where.toLowerCase())} board.`],
+    note: along.length ? `${esc(keyList(withKeys))} will move with it.` : "" })) return;
+  clearTimeout(saveTimer);
+  const going = [f.c, ...along], tile = cardMarkdown(f.c), tiles = going.map(cardMarkdown);
+  for (const s of doc.sections) s.cards = s.cards.filter(c => !going.includes(c));
+  saving = true; setStatus("Moving…");
+  try {
+    const r = await fetch(`/api/move?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mtime, text: serialize(doc), tile, tiles, column }) });
+    const j = await r.json();
+    if (r.ok) {
+      adopt(j); render();
+      setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+      flash(`Moved ${j.key} "${title}" to ${column} on ${moveTo.file}` + (withKeys.length ? `, and ${keyList(withKeys)} with it.` : "."));
+    } else if (j.text) {
+      adopt(j); render(); setStatus("Reloaded", true);
+      flash(`${file} changed on disk, so nothing was moved. Reloaded it; try again.`);
+    } else {
+      flash("Move failed: " + (j.error || r.status)); await reloadQuiet();
+    }
+  } catch (err) { flash("Move failed: server down?"); }
+  saving = false;
+}
+
+// ---------- clear a Done column ----------
+// Clear archives every tile in a Done column at once (but a tile whose branch isn't merged).
+// Undo is for a slip: it takes back the last clear made on this page, and is gone on reload.
+let lastClear = null;  // what /api/clear replied, to hand to /api/unclear
+function clearButtons(sec) {
+  if (file.includes("/") || readonly || !isDoneCol(sec.name)) return "";
+  const undo = lastClear && lastClear.board === file && lastClear.column === sec.name;
+  return (undo ? `<button class="col-clear" data-act="unclear" title="Bring back the ${lastClear.count} tiles the last Clear archived">Undo</button>` : "")
+    + (sec.cards.length ? `<button class="col-clear" data-act="clearcol" title="Archive every tile in this column">Clear</button>` : "");
+}
+// POST the board as it reads now to one of the server's board actions. Returns the reply once
+// it is adopted and shown, or null (said why) when nothing was done.
+async function boardAction(path, body, doing) {
+  if (saving) { flash("Still saving; try again in a moment."); return null; }
+  clearTimeout(saveTimer);
+  saving = true; setStatus(doing);
+  let done = null;
+  try {
+    const r = await fetch(`${path}?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mtime, text: serialize(doc), ...body }) });
+    const j = await r.json();
+    if (r.ok) { adopt(j); done = j; setStatus("Saved ✓ " + new Date().toLocaleTimeString()); }
+    else if (j.text) { adopt(j); setStatus("Reloaded", true); flash(`${file} changed on disk, so nothing was done. Reloaded it; try again.`); }
+    else { flash("That didn't work: " + (j.error || r.status)); setStatus("Not done", true); }
+  } catch (err) { flash("That didn't work: server down?"); }
+  saving = false;
+  return done;
+}
+// What the server did with the archived stories' worktrees and feature branches, for the banner.
+const tidiedNote = j => (j.tidied || []).map(t => " " + t[0].toUpperCase() + t.slice(1) + ".").join("");
+async function clearColumn(sec) {
+  const kept = sec.cards.map(cardKey).filter(k => unmerged[k]), n = sec.cards.length - kept.length;
+  const staying = kept.length ? `${keyList(kept)} ${kept.length > 1 ? "stay" : "stays"}: not merged yet.` : "";
+  if (!n) return flash(`Nothing to clear in ${sec.name}. ${staying}`);
+  const tiles = `${n} tile${n > 1 ? "s" : ""}`;
+  if (!await ask({ title: `Archive the ${tiles} in ${sec.name}?`, ok: "Archive", note: esc(staying),
+    body: "They leave the board for the archive, with the plan docs they link. A story that has landed also loses its Claude session, worktree and feature branch." })) return;
+  const j = await boardAction("/api/clear", { column: sec.name }, "Clearing…");
+  if (!j) return;
+  lastClear = j.cleared; render();
+  flash(`Cleared ${tiles} from ${sec.name}. Undo, in the column's header, brings them back until you reload.` + tidiedNote(j));
+}
+async function undoClear() {
+  const was = lastClear;
+  const j = await boardAction("/api/unclear", { cleared: was }, "Bringing back…");
+  if (!j) return;
+  lastClear = null; render();
+  flash(`Brought ${was.count} tile${was.count > 1 ? "s" : ""} back to ${was.column}.`);
+}
+
+// Archive a tile: the server moves the plan docs it links into archive/, rewrites links to
+// them, writes the board without the tile, and files the tile in archive/archived.md.
+async function archiveCard(id) {
+  const f = findCard(id); if (!f) return;
+  if (saving) return flash("Still saving; try again in a moment.");
+  const links = [f.c.text, ...f.c.body].join("\n").match(/\]\(((?:active\/)?[\w.-]+\.md)\)/g) || [];
+  const docs = [...new Set(links.map(m => m.slice(2, -1)))].filter(n => n !== file);
+  const title = splitCard(f.c.text).title.replace(/\*\*|`/g, "");
+  const moves = docs.length ? `\n\nMoves ${docs.join(", ")} into archive/ and updates links to ${docs.length > 1 ? "them" : "it"}.` : "";
+  if (!await ask({ title: "Archive this tile?", ok: "Archive", body: `<b>${esc(cardKey(f.c) || "")}</b> ${esc(title)}`, note: esc(moves.trim()) })) return;
+  clearTimeout(saveTimer);
+  const tile = cardMarkdown(f.c);
+  f.s.cards.splice(f.i, 1);
+  saving = true; setStatus("Archiving…");
+  try {
+    const r = await fetch(`/api/archive?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mtime, text: serialize(doc), tile, docs }) });
+    const j = await r.json();
+    if (r.ok) {
+      adopt(j); render();
+      setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+      flash(`Archived "${title}"` + (j.moved.length ? `, and moved ${j.moved.join(", ")} into archive/.` : ".") + tidiedNote(j));
+    } else if (j.text) {
+      adopt(j); render(); setStatus("Reloaded", true);
+      flash(`${file} changed on disk, so nothing was archived. Reloaded it; try again.`);
+    } else {
+      flash("Archive failed: " + (j.error || r.status)); await reloadQuiet();
+    }
+  } catch (err) { flash("Archive failed: server down?"); }
+  saving = false;
+}
+boardEl.addEventListener("dragend", endDrag);
+
+// Jump to a tile by key: on this board, or on the board the index says it is on. Used by
+// every key link (a mention, a master's sub-story row, a sub-story's ◇ chip).
+async function jumpTo(key) {
+  if (dlg.open) {
+    if ($("#cardText").value !== editing?.original && !await ask({ title: `Go to ${key}?`, body: "Your changes to this tile aren't saved.", ok: "Go without saving", danger: true })) return;
+    dlg.close("cancel");
+  }
+  let f = findCardByKey(key);
+  if (!f) {
+    const t = tileIndex().get(key);
+    if (!t || t.file === file) return flash(`There is no ${key} tile on the boards.`);
+    await openFile(t.file);
+    f = file === t.file && findCardByKey(key);
+    if (!f) return flash(`${key} isn't on ${boardLabel(t.file)} any more.`);
+  }
+  if (!matchesFilter(f.c, $("#search").value.trim().toLowerCase())) { $("#search").value = ""; render(); }
+  const find = () => boardEl.querySelector(`.card[data-id="${f.c.id}"], .lcard[data-id="${f.c.id}"]`);
+  if (!find()) {  // folded into a collapsed master: open the masters above it
+    const index = tileIndex();
+    for (let master = index.get(key)?.parent; master; master = index.get(master)?.parent) {
+      const up = findCardByKey(master);
+      if (up && !expanded.has(up.c.text)) toggleExpanded(up.c.text);
+    }
+    render();
+  }
+  const el = find();
+  if (!el) return;
+  el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  el.classList.remove("jumped"); void el.offsetWidth; el.classList.add("jumped");  // restart the flash on a second jump
+  setTimeout(() => el.classList.remove("jumped"), 1900);
+}
+
+// ---------- clicks ----------
+boardEl.addEventListener("click", e => {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  const col = e.target.closest(".column"), sec = col && findSec(col.dataset.id);
+  const cardEl = e.target.closest(".card");
+  if (act === "open") { e.stopPropagation(); return; }  // a plan link opens in a new tab (target=_blank); don't open the tile
+  if (act === "jump") { e.stopPropagation(); return jumpTo(e.target.closest("[data-key]").dataset.key); }
+  if (act === "copy") { e.stopPropagation(); return copyText(e.target.closest("[data-copy]").dataset.copy); }
+  if (act === "restart") { e.stopPropagation(); return restartPickup(e.target.closest("[data-key]").dataset.key); }
+  if (act === "status") { e.stopPropagation(); return refreshStatus(e.target.closest("[data-key]").dataset.key); }
+  if (act === "hidewhy") { e.stopPropagation(); try { localStorage.setItem(HINT_KEY(), pickups.why); } catch {} return render(); }
+  if (e.target.closest(".session") && String(getSelection())) return;  // selecting the session's text isn't a click on the tile
+  if (act === "pickup") { e.stopPropagation(); return offerPickup(pickupFor(e.target.closest("[data-key]").dataset.key)); }
+  const lcard = e.target.closest(".lcard");
+  if (lcard) {  // archive list: Edit opens the tile dialog; a click elsewhere expands or collapses it
+    if (act === "edit") return openCard(findCard(lcard.dataset.id).c);
+    if (lcard.classList.contains("clamped") && !String(getSelection())) setListOpen(lcard, !lcard.classList.contains("open"));
+    return;
+  }
+  if (act === "expand") { toggleExpanded(findCard(cardEl.dataset.id).c.text); e.stopPropagation(); return render(); }
+  if (act === "sub") {
+    const c = findCard(cardEl.dataset.id).c, i = +e.target.closest("[data-i]").dataset.i;
+    c.body[i] = c.body[i].replace(/\[( |x|X)\]/, m => m === "[ ]" ? "[x]" : "[ ]");
+    e.stopPropagation(); return changed();
+  }
+  if (act === "addsub") {
+    const id = cardEl.dataset.id;
+    return ask({ title: "New sub-task", ok: "Add", input: { label: "Sub-task" } }).then(t => {
+      const c = findCard(id)?.c;
+      if (!c || !t || !t.trim()) return;
+      while (c.body.length && !c.body[c.body.length - 1].trim()) c.body.pop();
+      c.body.push("  - [ ] " + t.trim()); changed();
+    });
+  }
+  if (act === "toggle") { const f = findCard(cardEl.dataset.id); f.c.check = !f.c.check; e.stopPropagation(); return changed(); }
+  if (act === "clearcol") return clearColumn(sec);
+  if (act === "unclear") return undoClear();
+  if (act === "rename") {
+    return ask({ title: "Rename column", ok: "Rename", input: { label: "Name", value: sec.name } }).then(n => {
+      if (!n || !n.trim()) return;
+      const taken = kindTaken(doc.sections, n.trim(), sec);
+      if (taken) return flash(`Not renamed: "${taken.name}" is this board's ${columnKind(n)} column, and a board has only one.`);
+      sec.name = n.trim(); changed();
+    });
+  }
+  if (act === "delcol") {
+    const sure = !sec.cards.length ? Promise.resolve(true)
+      : ask({ title: `Delete ${sec.name}?`, body: `The column and its ${sec.cards.length} tile${sec.cards.length > 1 ? "s" : ""} are deleted.`, ok: "Delete", danger: true });
+    return sure.then(yes => { if (yes) { doc.sections = doc.sections.filter(s => s !== sec); changed(); } });
+  }
+  if (e.target.closest(".add-card")) return openCard(null, sec);
+  if (cardEl) return openCard(findCard(cardEl.dataset.id).c);
+});
+
+// ---------- asking ----------
+// The board's own dialog for a yes or no, or for one value: resolves true (or the value typed)
+// on OK, false (or null) on Cancel or Escape. body: paragraphs of HTML; a "note" is a muted last
+// one. input: {label, value, type, min, max} asks for a value. danger: the OK button is red.
+const askDlg = $("#askDlg");
+function ask({ title, body = [], note = "", ok = "OK", cancel = "Cancel", danger = false, input = null }) {
+  $("#askTitle").textContent = title;
+  $("#askBody").innerHTML = [].concat(body).filter(Boolean).map(p => `<p>${p}</p>`).join("") + (note ? `<p class="ask-note">${note}</p>` : "");
+  $("#askOk").textContent = ok; $("#askCancel").textContent = cancel;
+  $("#askOk").classList.toggle("danger", danger);
+  const field = $("#askInput");
+  $("#askField").hidden = !input;
+  if (input) {
+    $("#askLabel").textContent = input.label || "";
+    field.type = input.type || "text"; field.value = input.value ?? "";
+    for (const k of ["min", "max"]) input[k] === undefined ? field.removeAttribute(k) : field.setAttribute(k, input[k]);
+    field.required = true;
+  } else field.required = false;
+  askDlg.returnValue = "cancel";
+  askDlg.showModal();
+  if (input) { field.focus(); field.select(); } else $("#askOk").focus();
+  return new Promise(done => askDlg.addEventListener("close", () => {
+    const yes = askDlg.returnValue === "ok";
+    done(input ? (yes ? field.value : null) : yes);
+  }, { once: true }));
+}
+
+// ---------- card dialog ----------
+const dlg = $("#cardDlg");
+// The dialog shows a tile formatted, with an Edit button for its markdown. The view is
+// always rendered from the textarea, so the two can't disagree.
+function tileViewHTML(md) {
+  const lines = md.split("\n"), { key, prio, est, title, desc } = splitCard(lines[0]);
+  const onBoard = doc && !isDocFile();
+  const family = onBoard && key ? masterTag(kidsOf(key, renderIndex)) + parentTag(tileFacts(key, md).parent, renderIndex) : "";
+  let html = `<div class="tv-head">${key ? `<span class="key">${key}</span>` : ""}${family}${onBoard && file !== ARCHIVE_LOG ? linkTag(linkedTo(key)) : ""}${prioTag(prio)}${estTag(est)}<h3>${inline(title)}</h3></div>`;
+  if (desc) html += `<p>${inline(desc)}</p>`;
+  // The status goes right under the session block, wherever its line is in the tile; with no
+  // session block it goes last.
+  let para = [], list = null, status = lines.slice(1).map(statusLine).find(Boolean);
+  const ready = lines.slice(1).map(readyLine).find(r => r !== null);
+  if (ready !== undefined) html += `<div class="tv-ready"><span class="ready-label">✔ Ready for review</span>${inline(ready)}</div>`;
+  // The yellow tile: what the board measured when Status was last pressed, then what the
+  // session itself says on its Handoff line.
+  let handoff = lines.slice(1).map(handoffLine).find(h => h !== null);
+  const statusHTML = () => {
+    if (!status && handoff === undefined) return "";
+    const rows = (parts, cls = "") => `<dl class="${cls}">${parts.map(p => `<dt>${p.label}</dt><dd>${inline(p.text)}</dd>`).join("")}</dl>`;
+    const measured = status ? `<span class="tv-status-at">Status · ${status.at} · measured by the board</span>${rows(statusParts(status.text))}` : "";
+    const said = handoff !== undefined ? `<span class="tv-status-at${status ? " tv-status-next" : ""}">Claude's note · what the session last wrote on the tile</span>${rows(noteParts(handoff), "note")}` : "";
+    status = null; handoff = undefined;
+    return `<div class="tv-status">${measured}${said}</div>`;
+  };
+  const flushPara = () => { if (para.length) html += `<p>${inline(para.join(" "))}</p>`; para = []; };
+  const closeList = () => { if (list) html += list + "</li></ul>"; list = null; };
+  lines.slice(1).forEach((line, n) => {
+    const i = n + 1, task = line.match(/^  [-*] \[( |x|X)\] (.*)$/), bullet = line.match(/^ {2,}[-*] (.*)$/);
+    if (statusLine(line) || readyLine(line) !== null || handoffLine(line) !== null) {
+      // shown apart: the status and the handoff under the session block (statusHTML), ready for review at the top
+    } else if (task) {
+      flushPara();
+      const done = task[1] !== " ", item = `<li class="${done ? "done" : ""}"><span class="check${done ? " on" : ""}" data-line="${i}">${done ? "✓" : ""}</span><span>${inline(task[2])}</span>`;
+      list = list ? list + "</li>" + item : `<ul class="tv-tasks">${item}`;
+    } else if (bullet && list) {
+      list += `<div class="tv-sub">• ${inline(bullet[1])}</div>`;
+    } else if (bullet) {
+      flushPara(); html += `<ul class="tv-bullets"><li>${inline(bullet[1])}</li></ul>`;
+    } else if (!line.trim()) {
+      flushPara();
+    } else if (sessionLine(line)) {
+      flushPara(); closeList(); html += sessionHTML(sessionLine(line), key) + statusHTML();
+    } else if (MODEL_RE.test(line)) {
+      // the Model dropdown shows it
+    } else if (REPOS_RE.test(line)) {
+      // the Repos boxes show it
+    } else {
+      closeList(); para.push(line.trim());
+    }
+  });
+  flushPara(); closeList();
+  return html + statusHTML();
+}
+// Under a tile in the dialog: its sub-stories if it is a master, and the tiles it is related
+// to (the keys it mentions and the tiles that mention it). Each key jumps to its tile.
+function familyHTML(md) {
+  const key = splitCard(md.split("\n")[0]).key;
+  if (!key || !doc || isDocFile()) return "";
+  const kids = kidsOf(key, renderIndex), related = relatedTo(key, md, renderIndex, file === ARCHIVE_LOG ? [] : linkedTo(key));
+  if (!kids.length && !related.length) return "";
+  const name = k => keyRef(k) + (renderIndex.has(k) ? " " + esc(renderIndex.get(k).title) : "");
+  return `<div class="tv-family">${kids.length ? `<p>Sub-stories, ${kidsDone(kids)}/${kids.length} done</p><ul class="subs kids">${kidsHTML(kids)}</ul>` : ""}
+    ${related.length ? `<p>Related: ${related.map(name).join(" · ")}</p>` : ""}</div>`;
+}
+function setCardMode(mode) {
+  dlg.dataset.mode = mode;
+  $("#cardMode").textContent = mode === "view" ? "Edit" : "Preview";
+  if (mode === "view") $("#cardView").innerHTML = tileViewHTML($("#cardText").value) + familyHTML($("#cardText").value);
+  else { const ta = $("#cardText"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+$("#cardMode").addEventListener("click", () => setCardMode(dlg.dataset.mode === "view" ? "edit" : "view"));
+$("#cardView").addEventListener("click", e => {
+  const ref = e.target.closest("[data-act=jump]");
+  if (ref) return jumpTo(ref.dataset.key);
+  const copy = e.target.closest("[data-act=copy]"), again = e.target.closest("[data-act=restart]");
+  const stat = e.target.closest("[data-act=status]");
+  if (copy) return copyText(copy.dataset.copy);
+  if (again) return restartPickup(again.dataset.key);
+  if (stat) return refreshStatus(stat.dataset.key);
+  const box = e.target.closest("[data-line]");
+  if (box) {  // tick a sub-task: rewrite that line of the markdown, saved with Save
+    const lines = $("#cardText").value.split("\n"), i = +box.dataset.line;
+    lines[i] = lines[i].replace(/\[( |x|X)\]/, m => m === "[ ]" ? "[x]" : "[ ]");
+    $("#cardText").value = lines.join("\n"); return setCardMode("view");
+  }
+});
+// Put a tile's markdown, tick and column into the dialog's fields, for the tile in `editing`.
+function fillCard(text) {
+  const { card, sec } = editing;
+  $("#cardText").value = text;
+  editing.original = $("#cardText").value;
+  syncPrio();
+  $("#cardCheck").checked = card ? !!card.check : isDoneCol(sec.name);
+  $("#cardCol").innerHTML = doc.sections.map(s => `<option value="${s.id}"${s === sec ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+}
+// kidOf: the key of the master a new tile is a sub-story of; it is filed straight after it.
+function openCard(card, sec, kidOf) {
+  editing = { card, sec: sec || findCard(card.id).s, kidOf };
+  const NEW_KID = "New sub-story";
+  let text = nextKey() + " **New tile.** ";
+  if (card) text = [card.text, ...trimBlank(card.body)].join("\n");
+  else if (kidOf) text = `${nextKey()} **${NEW_KID}.**\n  Part of ${kidOf}.`;
+  fillCard(text);
+  $("#cardDelete").classList.toggle("hidden", !card);
+  $("#cardAddKid").classList.toggle("hidden", !card || !cardKey(card) || file === ARCHIVE_LOG);
+  $("#cardModelLabel").classList.toggle("hidden", file === ARCHIVE_LOG);
+  repoPicker.archived = file === ARCHIVE_LOG;
+  syncRepos();
+  dlg.showModal();
+  setCardMode(card ? "view" : "edit");
+  if (kidOf) { const at = $("#cardText").value.indexOf(NEW_KID); $("#cardText").setSelectionRange(at, at + NEW_KID.length); }  // type the title over it
+}
+// + Sub-story: save this tile as Save would, then open a new tile that is part of it.
+$("#cardAddKid").addEventListener("click", () => { editing.addKid = true; $("#cardSave").click(); });
+// The Priority and Estimate fields and the tile's first line hold the same values: a field
+// rewrites the line (so the view, rendered from the textarea, follows), and typing "P2 ~3d "
+// into the line updates the fields.
+const MODELS = ["opus", "sonnet", "haiku", "fable"];
+function syncModel() {
+  const own = modelOf($("#cardText").value), names = [...new Set([...MODELS, own].filter(Boolean))];
+  const label = m => m[0].toUpperCase() + m.slice(1);
+  // No line on the tile is the store's default; choosing the default's own name removes the line too.
+  $("#cardModel").innerHTML = `<option value="">${esc(label(STORE_MODEL))} (default)</option>` +
+    names.filter(m => m !== STORE_MODEL).map(m => `<option value="${esc(m)}">${esc(label(m))}</option>`).join("");
+  $("#cardModel").value = own === STORE_MODEL ? "" : own;
+}
+// One box per repo of the store, hidden when there is only the one. A tile with no Repos line
+// has the main repo ticked.
+const repoPicker = { archived: false };
+function syncRepos() {
+  const own = reposOf($("#cardText").value).map(n => n.toLowerCase());
+  $("#cardRepos").classList.toggle("hidden", STORE_REPOS.length < 2 || repoPicker.archived);
+  $("#cardReposBoxes").innerHTML = STORE_REPOS.map(r =>
+    `<label><input type="checkbox" value="${esc(r.name)}"${(own.length ? own.includes(r.name.toLowerCase()) : r.main) ? " checked" : ""}> ${esc(r.name)}</label>`).join("");
+}
+function syncPrio() {
+  syncModel();
+  syncRepos();
+  const { prio, est } = splitCard($("#cardText").value.split("\n")[0]);
+  $("#cardPrio").value = prio;
+  if (document.activeElement !== $("#cardEst")) { $("#cardEst").value = est; $("#cardEst").classList.remove("bad"); }
+}
+function setHead(ch) {
+  const lines = $("#cardText").value.split("\n");
+  lines[0] = withHead(lines[0], ch);
+  $("#cardText").value = lines.join("\n");
+  if (dlg.dataset.mode === "view") setCardMode("view");
+}
+$("#cardText").addEventListener("input", syncPrio);
+$("#cardPrio").addEventListener("change", e => setHead({ prio: e.target.value }));
+$("#cardModel").addEventListener("change", e => {
+  $("#cardText").value = withModel($("#cardText").value, e.target.value);
+  if (dlg.dataset.mode === "view") setCardMode("view");
+});
+$("#cardReposBoxes").addEventListener("change", () => {
+  const names = [...$("#cardReposBoxes").querySelectorAll("input:checked")].map(b => b.value);
+  $("#cardText").value = withRepos($("#cardText").value, names);
+  syncRepos();
+  if (dlg.dataset.mode === "view") setCardMode("view");
+});
+$("#cardEst").addEventListener("input", e => {
+  const v = e.target.value.trim().replace(/^~/, "").toLowerCase(), ok = !v || EST_RE.test(v);
+  e.target.classList.toggle("bad", !ok);
+  if (ok) setHead({ est: v });
+});
+$("#cardEst").addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+$("#cardText").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("#cardSave").click(); } });
+$("#cardDelete").addEventListener("click", async () => {
+  if (!await ask({ title: "Delete this tile?", body: "It is removed from the board, not archived.", ok: "Delete", danger: true })) return;
+  const f = findCard(editing.card.id); f.s.cards.splice(f.i, 1);
+  dlg.close("deleted"); changed();
+});
+dlg.addEventListener("close", () => {
+  const ed = editing; editing = null;
+  if (dlg.returnValue !== "save" || !ed) return;
+  const lines = $("#cardText").value.replace(/\s+$/, "").split("\n");
+  if (!lines[0].trim()) return;
+  const body = lines.slice(1).map(l => (!l.trim() || /^\s/.test(l)) ? l : "  " + l);
+  const toSec = findSec($("#cardCol").value);
+  let card = ed.card;
+  if (!card) {
+    card = { id: nextId++, check: false, text: "", body: [] };
+    const master = ed.kidOf ? toSec.cards.findIndex(c => cardKey(c) === ed.kidOf) : -1;
+    master >= 0 ? toSec.cards.splice(master + 1, 0, card) : toSec.cards.push(card);
+  }
+  card.text = lines[0].replace(/^[-*] (\[[ xX]\] )?/, "");
+  card.body = body;
+  card.check = $("#cardCheck").checked;
+  const fromSec = ed.card && findCard(card.id).s, moved = ed.card && toSec !== fromSec;
+  if (moved) moveCard(card.id, toSec, toSec.cards.length);
+  if (ed.kidOf) { const m = findCardByKey(ed.kidOf); if (m && !expanded.has(m.c.text)) toggleExpanded(m.c.text); }  // show the new sub-story in its master
+  const settled = moved ? movedColumn(card, toSec, fromSec) : changed();
+  // The move may have reloaded the board, so the master is found again by its key.
+  if (ed.addKid && cardKey(card)) Promise.resolve(settled).then(() => { const f = findCardByKey(cardKey(card)); if (f) openCard(null, f.s, cardKey(card)); });
+});
+
+// ---------- persistence ----------
+function setStatus(t, err) { statusEl.textContent = t; statusEl.classList.toggle("err", !!err); }
+function flash(msg) { bannerEl.textContent = msg; bannerEl.classList.add("show"); clearTimeout(flash.t); flash.t = setTimeout(() => bannerEl.classList.remove("show"), 6000); }
+let saveTimer = null;
+function scheduleSave() { setStatus("Unsaved…"); clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
+async function save() {
+  if (saving) return scheduleSave();
+  saving = true; setStatus("Saving…");
+  try {
+    const r = await fetch(`/api/board?file=${encodeURIComponent(file)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: serialize(doc), mtime }) });
+    const j = await r.json();
+    if (r.status === 409) {
+      adopt(j); render();
+      flash(`${file} changed on disk (another session or editor). Reloaded it; redo your last move.`);
+      setStatus("Reloaded", true);
+    } else if (!r.ok) { setStatus("Save failed: " + (j.error || r.status), true); }
+    else { mtime = j.mtime; dirty = false; if (j.linked) serverLinks = j.linked; if (j.tiles) serverTiles = j.tiles; setStatus("Saved ✓ " + new Date().toLocaleTimeString()); }
+  } catch (err) { setStatus("Save failed: server down?", true); }
+  saving = false;
+}
+async function load(name) {
+  const r = await fetch(`/api/board?file=${encodeURIComponent(name)}`);
+  if (!r.ok) { setStatus("Could not open " + name, true); return; }
+  const j = await r.json();
+  file = name; adopt(j);
+  try { localStorage.setItem("board.file", name); } catch {}
+  history.replaceState(null, "", "?file=" + encodeURIComponent(name));
+  docEditing = false;
+  render(); setStatus("Loaded " + name);
+  // The board buttons list boards only; while a plan doc is open the board you came from stays lit.
+  showBoardButtons(isDocFile() ? lastBoard : name);
+  pollPickups().catch(() => {});  // know at once whether tiles are picked up here, not at the next poll
+}
+async function listFiles(select) {
+  const j = await (await fetch("/api/files")).json();
+  if (j.key) setKey(j.key);
+  STORE_NAME = j.name || "";
+  STORE_MODEL = j.model || "opus";
+  STORE_REPOS = j.repos || [];
+  STORE_SESSIONS = j.sessions || 2;
+  STORE_TRUNK = j.trunk || "main";
+  STORE_PICKUP_COLUMN = j.pickupColumn || "";
+  $("#storeName").textContent = STORE_NAME;
+  $("#fileSel").innerHTML = j.files.map(f => `<button type="button" role="tab" data-file="${esc(f)}" title="${esc(f)}">${esc(boardLabel(f))}</button>`).join("");
+  $("#fileSel").title = j.dir;
+  let pick = select || new URLSearchParams(location.search).get("file");
+  if (!pick) try { pick = localStorage.getItem("board.file"); } catch {}
+  // A plan doc isn't in the picker, but a tab opened from its link loads it from the URL.
+  const isDocPath = /^(active|archive)\/[\w.-]+\.md$/.test(pick || "") && pick !== "archive/archived.md";
+  if (!j.files.includes(pick) && !isDocPath) pick = j.files.includes("plans.md") ? "plans.md" : j.files[0];
+  if (pick) await load(pick); else setStatus("No boards in this folder", true);
+}
+// Switching files saves pending changes to the current one first.
+async function openFile(name) { if (dirty) await save(); return load(name); }
+// A board's button reads as its name: plans.md → Plans, archive/archived.md → Archive.
+const BOARD_LABELS = { "plans.md": "Plans", "backlog.md": "Backlog", [ARCHIVE_LOG]: "Archive" };
+const boardLabel = f => BOARD_LABELS[f] || f.replace(/^.*\//, "").replace(/\.md$/, "").replace(/[-_]+/g, " ").replace(/^./, ch => ch.toUpperCase());
+function showBoardButtons(on) {
+  for (const b of $("#fileSel").querySelectorAll("button")) { b.classList.toggle("on", b.dataset.file === on); b.setAttribute("aria-selected", b.dataset.file === on); }
+}
+$("#fileSel").addEventListener("click", e => { const b = e.target.closest("button[data-file]"); if (b && b.dataset.file !== file) openFile(b.dataset.file); });
+$("#search").addEventListener("input", () => doc && render());
+$("#colSort").value = colSort;
+$("#colSort").addEventListener("change", e => {
+  colSort = e.target.value;
+  try { localStorage.setItem("board.colSort", colSort); } catch {}
+  doc && render();
+});
+// The Theme menu and the chosen theme's accent swatches (BOARD_THEMES and applyTheme are in the head).
+function showThemePick() {
+  const offered = BOARD_THEMES[themeNow].accents;
+  $("#themeSel").value = themeNow;
+  $("#accentSel").hidden = offered.length < 2;
+  $("#accentSel").innerHTML = offered.map(([c, name]) =>
+    `<button type="button" data-accent="${c}" style="--swatch: ${c}" title="${name} accent" aria-label="${name} accent" aria-pressed="${c === accentNow}"></button>`).join("");
+}
+function setTheme(theme, accent) {
+  themeNow = theme; accentNow = accent;
+  try { localStorage.setItem("board.theme", theme); localStorage.setItem("board.accent." + theme, accent); } catch {}
+  applyTheme(theme, accent); showThemePick();
+}
+$("#themeSel").innerHTML = Object.entries(BOARD_THEMES).map(([id, t]) => `<option value="${id}">${t.name}</option>`).join("");
+$("#themeSel").addEventListener("change", e => setTheme(e.target.value, storedAccent(e.target.value)));
+$("#accentSel").addEventListener("click", e => { const b = e.target.closest("button[data-accent]"); if (b) setTheme(themeNow, b.dataset.accent); });
+showThemePick();
+
+// Pick up edits made elsewhere (an editor, another Claude session) while idle.
+setInterval(async () => {
+  if (!file || dirty || saving || dragging || editing || docEditing || askDlg.open || document.hidden) return;
+  try {
+    const j = await (await fetch(`/api/board?file=${encodeURIComponent(file)}`)).json();
+    if (j.mtime !== mtime && !dirty && !dragging && !editing && !askDlg.open) { adopt(j); render(); setStatus("Updated from disk " + new Date().toLocaleTimeString()); }
+  } catch {}
+}, 3000);
+// Pickups change without the board file changing, so they are polled on their own.
+const toldPickups = new Set(), askedPickups = new Set();
+let pickupsLoaded = false;
+const pickupId = job => `${job.key}@${job.at}`;
+async function postPickup(body) {
+  const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs }; render(); }
+  return r.ok ? j : (flash("Claude wasn't started: " + (j.error || r.status)), null);
+}
+const startPickup = key => postPickup({ key });
+// Restart: resume the tile's session, or have a new one take over if it can't be resumed.
+async function restartPickup(key) {
+  setStatus(`Restarting Claude on ${key}…`);
+  const j = await postPickup({ key, restart: true }).catch(() => (flash("Restart failed: server down?"), null));
+  const job = j && pickupFor(key);
+  if (job?.state === "started") flash(`Claude is back on ${key}. Open it with: claude attach ${job.id}`);
+  else if (job?.state === "failed") flash(`Claude couldn't be restarted on ${key}: ${job.error}`);
+  setStatus(j ? "Restarted " + key : "Not restarted", !j);
+}
+// The Status button: the server checks the story's session and branch now and writes what it
+// finds under the tile's session line. An opened tile stays open and shows it under the session block.
+async function refreshStatus(key) {
+  const wasOpen = dlg.open;
+  if (wasOpen && $("#cardText").value !== editing?.original && !await ask({ title: "Refresh the status?", body: "Your changes to this tile aren't saved, and the refresh drops them.", ok: "Refresh", danger: true })) return;
+  if (dirty) await save();
+  setStatus(`Checking ${key}…`);
+  // The button spins while the check runs. Refilling the tile below draws a fresh button.
+  const buttons = [...document.querySelectorAll(`[data-act=status][data-key="${key}"]`)];
+  const spin = on => buttons.forEach(b => { b.classList.toggle("busy", on); b.disabled = on; });
+  spin(true);
+  const j = await postPickup({ key, status: true }).catch(() => (flash("Status check failed: server down?"), null));
+  if (j) await reloadQuiet();
+  spin(false);
+  if (!j) return setStatus("Not checked", true);
+  setStatus("Status of " + key + " refreshed");
+  // Pressed on the board, the status is told in the banner. An open tile shows it itself: it
+  // stays open and is refilled where it is, so the dialog doesn't blink.
+  if (!wasOpen || !dlg.open) return flash(`${key}: ${j.status.replace(/`/g, "")}`);
+  const f = findCardByKey(key);
+  if (!f) return dlg.close("cancel");
+  editing = { card: f.c, sec: f.s };
+  fillCard([f.c.text, ...trimBlank(f.c.body)].join("\n"));
+  setCardMode(dlg.dataset.mode);
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); flash(`Copied: ${text}`); }
+  catch { flash(`Copy it from here: ${text}`); }
+}
+// One session at a time unless you say otherwise. unasked: the board is offering, not a click
+// on the tile's badge; a master's sub-stories queue by its session limit, so they aren't offered.
+async function offerPickup(job, unasked = false) {
+  if (!job || job.state !== "waiting" || (unasked && job.master) || askDlg.open) return;
+  const ahead = job.behind || "another tile";
+  if (await ask({ title: `Start ${job.key} now?`, ok: "Start in parallel", cancel: "Leave it queued",
+    body: [`<b>${esc(job.key)}</b> ${esc(job.title)}`, `It is in flight, but Claude is still working on ${esc(ahead)}.`],
+    note: `Queued, it starts when the session on ${esc(ahead)} ends.` })) startPickup(job.key);
+}
+async function pollPickups() {
+  if (file !== PICKUP_BOARD || document.hidden) return;
+  const next = await (await fetch("/api/pickup")).json();
+  const changed = JSON.stringify(next) !== JSON.stringify(pickups), first = !pickupsLoaded;
+  pickups = next; pickupsLoaded = true;
+  for (const job of pickups.jobs) {
+    if (toldPickups.has(pickupId(job) + job.state + (job.waiting || "") + (job.ready ? "ready" : ""))) continue;
+    toldPickups.add(pickupId(job) + job.state + (job.waiting || "") + (job.ready ? "ready" : ""));
+    if (first) continue;  // what happened before this page opened isn't news
+    if (job.state === "started") flash(`Claude picked up ${job.key}. Open it with: claude attach ${job.id}`);
+    if (job.state === "failed") flash(`Claude couldn't be started for ${job.key}: ${job.error}`);
+    if (job.state === "lost") flash(`The Claude session on ${job.key} is gone. Restart is on its tile.`);
+    if (job.ready) flash(`${job.key} is ready for review: its tile is outlined in green.`);
+    else if (job.state === "idle" && job.waiting) flash(`Claude is waiting for your input on ${job.key}: ${WAITING[job.waiting]}. Open it with: claude attach ${job.id}`);
+  }
+  if (dragging || editing) return;
+  if (changed) render();
+  for (const job of pickups.jobs) {
+    if (job.state !== "waiting" || !job.behind || askedPickups.has(pickupId(job))) continue;
+    askedPickups.add(pickupId(job));
+    offerPickup(job, true);
+  }
+}
+setInterval(() => pollPickups().catch(() => {}), 3000);
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); } });
+
+listFiles();
+</script>
+</body>
+</html>

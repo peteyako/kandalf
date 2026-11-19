@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m unittest:*)",
+      "Bash(node --test test_page.js)",
+      "Bash(bin/kandalf check:*)",
+      "Bash(bin/kandalf --help)"
+    ]
+  }
+}
