@@ -27,13 +27,16 @@ board.json:
                                      the store, or {"path", "trunk"} (its trunk defaults to the trunk setting)
       "pickup": true,                start a Claude Code session for a tile that lands in
                                      In flight (pickup.py; default false, needs "app")
+      "agent": "claude",             the agent those sessions run in: claude (Claude Code) or
+                                     copilot (the GitHub Copilot CLI; default claude)
       "pickupColumn": "Building",    the column whose tiles are picked up, by name (any case);
                                      default: any column named like In flight (in progress, doing, WIP...)
       "permission": "auto",          the permission mode those sessions start in (claude
                                      --permission-mode): auto, acceptEdits, manual, dontAsk,
                                      plan or bypassPermissions (default auto)
       "model": "opus",               the model those sessions run on, an alias or a full id
-                                     (default opus); a tile's own "Model: x" line overrides it
+                                     (default opus for claude, auto for copilot); a tile's own
+                                     "Model: x" line overrides it
       "sessions": 2,                 how many of a master's sub-stories have a session at work
                                      at once (default 2); the master's "Sessions: n" line overrides it
       "branch": "{key}-{slug}",      a session's feature branch (the default): {key} is the tile's
@@ -70,6 +73,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import agent
+
 CONFIG = "board.json"
 HOOKS_FILE = ".claude/settings.json"  # the board's hooks, in the store
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -103,8 +108,15 @@ class Store:
         self.trunk = os.environ.get("PLANS_APP_TRUNK") or cfg.get("trunk", "main")
         self.repos, self.repo_problem = self._read_repos(cfg.get("repos"), cfg.get("trunk", "main"))
         self.pickup = bool(cfg.get("pickup", False))
+        self.agent = cfg.get("agent") or "claude"
+        try:
+            agent.use(self.agent)
+            self.agent_problem = None
+        except ValueError as e:
+            agent.use("claude")
+            self.agent_problem = str(e)
         self.permission = cfg.get("permission") or "auto"
-        self.model = cfg.get("model") or "opus"
+        self.model = cfg.get("model") or agent.default_model()
         self.sessions = max(1, int(cfg.get("sessions") or 2))
         self.pickup_column = (cfg.get("pickupColumn") or "").strip()  # "": any In flight column
         self.branch_pattern = cfg.get("branch") or "{key}-{slug}"

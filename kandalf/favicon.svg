@@ -1,27 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0c66e4"/>
-      <stop offset="100%" stop-color="#0052cc"/>
-    </linearGradient>
-    <style>
-      .bg { fill: url(#bg); }
-      .card { fill: #ffffff; }
-      .card-sub { fill: #ffffff; fill-opacity: 0.8; }
-      @media (prefers-color-scheme: dark) {
-        .bg { fill: #1d4ed8; }
-        .card-sub { fill-opacity: 0.85; }
-      }
-    </style>
-  </defs>
-  <rect class="bg" width="32" height="32" rx="7"/>
-  <!-- Column 1 (To do) -->
-  <rect class="card" x="4" y="5" width="6" height="9" rx="1.5"/>
-  <rect class="card-sub" x="4" y="16" width="6" height="11" rx="1.5"/>
-  <!-- Column 2 (In flight) -->
-  <rect class="card" x="13" y="5" width="6" height="15" rx="1.5"/>
-  <rect class="card-sub" x="13" y="22" width="6" height="5" rx="1.5"/>
-  <!-- Column 3 (Done) -->
-  <rect class="card-sub" x="22" y="5" width="6" height="6" rx="1.5"/>
-  <rect class="card" x="22" y="13" width="6" height="14" rx="1.5"/>
+  <!-- Kandalf's hat on a transparent background: the cone, its tip bent to the right -->
+  <path fill="#111111" d="M7.5 23.5 C10 17.5 12.5 10.5 15.5 6 C17.2 3.6 20 2.6 23.5 3.6 C21 4.2 19.6 5.6 19.4 7.8 C19.8 13.5 21.8 19 24.5 23.5 Z"/>
+  <!-- The band -->
+  <path fill="#ffffff" d="M9.7 19 C13.8 20.3 18.2 20.3 21.7 19 L22.6 21.3 C18.6 22.7 13.4 22.7 8.8 21.3 Z"/>
+  <!-- The brim -->
+  <ellipse fill="#111111" cx="16" cy="25.6" rx="14" ry="3.2"/>
+  <!-- The star -->
+  <path fill="#e8c35a" d="M16 11.5 Q16.5 14.5 18.8 15 Q16.5 15.5 16 18.5 Q15.5 15.5 13.2 15 Q15.5 14.5 16 11.5 Z"/>
 </svg>

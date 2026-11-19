@@ -1,7 +1,7 @@
 """kandalf init: make a new plans store and, run inside a git repo, wire it to that repo (the app).
 
     kandalf init [DIR] [--name NAME] [--key KEY] [--port N] [--app PATH | --no-app]
-                 [--pickup | --no-pickup] [--hooks | --no-hooks] [--example] [--yes]
+                 [--pickup | --no-pickup] [--agent claude|copilot] [--hooks | --no-hooks] [--example] [--yes]
 
 The store goes in DIR, or beside the git repo you're in as <repo>-plans. It gets board.json,
 plans.md and backlog.md (from templates/), active/, archive/archived.md, a git repo of its own
@@ -11,9 +11,11 @@ which pickup sessions load with --settings and the app links in as a gitignored
 .claude/settings.local.json for your own sessions there; nothing is committed in the app.
 
 Values not given as flags are asked for, with the default shown, when run in a terminal;
---yes (or no terminal) takes the defaults: pickup and hooks off.
+--yes (or no terminal) takes the defaults: pickup and hooks off, and the agent claude when
+`claude` is on PATH, else copilot when `copilot` is.
 
-Also here: `kandalf repo add|list|rm` (the store's other repos), the hooks block (`kandalf hooks` prints it, `kandalf hooks --add` adds it to a store made
+Also here: `kandalf agent` (which agent pickup hands stories to, and switching it),
+`kandalf repo add|list|rm` (the store's other repos), the hooks block (`kandalf hooks` prints it, `kandalf hooks --add` adds it to a store made
 without it) and `kandalf doctor` (checks).
 """
 
@@ -28,7 +30,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import pickup
+from . import agent, pickup
 from . import store as stores
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -45,16 +47,15 @@ HOOK_MARK = "kandalf hook autocommit"  # a settings file that has this has the h
 OLD_HOOK = "board hook "  # what the hooks ran before the command was called kandalf
 LOCAL = ".claude/settings.local.json"  # where an app links the store's hooks in
 
-PICKUP_ASK = """Pickup: when it is on, a story dragged to In flight starts a background Claude Code
-session in a new git worktree under the app's .worktrees/, in the store's permission mode
+PICKUP_ASK = """Pickup: when it is on, a story dragged to In flight starts a background agent session
+(Claude Code or the GitHub Copilot CLI) in a new git worktree under the app's .worktrees/, in the store's permission mode
 (auto by default, which edits and runs commands without asking). Archiving a merged story
 removes its worktree, branch and session."""
 # A new store keeps its sessions' worktrees inside the app, out of the folder the app sits in.
-# (Unset, the store's default is beside the app.) Claude Code starts a background session in
-# a worktree only when the worktree's main repo is trusted: hence TRUST.
+# (Unset, the store's default is beside the app.) An agent starts a session in a worktree
+# only when the worktree's main repo is trusted: hence agent.trust.
 WORKTREE = "{app}/.worktrees/{key}"
 WORKTREES_IGNORE = ".worktrees"
-TRUST = "Before the first story: run `claude` once in {app} and accept its trust prompt, or sessions can't start there."
 
 
 def hooks_text() -> str:
@@ -144,6 +145,13 @@ def yes_no(text: str) -> bool:
     if text.lower() in ("n", "no"):
         return False
     raise ValueError("answer y or n")
+
+
+def check_agent(name: str) -> str:
+    name = name.strip().lower()
+    if name not in agent.MODULES:
+        raise ValueError(f"the agent is one of {', '.join(agent.MODULES)}")
+    return name
 
 
 def check_key(key: str) -> str:
@@ -438,7 +446,7 @@ def add_repo(st, path: Path, name: str = None, trunk: str = None) -> list:
     said += link_app(repo, st.dir, st.link)
     if has_hooks(st.hooks_file):
         said += link_hooks(repo, st.hooks_file)
-    said.append(TRUST.format(app=repo))
+    said.append(agent.trust(repo))
     said.append(RESTART_SERVE)
     return said
 
@@ -458,6 +466,65 @@ def remove_repo(st, name) -> list:
         del cfg["repos"]
     write_config(st, cfg, f"board: repo {key} removed")
     return [f"board.json: repo {key} removed; its docs/{st.link} link and .gitignore lines in the repo were left", RESTART_SERVE]
+
+
+def set_agent(st, name: str, force: bool = False, stop=None) -> list:
+    """kandalf agent NAME: switch the agent pickup hands stories to. board.json's "agent" is set
+    and its "model" (the old agent's) dropped. A story whose session the old agent started is
+    left lost, without that session's id, so Restart starts the new agent in the same worktree.
+    One still running is refused unless force, which stops it first. stop(old, id): stops a session."""
+    try:
+        name = check_agent(name)
+    except ValueError as e:
+        raise SystemExit(f"kandalf agent: {e}")
+    old = st.agent
+    if name == old:
+        return [f"the agent is {name} already"]
+    stop = stop or (lambda which, sid: agent.MODULES[which].stop(sid))
+    state = pickup.load(st)
+    tracked = [j for j in state["jobs"] if j["state"] in pickup.TRACKED]
+    live = [j for j in tracked if j["state"] in ("started", "idle")]
+    if live and not force:
+        keys = ", ".join(j["key"] for j in live)
+        raise SystemExit(f"kandalf agent: {keys} {'has' if len(live) == 1 else 'have'} a {old} session. Let "
+                         f"{'it' if len(live) == 1 else 'them'} finish, or pass --force to stop {'it' if len(live) == 1 else 'them'}: "
+                         f"each story keeps its worktree, and Restart on its tile hands it to {name}.")
+    said = []
+    for j in tracked:
+        if j["state"] in ("started", "idle") and j.get("id"):
+            try:
+                stop(old, j["id"])
+            except (OSError, subprocess.SubprocessError):
+                pass
+            said.append(f"{j['key']}: {old} session {j['id']} stopped")
+        j["state"] = "lost"
+        j.pop("session", None)
+    if tracked:
+        pickup.save(st, state)
+        said.append(f"{', '.join(j['key'] for j in tracked)}: Restart on the tile starts {name} in the story's worktree")
+    cfg = read_config(st)
+    cfg["agent"] = name
+    model = cfg.pop("model", None)
+    write_config(st, cfg, f"board: agent {name}")
+    agent.use(name)
+    said.insert(0, f"board.json: agent {name}" + (f"; model {model} (for {old}) dropped, so sessions run on {agent.default_model()}" if model else ""))
+    said += ["tiles' own Model: lines are left as they are, so check they name a model " + name + " has",
+             agent.trust(st.app or "the app"), RESTART_SERVE]
+    return said
+
+
+def agent_command(st, args) -> int:
+    """kandalf agent [claude|copilot] [--force]"""
+    ap = argparse.ArgumentParser(prog="kandalf agent", description="Show or switch the agent pickup hands stories to.")
+    ap.add_argument("name", nargs="?", choices=sorted(agent.MODULES))
+    ap.add_argument("--force", action="store_true", help="stop the old agent's running sessions")
+    a = ap.parse_args(args)
+    if not a.name:
+        print(f"{st.agent} ({agent.label()}), model {st.model}")
+        return 0
+    for line in set_agent(st, a.name, a.force):
+        print(line)
+    return 0
 
 
 def repo_lines(st) -> list:
@@ -498,6 +565,7 @@ def parser():
     ap.add_argument("--no-app", action="store_true", help="no app: a store on its own")
     ap.add_argument("--pickup", dest="pickup", action="store_true", default=None, help="let agents pick up stories")
     ap.add_argument("--no-pickup", dest="pickup", action="store_false")
+    ap.add_argument("--agent", choices=sorted(agent.MODULES), help="the agent pickup hands stories to (default: claude if on PATH, else copilot)")
     ap.add_argument("--hooks", dest="hooks", action="store_true", default=None,
                     help="keep the board's hooks in the store's .claude/settings.json and link them into the app")
     ap.add_argument("--no-hooks", dest="hooks", action="store_false")
@@ -507,7 +575,7 @@ def parser():
 
 
 def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, why_off=pickup.why_off,
-        identity=has_identity, today=datetime.date.today, out=print) -> int:
+        identity=has_identity, today=datetime.date.today, out=print, which=shutil.which) -> int:
     """kandalf init. input/isatty: the terminal (tests pass their own); the rest are probes."""
     a = parser().parse_args(args)
     cwd = Path(cwd or os.getcwd()).resolve()
@@ -554,15 +622,24 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
                 out(PICKUP_ASK)
             on = ask("Let agents pick up stories? [y/N]", False, yes_no)
         cfg["pickup"] = on
+        if on or a.agent:
+            try:
+                cfg["agent"] = a.agent or ask("Agent: claude (Claude Code) or copilot (GitHub Copilot CLI)",
+                                              agent.default_name(which), check_agent)
+            except ValueError as e:
+                raise SystemExit(f"kandalf init: {e}")
+            agent.use(cfg["agent"])
     hooks = bool(app) and (a.hooks if a.hooks is not None else ask(
         f"Add the board's hooks? They queue a session's board edits for commit and check board files. They "
-        f"go in the store's {stores.HOOKS_FILE}, linked into the app as {LOCAL}. [y/N]", False, yes_no))
+        f"go in the store's {stores.HOOKS_FILE}, linked into the app as {LOCAL}, where Claude Code and the "
+        f"Copilot CLI both read them. [y/N]", False, yes_no))
 
     write_store(folder, cfg, a.example, today())
     hooks_file = folder / stores.HOOKS_FILE
     merged = merge_hooks(hooks_file) if hooks else None
     out(f"Made the store {folder}:")
-    out(f"  board.json: name {name}, keys {key}-NN, port {port}" + (f", app {cfg['app']} @ {cfg['trunk']}, pickup {'on' if cfg['pickup'] else 'off'}" if app else ""))
+    out(f"  board.json: name {name}, keys {key}-NN, port {port}" + (f", app {cfg['app']} @ {cfg['trunk']}, pickup {'on' if cfg['pickup'] else 'off'}" if app else "")
+        + (f", agent {cfg['agent']}" if cfg.get("agent") else ""))
     out("  plans.md, backlog.md, active/, archive/archived.md" + (", and an example story (Dark mode)" if a.example else ""))
     if merged:
         out("  " + merged)
@@ -580,7 +657,7 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
     out(f"Next: kandalf serve{f'   (from {app})' if linked else f' --dir {folder}'}")
     if app and cfg["pickup"]:
         why = why_off(stores.Store(folder))
-        out(why or TRUST.format(app=app))
+        out(why or agent.trust(app))
     return 0
 
 
@@ -627,7 +704,7 @@ def checks(st, *, which=shutil.which, version=sys.version_info, why_off=pickup.w
             out.extend(repo_checks(st, repo))
     why = why_off(st)
     if why is None:
-        out.append((OK, f"pickup on: In flight tiles go to Claude Code ({st.permission} mode)"))
+        out.append((OK, f"pickup on: In flight tiles go to {agent.label()} ({st.permission} mode)"))
     else:
         out.append((INFO if not st.pickup or not st.app else BAD, why))
     out.append((OK, f"port {st.port} is free") if bindable(st.port) else
@@ -678,7 +755,7 @@ def repo_checks(st, repo) -> list:
         out.append((BAD, f"{at} leads to {at.resolve()}, not to this store"))
     else:
         out.append((OK, f"{at} links the store"))
-    out.append((INFO, TRUST.format(app=repo.path)))
+    out.append((INFO, agent.trust(repo.path)))
     if has_hooks(st.hooks_file) and not links_hooks(repo.path, st.hooks_file):
         out.append((INFO, f"repo {repo.name}: {repo.path / LOCAL} doesn't link the store's hooks (kandalf repo add links them)"))
     return out

@@ -19,7 +19,7 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, noteParts, pickupHintShows, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             section: name => doc.sections.find(s => s.name === name),
@@ -166,6 +166,10 @@ test("a tile's Claude session line is read apart from its description", () => {
   assert.equal(page.sessionLine("  - [ ] Claude session `ab12cd34`: `claude attach ab12cd34`."), null);
 });
 
+test("a tile's Copilot session line is read as a session too", () => {
+  assert.deepEqual(page.sessionLine("  Copilot session `ab12cd34`: `kandalf attach ab12cd34`. Started 2026-11-19."), { id: "ab12cd34", rest: "Started 2026-11-19." });
+});
+
 test("a story's description leaves the session line out, and the story says which session it has", () => {
   const card = page.parse("## A\n\n- [ ] PLN-01 **One.**\n  What it is.\n  Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-01-one`.\n  - [ ] **Step.**\n").sections[0].cards[0];
   const parts = page.storyParts(card);
@@ -259,6 +263,14 @@ test("a tile's Handoff line is what its session last said about the work", () =>
   assert.equal(page.handoffLine("  **Status 2026-11-18 14:58:** session at work."), null);
   assert.equal(page.handoffLine("  The handoff: went fine."), null);
   assert.equal(page.handoffLine("    - Handoff: nested under a sub-task"), null);
+});
+
+test("a status line reads in a toast a fact a line, with the last steps on its screen", () => {
+  const line = 'Status 2026-11-19 12:12: session `cae302dd` at work. Branch has no commits yet. 2 files not committed. 1 of 7 sub-tasks ticked in 25 min; at that pace about 2 h to go (ETA 2026-11-19 14:43). On its screen (rough): "… mkdir -p out ● Running command: ls ● Running command: mvn test ● Running command: make".';
+  assert.equal(page.statusToast(line), [
+    "Session: cae302dd at work", "Branch: has no commits yet", "Files: 2 files not committed",
+    "1 of 7 sub-tasks ticked in 25 min; at that pace about 2 h to go (ETA 2026-11-19 14:43)",
+    "On its screen:", "● Running command: ls", "● Running command: mvn test", "● Running command: make"].join("\n"));
 });
 
 test("the status line is cut into its facts for the status tile", () => {

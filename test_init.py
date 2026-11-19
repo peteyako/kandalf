@@ -19,8 +19,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from kandalf import agent
 from kandalf import cli
 from kandalf import init
+from kandalf import pickup
 from kandalf import serve
 from kandalf import store as stores
 
@@ -65,6 +67,7 @@ class Setup(unittest.TestCase):
         probes.setdefault("bindable", lambda port: True)
         probes.setdefault("why_off", lambda st: OFF)
         probes.setdefault("today", lambda: TODAY)
+        probes.setdefault("which", lambda name: "/bin/claude" if name == "claude" else None)
         return init.run(list(args), cwd=cwd or self.top, input=input, isatty=lambda: tty, out=self.said.append, **probes)
 
     def config(self, folder: Path) -> dict:
@@ -185,15 +188,16 @@ class Init(Setup):
 
     def test_questions_show_their_defaults_and_take_the_answers(self):
         app = self.app()
-        asked, answers = [], iter(["Shop", "", "7799", "y", "y"])
+        asked, answers = [], iter(["Shop", "", "7799", "y", "copilot", "y"])
         with contextlib.redirect_stdout(io.StringIO()):
             self.init(cwd=app, input=lambda q: asked.append(q) or next(answers), tty=True)
         self.assertEqual(asked[:3], ["Name [shop]: ", "Key prefix [SHO]: ", "Port [7788]: "])
         self.assertEqual(asked[3], "Let agents pick up stories? [y/N]: ")
-        self.assertRegex(asked[4], r"hooks.*\[y/N\]: $")
+        self.assertRegex(asked[4], r"^Agent: claude .* or copilot .*: $")
+        self.assertRegex(asked[5], r"hooks.*\[y/N\]: $")
         self.assertTrue(any("new git worktree under the app's .worktrees/" in line and "auto by default" in line for line in self.said))
         cfg = self.config(self.top / "shop-plans")
-        self.assertEqual((cfg["name"], cfg["key"], cfg["port"], cfg["pickup"]), ("Shop", "SHO", 7799, True))
+        self.assertEqual((cfg["name"], cfg["key"], cfg["port"], cfg["pickup"], cfg["agent"]), ("Shop", "SHO", 7799, True, "copilot"))
         store = self.top / "shop-plans"
         self.assertIn(init.HOOK_MARK, (store / ".claude" / "settings.json").read_text())
         local = app / ".claude" / "settings.local.json"
@@ -214,8 +218,15 @@ class Init(Setup):
 
     def test_flags_are_not_asked_again(self):
         app = self.app()
-        self.init("--name", "n", "--key", "K", "--port", "7001", "--pickup", "--no-hooks", cwd=app, tty=True)
-        self.assertEqual(self.config(self.top / "shop-plans")["pickup"], True)
+        self.init("--name", "n", "--key", "K", "--port", "7001", "--pickup", "--agent", "copilot", "--no-hooks", cwd=app, tty=True)
+        self.assertEqual((self.config(self.top / "shop-plans")["pickup"], self.config(self.top / "shop-plans")["agent"]), (True, "copilot"))
+
+    def test_the_agent_is_claude_unless_only_copilot_is_on_path(self):
+        app = self.app()
+        self.init("--yes", "--pickup", cwd=app, which=lambda name: "/bin/copilot" if name == "copilot" else None, why_off=lambda st: None)
+        self.assertEqual(self.config(self.top / "shop-plans")["agent"], "copilot")
+        self.assertTrue(any("run `copilot` once in" in line for line in self.said))
+        agent.use("claude")
 
     def test_init_says_why_pickup_cannot_run_when_it_is_switched_on(self):
         app = self.app()
@@ -430,6 +441,46 @@ class Doctor(Setup):
         self.assertTrue(any(m == init.INFO and '"push": false' in t for m, t in found))
 
 
+class AgentCommand(Setup):
+    def made(self):
+        self.init("--yes", "--pickup", cwd=self.app())
+        st = stores.Store(self.top / "shop-plans")
+        self.addCleanup(agent.use, "claude")
+        return st
+
+    def jobs(self, st, *jobs):
+        pickup.save(st, {"inflight": [j["key"] for j in jobs], "jobs": list(jobs)})
+
+    def switch(self, st, name, **kw):
+        with mock.patch("kandalf.gitlog.record"):
+            return init.set_agent(st, name, **kw)
+
+    def test_switching_sets_the_agent_and_drops_the_old_model(self):
+        st = self.made()
+        cfg = self.config(st.dir)
+        cfg["model"] = "sonnet"
+        (st.dir / "board.json").write_text(json.dumps(cfg))
+        said = self.switch(stores.Store(st.dir), "copilot")
+        self.assertIn("model sonnet (for claude) dropped", said[0])
+        again = stores.Store(st.dir)
+        self.assertEqual((again.agent, again.model), ("copilot", "auto"))
+        self.assertEqual(self.switch(again, "copilot"), ["the agent is copilot already"])
+
+    def test_a_running_session_stops_a_switch_unless_forced_and_restart_then_starts_afresh(self):
+        st = self.made()
+        self.jobs(st, {"key": "SHO-1", "state": "started", "id": "ab12cd34", "session": "full-id"},
+                  {"key": "SHO-2", "state": "lost", "id": "cd34ef56", "session": "other-id"})
+        with self.assertRaises(SystemExit) as no:
+            self.switch(st, "copilot")
+        self.assertIn("SHO-1 has a claude session", str(no.exception))
+        self.assertEqual(self.config(st.dir)["agent"], "claude")
+        stopped = []
+        self.switch(st, "copilot", force=True, stop=lambda which, sid: stopped.append((which, sid)))
+        self.assertEqual(stopped, [("claude", "ab12cd34")])
+        jobs = pickup.load(st)["jobs"]
+        self.assertEqual([(j["state"], "session" in j) for j in jobs], [("lost", False), ("lost", False)])
+
+
 class RepoCommands(Setup):
     def setUp(self):
         super().setUp()
@@ -552,7 +603,7 @@ class RepoCommands(Setup):
         found = init.checks(stores.Store(st.dir), **probes)
         self.assertTrue(any(m == init.OK and f"repo api {api}" in t for m, t in found), found)
         self.assertEqual([t for m, t in found if m == init.BAD], [])
-        self.assertTrue(any(m == init.INFO and init.TRUST.format(app=api) in t for m, t in found), found)
+        self.assertTrue(any(m == init.INFO and agent.trust(api) in t for m, t in found), found)
         (api / "docs" / "plans").unlink()
         cfg = self.config(st.dir)
         (st.dir / "board.json").write_text(json.dumps({**cfg, "repos": {**cfg["repos"], "web": "../gone", "bad name": "../x"}}))

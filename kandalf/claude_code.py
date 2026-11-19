@@ -20,11 +20,16 @@ start's args are pickup's: "--model m", "-n name" and "--resume <full id>".
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
 
 CLI = "claude"
+NAME = "Claude"
+MODEL = "opus"  # the model a session runs on unless the store or tile says
+MODELS = ["opus", "sonnet", "haiku", "fable"]  # the page's Model dropdown
+TRUST = "Before the first story: run `claude` once in {app} and accept its trust prompt, or sessions can't start there."
 
 
 def installed() -> bool:
@@ -166,6 +171,12 @@ def screen_tail(output: str, limit: int = 220) -> str:
     if words[-limit - 1] != " ":  # the cut fell inside a word: start at the next one
         tail = tail.split(" ", 1)[-1]
     return "… " + tail.strip()
+
+
+# ---------- attaching to a session ----------
+def attach(sid: str) -> int:
+    """kandalf attach for a Claude session: `claude attach <id>`, in place of this process."""
+    os.execvp(CLI, [CLI, "attach", sid])
 
 
 # ---------- stopping a session ----------

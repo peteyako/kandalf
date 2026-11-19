@@ -51,7 +51,7 @@ from urllib.parse import parse_qs, urlparse
 sys.dont_write_bytecode = True  # no __pycache__ in the repo from importing pln
 from . import pln  # noqa: E402  tile keys
 from . import gitlog  # noqa: E402  one commit per board change
-from . import pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
+from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
 from . import store as stores  # noqa: E402  which store, and its settings
 
 HERE = Path(__file__).resolve().parent
@@ -423,7 +423,7 @@ def in_flight_tiles(store, text: str) -> list:
 
 
 PICKUP_BOARD = "plans.md"
-SESSION_LINE_RE = re.compile(r"^\s+Claude session `[0-9a-f]+`: ")  # board.html reads it too (SESSION_RE there)
+SESSION_LINE_RE = re.compile(r"^\s+(?:Claude|Copilot) session `[0-9a-f]+`: ")  # board.html reads it too (SESSION_RE there)
 
 
 def with_session(store, text: str, job: dict) -> str:
@@ -446,7 +446,7 @@ def with_session(store, text: str, job: dict) -> str:
         where = f" Branch `{job['branch']}`, worktree `{pickup.worktree_label(store, job['worktree'])}`." if job.get("worktree") else ""
     where += f" Model `{job['model']}`." if job.get("model") else ""
     day = time.strftime("%Y-%m-%d", time.localtime(job.get("started") or time.time()))
-    body.insert(at, f"  Claude session `{job['id']}`: `claude attach {job['id']}`.{where} Started {day}.")
+    body.insert(at, f"  {agent.short()} session `{job['id']}`: `{agent.attach(job['id'])}`.{where} Started {day}.")
     lines[tile["start"] + 1:tile["end"]] = body
     return "\n".join(lines)
 
@@ -476,7 +476,7 @@ def note_session(store, job: dict):
     new = with_session(store, old, job)
     if new != old:
         write_atomic(board, new)
-        gitlog.record(store, [board], f"board: {job['key']} picked up by Claude session {job['id']}")
+        gitlog.record(store, [board], f"board: {job['key']} picked up by {agent.short()} session {job['id']}")
 PICKUP_RECHECK = 20  # seconds between looks at the sessions while a job waits or runs
 
 
@@ -497,6 +497,12 @@ def watch_pickups(store, every: float = 2.0):
     and hand what landed in In flight to pickup.tick."""
     board, seen, last, told, before = store.dir / PICKUP_BOARD, None, 0.0, set(), None
     report_in_flight(store)
+    try:
+        if board.is_file():
+            for key in pickup.adopt(store, in_flight_tiles(store, board.read_text(encoding="utf-8"))):
+                pickup.log(f"{key} is in flight with no session: picking it up")
+    except Exception as e:  # a courtesy too: the watch below still runs
+        pickup.log(f"in flight tiles could not be adopted: {e}")
     while True:
         try:
             at = board.stat().st_mtime_ns if board.is_file() else None
@@ -761,7 +767,7 @@ class Handler(BaseHTTPRequestHandler):
             if (self.plans / ARCHIVE_LOG).is_file():
                 files.append(ARCHIVE_LOG)
             self.send_json(200, {"dir": str(self.plans), "files": files,
-                                 "name": self.store.name, "key": self.store.key, "model": self.store.model,
+                                 "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(),
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
                                  "trunk": self.store.trunk,
                                  "repos": [{"name": r.name, "main": r.main} for r in self.store.repos]})
@@ -853,7 +859,7 @@ class Handler(BaseHTTPRequestHandler):
         tile = next((t for t in board_tiles(self.store, old) if t["key"] == key), None)
         line = pickup.status(self.store, key, tile["text"]) if tile else None
         if line is None:
-            return self.send_json(409, {"error": f"{key} has no Claude session to report on"})
+            return self.send_json(409, {"error": f"{key} has no session to report on"})
         write_atomic(board, with_status(self.store, old, key, line))
         self.commit([board], f"board: {key} status refreshed")
         self.send_json(200, {**pickup.summary(self.store), "status": line})
@@ -981,6 +987,15 @@ class Handler(BaseHTTPRequestHandler):
             data = self.read_body()
             if data.get("status"):  # {key, status: true}: write where the story's session and branch stand into its tile
                 return self.refresh_status(data.get("key", ""))
+            if data.get("discard"):  # {key, discard: true, tile}: the tile is being deleted; throw its work away
+                key = data.get("key", "")
+                try:
+                    done = pickup.discard(self.store, key, data.get("tile") or "")
+                except (OSError, subprocess.SubprocessError) as e:
+                    done = [f"not discarded: {e}"]
+                for line in done:
+                    pickup.log(f"{key} deleted: {line}")
+                return self.send_json(200, {**pickup.summary(self.store), "discarded": done})
             why = pickup.why_off(self.store)
             if why:
                 return self.send_json(409, {"error": why})
@@ -1032,7 +1047,7 @@ def main(args=None):
     if why:
         print(why, flush=True)
     else:
-        print(f"Tiles that land in In flight go to Claude Code ({st.permission} mode), in worktrees beside {st.app}", flush=True)
+        print(f"Tiles that land in In flight go to {agent.label()} ({st.permission} mode), in worktrees beside {st.app}", flush=True)
     if should_open(args.no_open):
         webbrowser.open(f"http://127.0.0.1:{port}/")
     try:

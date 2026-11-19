@@ -1,10 +1,10 @@
 # kandalf
 
-A wizard for your backlog, straight from middle management.
+A wizard for your backlog, straight outta middle management.
 
-This tool is neither original nor clever. It's a stupider version of something a hundred vibe-coded GitHub repos have probably built already. But this one is my stupid, so I love it. It's also useful to me, and that is enough.
+This tool is neither original nor clever. It's a stupider version of something a hundred vibe-coded GitHub repos have probably built already. But this one is my stupid, so I love it. It's also useful to me, doing just what is really need. And that is enough.
 
-It's a local kanban board for planning work for AI agents, served on your machine. Drag a story to In flight and a background Claude Code session starts on it, in its own git worktree. Everything is markdown in git: no database, and nothing to install beyond Python 3.10+ and git.
+It's a local kanban board for planning work for AI agents, served on your machine. Drag a story to In flight and a background Claude Code or GitHub Copilot CLI session starts on it, in its own git worktree. Everything is markdown in git: no database, and nothing to install beyond Python 3.10+ and git.
 
 And by the power of almighty Sauron, don't run this in production. Run it only on good vibes, in a closet, deep in the darkest basement, and away from the public internet. 
 
@@ -44,7 +44,9 @@ Turn it on with `"pickup": true` in the store's `board.json` (then restart `kand
 
 Before the first story, run `claude` once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers the worktrees cut from it. A story that works in several repos (`Repos:` on its tile) needs the prompt accepted once in each of them. A store made by `kandalf init` keeps those worktrees inside the repo, under `.worktrees/` (gitignored).
 
-Pickup needs [Claude Code](https://claude.com/claude-code) installed, with `claude --bg`, `agents --json`, `logs`, `stop` and `rm`. Claude Code is the only agent supported today. Run `claude` once in your repo and accept the trust prompt before the first pickup.
+Pickup needs an agent CLI: [Claude Code](https://claude.com/claude-code) (the default) or the GitHub Copilot CLI (see [Platforms and requirements](#platforms-and-requirements)). Pick the agent when `kandalf init` asks (or pass `--agent copilot`), switch a store later with `kandalf agent copilot`, or set `"agent": "copilot"` to use the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot`) instead: each session is a detached `copilot -p --output-format json` process, tracked under `~/.kandalf/copilot/` (`KANDALF_COPILOT_DIR` overrides it). The tile's attach command is `kandalf attach ab12cd34`: it prints what the session has said and the tools it ran, follows it while it works (Ctrl-C leaves it working), and once it has finished opens the conversation in `copilot --resume` in its worktree, so you can read it and carry on, with the folders and permissions it ran with. Quit it (`/exit`) before Restart on the tile: while it is open, the board can't resume the session. A Copilot session can't stop to ask, so Status and the tile call it waiting for your input when it ended on an error or with a question. Copilot reads Claude Code hooks from a repo's `.claude/settings.local.json`, so a Copilot session gets the board's hooks through a link there in its worktree (kept out of git by the repo's `info/exclude`). A Copilot session reaches only its worktree and the folders it is given, so it is given the store too (`--add-dir`), for the board and plan docs behind `docs/plans`. `permission` `auto` runs with `--allow-all-tools --allow-all-paths` (any tool, any file path; URLs are still checked), `acceptEdits` with `--allow-all-tools`, `bypassPermissions` with `--allow-all`, `plan` with `--mode plan`, others ask for nothing and so deny what isn't pre-approved. Run the agent (`claude` or `copilot`) once in your repo and accept its trust prompt before the first pickup.
+
+`kandalf agent NAME` switches an existing store: it sets `agent`, drops `model` (it was the old agent's), and leaves each story the old agent picked up lost, so Restart on its tile starts the new agent in the same worktree. It refuses while an old session is at work or idle; `--force` stops those first. Restart `kandalf serve` afterwards.
 
 ## What a session does with a story
 
@@ -53,9 +55,9 @@ While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a key
 1. Cuts a git worktree on a branch from the trunk: worktree `myapp/.worktrees/pln-74` in a store made by `kandalf init` (beside the app, as `myapp-pln-74`, when `"worktree"` isn't set), branch `pln-74-colour-tokens`. The store is linked in at `docs/plans` there too. `"branch"` and `"worktree"` in `board.json` change the names. A tile with a `Repos: api, web` line gets a worktree in each of those repos, all on that one branch, each beside its own repo. The store is linked in only where the repo's checkout links it.
 2. Starts a background Claude Code session in it (in the first repo's worktree, when there are several; the others are added to the session with `--add-dir`, and its prompt lists them), given the tile and told to follow the repo's rules, tick sub-tasks as they land with their commits, keep a `Handoff:` line on the tile, and stop before merging or pushing. The board writes the session, branch and worktree onto the tile itself.
 
-Tiles already in flight the first time the server looks at a store are not picked up, nor are unkeyed tiles or tiles that say `No pickup`.
+When the server starts, a tile already in flight that never had a session (no session line on it, and no sub-stories) is picked up too. Unkeyed tiles and tiles that say `No pickup` never are (take the words out and the tile is picked up on the next look); the server's startup list says when a tile's `No pickup` is why it has no session.
 
-**On the tile.** The session is written into the tile as one line: ``Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.`` A story in several repos names each one's worktree instead: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.`` The board shows it as a block with the session's state and a button that copies the attach command:
+**On the tile.** The session is written into the tile as one line: ``Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.`` A Copilot store's line says ``Copilot session `ab12cd34`: `kandalf attach ab12cd34`.`` A story in several repos names each one's worktree instead: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.`` The board shows it as a block with the session's state and a button that copies the attach command:
 
 - **working**: the session is at work.
 - **idle**: it finished its turn. The block gets **Restart**.
@@ -77,6 +79,8 @@ Tiles already in flight the first time the server looks at a store are not picke
 **If it can't start**, the tile shows **not started** with the reason, and **Retry**.
 
 **Archiving tidies.** When a story is archived (Clear, or dropped on Archive) the server stops and removes its session, removes its worktree and deletes the feature branch in every repo the story worked in (the ones its session line names). It does so only when nothing would be lost in any of them: the branch is already in that repo's trunk (merged, rebased or squashed), every worktree has nothing uncommitted, the session isn't at work, and every repo is still in `board.json`. Otherwise it keeps everything and says which repo holds it up in the banner and on the console. The console gives the deleted branch's last commit, so `git branch <name> <commit>` brings it back. `"tidy": false` keeps everything.
+
+**Deleting throws away.** Deleting a tile that has a session (the card's Delete button) asks first, then stops and removes the session, removes its worktree with anything uncommitted in it, and deletes the branch unless it has commits of its own (then the branch is kept, so no commit is lost). `"tidy": false` doesn't apply: a delete is asked for.
 
 ## The board without an agent
 
@@ -125,10 +129,11 @@ A store's `board.json` is optional; every key has a default.
 | `app` | none | The app repo, relative to the store. Needed for pickup and for the red outline on unmerged Done tiles. |
 | `trunk` | `main` (`kandalf init` picks the app's default branch) | The app branch feature branches are cut from and merged into. |
 | `repos` | none | Other repos stories can work in, by name: a path relative to the store, or `{"path", "trunk"}`. A tile's `Repos:` line picks them. |
-| `pickup` | `false` | Start a Claude Code session for a tile that lands in In flight. Needs `app`. |
+| `agent` | `claude` | The agent pickup hands stories to: `claude` (Claude Code) or `copilot` (GitHub Copilot CLI). |
+| `pickup` | `false` | Start an agent session (`agent`) for a tile that lands in In flight. Needs `app`. |
 | `pickupColumn` | any column named like In flight: in-flight, in progress (typos too), doing, WIP, working, underway, ongoing, active; not one that says "not" | The one column, by name (any case), whose tiles are picked up. |
 | `permission` | `auto` | Permission mode sessions start in: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions` (`claude --help` lists them). |
-| `model` | `opus` | Model sessions run on: an alias or a full id. A tile's `Model:` line overrides it. |
+| `model` | `opus` (`auto` for copilot) | Model sessions run on: an alias or a full id. A tile's `Model:` line overrides it. |
 | `sessions` | `2` | How many of a master's sub-stories have a session at work at once. A master's `Sessions:` line overrides it. |
 | `branch` | `{key}-{slug}` | A session's feature branch. `{key}` is the tile's key in lower case, `{KEY}` as written, `{slug}` its title, `{app}` the app folder's name. Must contain `{key}` or `{KEY}`. |
 | `worktree` | `{app}-{key}` | Its worktree, relative to the folder the app is in, same placeholders. Must contain `{key}` or `{KEY}` and climbs at most one folder (`../`). `kandalf init` sets `{app}/.worktrees/{key}`, inside the app. |
@@ -162,6 +167,9 @@ kandalf commit status       what's queued, and when it will commit
 kandalf commit now          commit and push the queue right away
 kandalf check FILE...       would the board open this file view-only? names the first bad line, and a second In flight or Done column
 kandalf where               which store, its key, port, app and repo
+kandalf attach ID|KEY       open a story's session (`claude attach`, or for Copilot follow it, then `copilot --resume`)
+kandalf status KEY          the Status line for a story's session, as the tile's Status button writes it
+kandalf agent [NAME]        the agent pickup hands stories to; or switch to claude or copilot (--force)
 kandalf repo add PATH       another repo stories can work in (--name NAME, --trunk BRANCH)
 kandalf repo list           the store's repos, the main one first
 kandalf repo rm NAME        take a repo out of board.json (its docs/plans link stays)
@@ -171,7 +179,7 @@ kandalf hook autocommit     the Claude Code hook that queues an edit (reads the 
 kandalf hook check          the Claude Code hook that flags a file the board would open view-only
 ```
 
-`kandalf init` asks for what you don't pass when run in a terminal; `--yes` takes the defaults (pickup and hooks off).
+`kandalf init` asks for what you don't pass when run in a terminal; `--yes` takes the defaults (pickup and hooks off; with `--pickup`, the agent is `claude` when it is on PATH, else `copilot` when that is).
 
 ## Commits and pushes
 
@@ -186,7 +194,7 @@ On start the server also picks up changes left over from before. A commit takes 
 
 ## Hooks
 
-The board's Claude Code hooks live in the store, in `.claude/settings.json`, committed with the rest of it. `kandalf init --hooks` puts them there, and `kandalf hooks --add` adds them to a store made without them. The app gets nothing committed:
+The board's hooks are Claude Code hooks, which the Copilot CLI reads too. They live in the store, in `.claude/settings.json`, committed with the rest of it. `kandalf init --hooks` puts them there, and `kandalf hooks --add` adds them to a store made without them. The app gets nothing committed:
 
 - **Pickup sessions** start with `claude --settings <store>/.claude/settings.json`, so every worktree gets the hooks without a file of its own.
 - **Your own sessions in the app** get them through `.claude/settings.local.json`, a gitignored symlink to the store's file. If the app already has a `settings.local.json`, it is left alone: start `claude --settings <store>/.claude/settings.json`, or paste the block into it.
@@ -220,7 +228,9 @@ When it starts, the server says whether pickup is on, and if not, why and how to
 - Python 3.10 or later, standard library only.
 - git.
 - node, only for `kandalf check` and the check hook.
-- Claude Code, only for pickup.
+- For pickup only, one agent CLI on your PATH:
+  - [Claude Code](https://claude.com/claude-code) (`claude`), with `--bg`, `agents --json`, `logs`, `stop` and `rm` (`claude update` brings them), or
+  - the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot`), signed in (`copilot login`), with `-p`, `--session-id`, `--resume`, `--add-dir`, `--name`, `--allow-all-tools` and `--allow-all-paths`.
 - macOS and Linux. Windows is untested.
 
 ## Development
@@ -231,8 +241,10 @@ kandalf/
   cli.py                  the commands
   serve.py, board.html    the server and its page
   pickup.py               hands a tile in In flight to an agent
+  agent.py                the agent in use (board.json "agent")
   claude_code.py          every call to the claude CLI
-  init.py                 kandalf init, kandalf doctor, kandalf hooks (and --add)
+  copilot_cli.py          every call to the copilot CLI
+  init.py                 kandalf init, kandalf doctor, kandalf agent, kandalf hooks (and --add)
   gitlog.py               the batched commit queue
   store.py                what a store is, and its board.json
   pln.py                  tile keys
@@ -249,7 +261,7 @@ python3 -m unittest discover -p "test_*.py"
 node --test test_page.js
 ```
 
-To support another agent, `kandalf/claude_code.py` is the seam: nothing else runs `claude`, and its docstring lists the functions another agent's module would provide.
+To support another agent, `kandalf/claude_code.py` and `kandalf/copilot_cli.py` are the seams: nothing else runs `claude` or `copilot`, and its docstring lists the functions another agent's module would provide.
 
 ## Licence
 
