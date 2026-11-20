@@ -60,7 +60,7 @@ board.json:
 
 pickup.md, at the top of the store, optional: the working rules every Claude session is
 given, in place of the default (templates/pickup.md: commit subjects carry the key, and the
-Gates sub-task). {key} in it is the tile's key. They are told right after "Tick each
+Gates sub-task, unticked again for a later run of tests). {key} in it is the tile's key. They are told right after "Tick each
 sub-task with its commit as it lands.": a first line that is a sentence carries on that
 rule, and each "- " line is a rule of its own. An empty pickup.md gives no rules of the
 store's own. What the board reads back (the session line, ticked sub-tasks, the Handoff:

@@ -128,6 +128,7 @@ def enabled(store) -> bool:
 #            "state": "waiting" | "started" (at work) | "idle" | "lost" | "ended" | "failed",
 #            "behind": the key it waits for, "model", "id", "session": the full session id,
 #            "branch", "worktree", "started", "error",
+#            "closing": told to merge, so it may move its own tile to Done,
 #            "master", "limit": a master's sub-story, and how many of them work at once}]}
 def state_path(store) -> Path:
     """In the store's .git, beside the commit queue; a store that isn't a repo keeps it as a dotfile."""
@@ -676,7 +677,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
     """One look at the board. tiles: the In flight tiles now. Queues the ones that arrived (a
     paused one, to be taken over from its handoff), drops a waiting one that left again (a
     paused one goes back to paused), pauses a session at work whose tile left In flight, as
-    the Pause button does (resume and stop), notes each session as at work, idle or lost, moves a
+    the Pause button does (resume and stop; not one told to merge, which moves its own tile to Done), notes each session as at work, idle or lost, moves a
     session whose tile changed model onto that model or repos onto those repos, and starts the oldest waiting job if
     no session is at work. Returns the state."""
     with _lock:
@@ -742,7 +743,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
             there = sessions()
             if there is not None:
                 for j in tracked:
-                    gone = j["key"] not in by_key and j["state"] == "started" and not j.get("pausing")
+                    gone = j["key"] not in by_key and j["state"] == "started" and not j.get("pausing") and not j.get("closing")
                     if gone and (there.get(j.get("id")) == "busy" or now() - j.get("started", 0) < SETTLE):
                         _pause(store, j, resume, stop, now(), on_start, "its tile left In flight")  # as the Pause button does
                         continue
@@ -875,6 +876,7 @@ def _look(job, seen, in_flight: bool, at, why=idle_reason):
         job["state"] = "ended"
     else:
         job["state"] = "idle" if seen in ("idle", "waiting") else "lost"
+        job.pop("closing", None)  # it stopped with its tile still in flight: the merge is behind it
     waiting = why(job.get("id")) if job["state"] == "idle" else None
     if seen == "waiting" and job["state"] == "idle" and not waiting:
         waiting = "question"  # the CLI says it is blocked on input, whatever its screen shows
@@ -978,23 +980,28 @@ def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
 
 # ---------- replying from the board ----------
 STEPS = ("squash", "merge", "push")  # what a review reply may ask for, in the order they are done
+# Told with every reply, whatever the store's own rules say: work after the sub-tasks are ticked still shows on the tile.
+RERUN = ("If you run tests or gates for this, that run is a sub-task on the tile: before you start it, untick its Gates sub-task "
+         "or add a new unticked one saying what runs, and tick it only when it has passed.")
 
 
 def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> str:
     """What a reply from the board tells the session: the words typed, then the review steps
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
     to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them.
+    A merge closes the story: with nothing outstanding, the session moves its tile to Done.
+    Every reply says a run of tests is an unticked sub-task while it runs (RERUN).
     interrupted: the session was at work and was stopped mid-step to take the message."""
     key = job["key"]
     said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
     if interrupted:
         return (f"You were interrupted: the person on the plans board stopped your session with a message about {key}:\n\n{text}\n\n"
                 "Act on it, then carry on with the story from where you were: check `git status` and the tile first, since you were "
-                "stopped mid-step. Keep the tile's \"Handoff:\" line current. Don't squash, merge or push: those stay with the reviewer.")
+                "stopped mid-step. Keep the tile's \"Handoff:\" line current. " + RERUN + " Don't squash, merge or push: those stay with the reviewer.")
     if not actions:
         back = (" If it sends you back to work on the story, take the tile's \"Ready for review\" line off while you work and put it back when you are done."
                 if job.get("ready") else "")
-        return (f"{said}\n\nAct on it.{back} Keep the tile's \"Handoff:\" line current. "
+        return (f"{said}\n\nAct on it.{back} Keep the tile's \"Handoff:\" line current. {RERUN} "
                 "Don't squash, merge or push: those stay with the reviewer, whatever an earlier reply allowed.")
     cuts = _cuts_of(store, job)
     if len(cuts) > 1:
@@ -1014,12 +1021,12 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> 
     listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate((s for s in STEPS if s in actions), 1))
     first = "First do what they wrote above. Then do these" if text else "They ask you to do these"
     if "merge" in actions:
-        done = """When they are done, take the "Ready for review" line off the tile, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
+        done = """When they are done, take the "Ready for review" line off the tile and say what you did on its "Handoff:" line. Then, if nothing on the story is outstanding (every sub-task is ticked and every step above went through), close it: move the tile to the top of Done (the board's column for finished stories), with whatever the header of plans.md asks of a closed story. If anything is outstanding, leave the tile in In flight and say what on its "Handoff:" line. Then stop."""
     else:
-        done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop."""
+        done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
     return (f"{said}\n\n{first}, in this order; your rules leave them to the reviewer, and this is the reviewer saying so, "
             f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}\n\n"
-            f"If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
+            f"{RERUN} If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
 
 
 def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time):
@@ -1065,6 +1072,9 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
             return f"not sent: {why}"
         job.update(told)
         job.pop("waiting", None)
+        job.pop("closing", None)
+        if "merge" in actions and not interrupted:  # it may move its own tile to Done: tick leaves it to finish
+            job["closing"] = True
         _report(store, job, now(), on_start, "given your reply" + (f" ({', '.join(s for s in STEPS if s in actions)})" if actions else ""))
         save(store, state)
         return None

@@ -142,7 +142,7 @@ Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Rea
 Keep the tile able to hand the work over. Your session can be closed at any moment, and a new one will have only the tile and this branch to go on:
 - Commit as you go, so no finished work lives only in this session.
 - Tick each sub-task with its commit as it lands. Commit subjects carry the key, e.g. "... ({key})".
-- Ticked sub-tasks must not read as a finished story while its gates still run. If the tile has no sub-task for them, add a last one when you start, `- [ ] **Gates**: lint, every test tier and the review`, and tick it only when all of them have passed.
+- Ticked sub-tasks must not read as a finished story while its gates still run. If the tile has no sub-task for them, add a last one when you start, `- [ ] **Gates**: lint, every test tier and the review`, and tick it only when all of them have passed. A later run of tests or gates (after a rebase, a fix or a reply) is a sub-task too: before you start it, untick that sub-task or add a new unticked one saying what runs, and tick it when it has passed.
 - Keep one indented "Handoff:" line on the tile, rewritten after each step: what is done, what you are doing now, what comes next, and anything not yet committed or decided. The board has already noted this session, the branch and the worktree on the tile ("Claude session ..."); leave that line as it is.
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
@@ -816,14 +816,58 @@ class Queue(unittest.TestCase):
         self.assertLess(told.index("Rebase the branch onto main"), told.index("squash the commits"))  # never squash against an old main
         self.assertIn("no merge commit", told)
         self.assertIn('take the "Ready for review" line off', told)
+        self.assertIn("move the tile to the top of Done", told)  # merged with nothing outstanding: the story is closed
+        self.assertIn("leave the tile in In flight", told)  # something outstanding: it stays, and says what
+        self.assertNotIn("Don't move the tile to Done", told)
         self.assertIn("for these steps, now", told)
+        self.assertIn("untick its Gates sub-task or add a new unticked one", told)  # a re-run after the rebase shows on the tile
         self.fake.idle.add("s1")
         self.tick(ready)
         self.assertIsNone(self.reply("PLN-01", "", actions=["push"]))  # pushing alone pushes the branch
         self.assertIn("Push the branch", self.fake.told[-1])
         self.assertNotIn("squash the commits", self.fake.told[-1])
         self.assertIn('keep the "Ready for review" line', self.fake.told[-1])  # still not merged: still for review
+        self.assertIn("Don't move the tile to Done", self.fake.told[-1])
         self.assertIn("not an action", self.reply("PLN-01", "", actions=["deploy"]))
+
+    def test_every_reply_says_a_run_of_tests_is_an_unticked_sub_task_while_it_runs(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "fix the header"))  # at work: interrupted
+        self.fake.idle.add("s1")
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "and the footer"))  # idle: a plain reply
+        for told in self.fake.told:
+            self.assertIn("untick its Gates sub-task or add a new unticked one", told)
+
+    def test_a_session_told_to_merge_that_moves_its_tile_to_done_is_left_to_finish(self):
+        self.tick("## In flight\n")
+        ready = "## In flight\n\n- [ ] PLN-01 **One.**\n  **Ready for review:** gates green.\n"
+        self.tick(ready)
+        self.fake.idle.add("s1")
+        self.tick(ready)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["merge"]))
+        done = "## In flight\n\n## Done\n\n- [x] PLN-01 **One.**\n"
+        self.tick(done)  # at work still, writing its last lines: not stopped to write a handoff
+        self.assertEqual((self.fake.stopped, self.job()["state"], self.job().get("pausing")), (["s1"], "started", None))
+        self.fake.idle.add("s1")
+        self.tick(done)
+        self.assertEqual(self.jobs(), [("PLN-01", "ended")])
+
+    def test_a_merged_story_left_in_flight_is_paused_again_if_its_tile_is_moved_out_later(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.idle.add("s1")
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["merge"]))
+        self.fake.idle.add("s1")
+        self.tick(one)  # it merged, found something outstanding and stopped with the tile where it was
+        self.assertIsNone(self.reply("PLN-01", "finish the last sub-task"))
+        self.tick("## To do\n\n- [ ] PLN-01 **One.**\n\n## In flight\n")
+        self.assertEqual((self.fake.stopped[-1], self.job().get("pausing")), ("s1", True))
+        self.assertIn('"Handoff:" line in full', self.fake.told[-1])
 
     def test_words_and_ticked_steps_go_words_first_and_a_plain_reply_withholds_the_steps(self):
         st = stores.Store(tempfile.mkdtemp())
