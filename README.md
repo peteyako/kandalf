@@ -164,7 +164,7 @@ Environment variables:
 | `BOARD_PICKUP_SETTLE` | Seconds a just-started session counts as at work before it shows itself busy (default `90`). |
 | `PLANS_APP_REPO`, `PLANS_APP_TRUNK` | Override `app` and `trunk`. |
 
-**`pickup.md`**, at the top of the store, replaces the default working rules every session is given. The default (`kandalf/templates/pickup.md`) says commit subjects carry the key, and adds a last Gates sub-task. `{key}` in it stands for the tile's key. The rules follow "Tick each sub-task with its commit as it lands." in the session's list, so a first line that is a sentence carries on that rule and each `- ` line is a rule of its own. An empty file gives none. What the board reads back (the session line, ticked sub-tasks, `Handoff:`, `Ready for review`) is always asked for.
+**`pickup.md`**, at the top of the store, replaces the default working rules every session is given. The default (`kandalf/templates/pickup.md`) says commit subjects carry the key, and adds a last Gates sub-task, which is unticked again (or joined by a new one) for any later run of tests. `{key}` in it stands for the tile's key. The rules follow "Tick each sub-task with its commit as it lands." in the session's list, so a first line that is a sentence carries on that rule and each `- ` line is a rule of its own. An empty file gives none. What the board reads back (the session line, ticked sub-tasks, `Handoff:`, `Ready for review`) is always asked for.
 
 ## Commands
 

@@ -980,6 +980,9 @@ def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
 
 # ---------- replying from the board ----------
 STEPS = ("squash", "merge", "push")  # what a review reply may ask for, in the order they are done
+# Told with every reply, whatever the store's own rules say: work after the sub-tasks are ticked still shows on the tile.
+RERUN = ("If you run tests or gates for this, that run is a sub-task on the tile: before you start it, untick its Gates sub-task "
+         "or add a new unticked one saying what runs, and tick it only when it has passed.")
 
 
 def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> str:
@@ -987,17 +990,18 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> 
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
     to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them.
     A merge closes the story: with nothing outstanding, the session moves its tile to Done.
+    Every reply says a run of tests is an unticked sub-task while it runs (RERUN).
     interrupted: the session was at work and was stopped mid-step to take the message."""
     key = job["key"]
     said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
     if interrupted:
         return (f"You were interrupted: the person on the plans board stopped your session with a message about {key}:\n\n{text}\n\n"
                 "Act on it, then carry on with the story from where you were: check `git status` and the tile first, since you were "
-                "stopped mid-step. Keep the tile's \"Handoff:\" line current. Don't squash, merge or push: those stay with the reviewer.")
+                "stopped mid-step. Keep the tile's \"Handoff:\" line current. " + RERUN + " Don't squash, merge or push: those stay with the reviewer.")
     if not actions:
         back = (" If it sends you back to work on the story, take the tile's \"Ready for review\" line off while you work and put it back when you are done."
                 if job.get("ready") else "")
-        return (f"{said}\n\nAct on it.{back} Keep the tile's \"Handoff:\" line current. "
+        return (f"{said}\n\nAct on it.{back} Keep the tile's \"Handoff:\" line current. {RERUN} "
                 "Don't squash, merge or push: those stay with the reviewer, whatever an earlier reply allowed.")
     cuts = _cuts_of(store, job)
     if len(cuts) > 1:
@@ -1022,7 +1026,7 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> 
         done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
     return (f"{said}\n\n{first}, in this order; your rules leave them to the reviewer, and this is the reviewer saying so, "
             f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}\n\n"
-            f"If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
+            f"{RERUN} If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
 
 
 def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time):

@@ -142,7 +142,7 @@ Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Rea
 Keep the tile able to hand the work over. Your session can be closed at any moment, and a new one will have only the tile and this branch to go on:
 - Commit as you go, so no finished work lives only in this session.
 - Tick each sub-task with its commit as it lands. Commit subjects carry the key, e.g. "... ({key})".
-- Ticked sub-tasks must not read as a finished story while its gates still run. If the tile has no sub-task for them, add a last one when you start, `- [ ] **Gates**: lint, every test tier and the review`, and tick it only when all of them have passed.
+- Ticked sub-tasks must not read as a finished story while its gates still run. If the tile has no sub-task for them, add a last one when you start, `- [ ] **Gates**: lint, every test tier and the review`, and tick it only when all of them have passed. A later run of tests or gates (after a rebase, a fix or a reply) is a sub-task too: before you start it, untick that sub-task or add a new unticked one saying what runs, and tick it when it has passed.
 - Keep one indented "Handoff:" line on the tile, rewritten after each step: what is done, what you are doing now, what comes next, and anything not yet committed or decided. The board has already noted this session, the branch and the worktree on the tile ("Claude session ..."); leave that line as it is.
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
@@ -820,6 +820,7 @@ class Queue(unittest.TestCase):
         self.assertIn("leave the tile in In flight", told)  # something outstanding: it stays, and says what
         self.assertNotIn("Don't move the tile to Done", told)
         self.assertIn("for these steps, now", told)
+        self.assertIn("untick its Gates sub-task or add a new unticked one", told)  # a re-run after the rebase shows on the tile
         self.fake.idle.add("s1")
         self.tick(ready)
         self.assertIsNone(self.reply("PLN-01", "", actions=["push"]))  # pushing alone pushes the branch
@@ -828,6 +829,17 @@ class Queue(unittest.TestCase):
         self.assertIn('keep the "Ready for review" line', self.fake.told[-1])  # still not merged: still for review
         self.assertIn("Don't move the tile to Done", self.fake.told[-1])
         self.assertIn("not an action", self.reply("PLN-01", "", actions=["deploy"]))
+
+    def test_every_reply_says_a_run_of_tests_is_an_unticked_sub_task_while_it_runs(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "fix the header"))  # at work: interrupted
+        self.fake.idle.add("s1")
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "and the footer"))  # idle: a plain reply
+        for told in self.fake.told:
+            self.assertIn("untick its Gates sub-task or add a new unticked one", told)
 
     def test_a_session_told_to_merge_that_moves_its_tile_to_done_is_left_to_finish(self):
         self.tick("## In flight\n")

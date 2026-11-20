@@ -7,6 +7,10 @@
   moves its tile to the top of Done, as the board's header says to close one; before, it was told
   to leave the tile in In flight. With something outstanding the tile stays and its `Handoff:`
   line says what. The session isn't paused for moving its own tile out of In flight.
+- A run of tests is a sub-task on the tile while it runs. The default rules already add a last
+  **Gates** sub-task; now a later run (after a rebase, a fix or a reply) unticks it or adds a new
+  unticked one first, and every reply from the board says so, whatever the store's `pickup.md`
+  says. A story no longer reads as all ticked while its tests are still being checked.
 
 ## 1.1.5
 
