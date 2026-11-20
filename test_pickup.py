@@ -816,6 +816,9 @@ class Queue(unittest.TestCase):
         self.assertLess(told.index("Rebase the branch onto main"), told.index("squash the commits"))  # never squash against an old main
         self.assertIn("no merge commit", told)
         self.assertIn('take the "Ready for review" line off', told)
+        self.assertIn("move the tile to the top of Done", told)  # merged with nothing outstanding: the story is closed
+        self.assertIn("leave the tile in In flight", told)  # something outstanding: it stays, and says what
+        self.assertNotIn("Don't move the tile to Done", told)
         self.assertIn("for these steps, now", told)
         self.fake.idle.add("s1")
         self.tick(ready)
@@ -823,7 +826,36 @@ class Queue(unittest.TestCase):
         self.assertIn("Push the branch", self.fake.told[-1])
         self.assertNotIn("squash the commits", self.fake.told[-1])
         self.assertIn('keep the "Ready for review" line', self.fake.told[-1])  # still not merged: still for review
+        self.assertIn("Don't move the tile to Done", self.fake.told[-1])
         self.assertIn("not an action", self.reply("PLN-01", "", actions=["deploy"]))
+
+    def test_a_session_told_to_merge_that_moves_its_tile_to_done_is_left_to_finish(self):
+        self.tick("## In flight\n")
+        ready = "## In flight\n\n- [ ] PLN-01 **One.**\n  **Ready for review:** gates green.\n"
+        self.tick(ready)
+        self.fake.idle.add("s1")
+        self.tick(ready)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["merge"]))
+        done = "## In flight\n\n## Done\n\n- [x] PLN-01 **One.**\n"
+        self.tick(done)  # at work still, writing its last lines: not stopped to write a handoff
+        self.assertEqual((self.fake.stopped, self.job()["state"], self.job().get("pausing")), (["s1"], "started", None))
+        self.fake.idle.add("s1")
+        self.tick(done)
+        self.assertEqual(self.jobs(), [("PLN-01", "ended")])
+
+    def test_a_merged_story_left_in_flight_is_paused_again_if_its_tile_is_moved_out_later(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.idle.add("s1")
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["merge"]))
+        self.fake.idle.add("s1")
+        self.tick(one)  # it merged, found something outstanding and stopped with the tile where it was
+        self.assertIsNone(self.reply("PLN-01", "finish the last sub-task"))
+        self.tick("## To do\n\n- [ ] PLN-01 **One.**\n\n## In flight\n")
+        self.assertEqual((self.fake.stopped[-1], self.job().get("pausing")), ("s1", True))
+        self.assertIn('"Handoff:" line in full', self.fake.told[-1])
 
     def test_words_and_ticked_steps_go_words_first_and_a_plain_reply_withholds_the_steps(self):
         st = stores.Store(tempfile.mkdtemp())

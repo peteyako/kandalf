@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- A story merged from the board moves to Done. When a review reply with **Merge into** ticked
+  goes through and nothing is outstanding (every sub-task ticked, every step done), the session
+  moves its tile to the top of Done, as the board's header says to close one; before, it was told
+  to leave the tile in In flight. With something outstanding the tile stays and its `Handoff:`
+  line says what. The session isn't paused for moving its own tile out of In flight.
+
 ## 1.1.5
 
 - A stats strip runs under the header of the plans board while pickup is on: how many builds are
