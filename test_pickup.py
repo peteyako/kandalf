@@ -1667,28 +1667,38 @@ class Transcript(unittest.TestCase):
         said = lambda kind, *blocks: {"type": kind, "message": {"content": list(blocks)}}
         self.write("aaaa-1111", [
             {"type": "permission-mode", "mode": "auto"},
-            {"type": "user", "message": {"content": "You are picking up PLN-01."}},
+            {"type": "user", "message": {"content": "You are picking up PLN-01.\nRead the tile."}},
             said("assistant", {"type": "thinking", "thinking": "hmm", "signature": "x"}, {"type": "text", "text": "Reading the tile first."}),
             said("assistant", {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "go test ./internal/...", "description": "tests"}}),
-            said("user", {"type": "tool_result", "tool_use_id": "t1", "content": "ok  internal/service  4.2s\nok  internal/models  1.1s"}),
+            said("user", {"type": "tool_result", "tool_use_id": "t1", "content": "\x1b[32mok\x1b[0m  internal/service  4.2s\nok  internal/models  1.1s\nShell cwd was reset to /x/app"}),
             said("assistant", {"type": "tool_use", "id": "t2", "name": "Edit", "input": {"file_path": "/x/app/main.go", "old_string": "a", "new_string": "b"}}),
             said("user", {"type": "tool_result", "tool_use_id": "t2", "is_error": True, "content": [{"type": "text", "text": "File has not been read yet."}]}),
+            said("user", {"type": "text", "text": "[Image: original 1280x2425, displayed at 1056x2000.]"}),
+            said("user", {"type": "text", "text": "[Request interrupted by user]"}),
+            said("assistant", {"type": "text", "text": "No response requested."}),
+            said("user", {"type": "text", "text": "carry on"}),
         ])
         self.assertEqual(agent.transcript("aaaa-1111").splitlines(), [
-            "You: You are picking up PLN-01.",
-            "Claude: Reading the tile first.",
-            "● Bash  go test ./internal/...",
-            "  ⎿ ok  internal/service  4.2s",
-            "    ok  internal/models  1.1s",
-            "● Edit  /x/app/main.go",
-            "  ✗ File has not been read yet.",
+            "❯ You are picking up PLN-01.",
+            "  Read the tile.",
+            "",
+            "⏺ Reading the tile first.",
+            "",
+            "⏺ Bash(go test ./internal/...)",
+            "  ⎿  ok  internal/service  4.2s",
+            "     ok  internal/models  1.1s",
+            "",
+            "⏺ Edit(/x/app/main.go)",
+            "  ⎿  Error: File has not been read yet.",
+            "",
+            "❯ carry on",
         ])
         self.assertIsNone(agent.transcript("no-such-session"))
 
     def test_the_log_comes_from_the_agent_that_ran_the_session_and_keeps_its_last_lines(self):
         self.write("bbbb-2222", [{"type": "assistant", "message": {"content": [{"type": "text", "text": f"line {n}"}]}} for n in range(10)])
         with mock.patch.object(copilot_cli, "has", lambda sid: False):
-            self.assertEqual(agents.transcript("bbbb", "bbbb-2222", limit=3).splitlines(), ["Claude: line 7", "Claude: line 8", "Claude: line 9"])
+            self.assertEqual(agents.transcript("bbbb", "bbbb-2222", limit=3).splitlines(), ["⏺ line 8", "", "⏺ line 9"])
         with mock.patch.object(copilot_cli, "has", lambda sid: sid == "cccc"), mock.patch.object(copilot_cli, "logs", lambda sid: "● bash  ls\nCopilot said hi"):
             self.assertEqual(agents.transcript("cccc", "cccc-full"), "● bash  ls\nCopilot said hi")
 
@@ -1698,7 +1708,7 @@ class Transcript(unittest.TestCase):
         self.write("bbbb-2222", [{"type": "assistant", "message": {"content": [{"type": "text", "text": "at it"}]}}])
         with mock.patch.object(copilot_cli, "has", lambda sid: False):
             view = serve.log_view(store, "PLN-01")
-        self.assertEqual((view["id"], view["state"], view["text"]), ("bbbb", "started", "Claude: at it"))
+        self.assertEqual((view["id"], view["state"], view["text"]), ("bbbb", "started", "⏺ at it"))
         self.assertIsNone(serve.log_view(store, "PLN-09"))
 
 

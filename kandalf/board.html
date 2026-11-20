@@ -832,6 +832,24 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="sticker"] #tagline { font-family: var(--head); }
 :root .session-reply { margin-top: 8px; cursor: auto; }
 :root .session-reply > summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
+/* The stats strip under the header: a count for each state of the builds, full width. A count
+   is a button that narrows the board to its tiles. */
+:root #stats { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; }
+:root #stats[hidden] { display: none; }
+:root:not([data-theme="classic"]) #stats { padding: 10px 24px 0; }  /* in line with the columns */
+:root #stats button { flex: 1 1 130px; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 7px 10px; white-space: nowrap; cursor: pointer; border-bottom: 3px solid var(--stat-c); }
+:root #stats button b { font-size: 22px; line-height: 1; color: var(--stat-c); font-variant-numeric: tabular-nums; }
+:root #stats button.zero { opacity: .5; }
+:root #stats button.on { outline: 2px solid var(--stat-c); outline-offset: 1px; }
+:root[data-theme="classic"] #stats [data-stat=work] { --stat-c: var(--story); }
+:root[data-theme="classic"] #stats [data-stat=need] { --stat-c: var(--p2); }
+:root[data-theme="classic"] #stats [data-stat=ready] { --stat-c: var(--done); }
+:root[data-theme="classic"] #stats :is([data-stat=queued], [data-stat=paused], [data-stat=idle]) { --stat-c: var(--muted); }
+:root[data-theme="classic"] #stats [data-stat=unmerged] { --stat-c: var(--warn); }
+:root:not([data-theme="classic"]) #stats :is([data-stat=work], [data-stat=ready]) { --stat-c: var(--st-work); }
+:root:not([data-theme="classic"]) #stats [data-stat=need] { --stat-c: var(--st-wait); }
+:root:not([data-theme="classic"]) #stats :is([data-stat=queued], [data-stat=paused], [data-stat=idle]) { --stat-c: var(--muted); }
+:root:not([data-theme="classic"]) #stats [data-stat=unmerged] { --stat-c: var(--st-gone); }
 :root .session-reply > summary::-webkit-details-marker { display: none; }
 :root .session-reply > summary::before { content: "▸"; display: inline-block; width: 1.1em; }
 :root .session-reply[open] > summary::before { content: "▾"; }
@@ -895,6 +913,7 @@ applyTheme(themeNow, accentNow);
   <span id="themePick"><label class="hint">Theme <select id="themeSel" title="The board's look, remembered in this browser"></select></label><span id="accentSel" role="group" aria-label="Accent colour"></span></span>
   <span id="status">Loading…</span>
 </header>
+<nav id="stats" aria-label="Builds" hidden></nav>
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="docView" hidden></section>
@@ -1335,6 +1354,7 @@ async function refreshLogs() {
     }
   }
 }
+const statusBusy = new Set();  // the keys whose Status check is running: their buttons spin, however often the board is redrawn
 function sessionHTML(session, key) {
   if (!session) return "";
   const job = sessionJob(session, key), state = sessionState(job), waiting = job?.state === "idle" && job.waiting;
@@ -1347,7 +1367,7 @@ function sessionHTML(session, key) {
       <span class="session-id">✦ ${AGENT} session <code>${session.id}</code></span>
       ${state ? `<span class="session-state s-${stateClass}">${state}</span>` : ""}<span class="session-acts">
       <button type="button" data-act="copy" data-copy="${attach}" title="Copy the command that opens this session: ${attach}">Copy attach</button>
-      ${key ? `<button type="button" data-act="status" data-key="${key}" title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
+      ${key ? `<button type="button" data-act="status" data-key="${key}"${statusBusy.has(key) ? ' class="busy" disabled' : ""} title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
       ${job && !away ? wakeButton(job) : ""}</span></div>
     ${away ? `<div class="session-ask">⏸ Paused: its handoff is on the tile. Move it back to In flight to have a new session carry on.</div>` : ""}
     ${waiting ? `<div class="session-ask">⏸ Waiting for your input: ${WAITING[job.waiting] || "it stopped"}. Answer below, or open it (Copy attach).</div>` : ""}
@@ -1547,24 +1567,94 @@ function toggleExpanded(key) {
 }
 const matchesFilter = (c, q) => !q || (c.text + "\n" + c.body.join("\n")).toLowerCase().includes(q);
 
+// The stats strip under the header counts the plans board's builds by what each needs:
+// [state, mark, label, what it means]. A build is a story a session was handed (or, for ready
+// and unmerged, one that was finished), counted once, in the first of these it fits.
+const STATS = [
+  ["work", "✦", "at work", "A session is working on these"],
+  ["need", "⚠", "need you", "Their session asked a question, ended on an error, is gone or couldn't be started"],
+  ["ready", "✔", "ready for review", "Finished and waiting for you to review and merge"],
+  ["queued", "◌", "queued", "In flight, waiting for a session"],
+  ["paused", "❙❙", "paused", "Stopped with a handoff, waiting for Continue"],
+  ["idle", "○", "idle", "Their session stopped without asking anything, as a master's does while its sub-stories are built. Continue gets one going"],
+  ["unmerged", "⎇", "not merged", "Done, but their branch isn't merged"],
+];
+// Which of the strip's states a tile is in, or "": most tiles are in none. A tile carried
+// along with another story's session isn't a build of its own. "need" is the tiles renderCard
+// marks (needs-you, lost) and the ones not started; a plain idle session isn't one of them.
+function buildState(c, sec) {
+  const key = cardKey(c);
+  if (!key) return "";
+  if (unmerged[key]) return "unmerged";
+  const job = isPickupColumn(sec.name) ? pickupFor(key) : undefined;
+  if (job && job.key !== key) return "";
+  if (job && (["lost", "failed"].includes(job.state) || (job.state === "idle" && job.waiting))) return "need";
+  if (job?.state === "started") return "work";
+  if (storyParts(c).ready !== null && !isDoneCol(sec.name)) return "ready";
+  if (job?.state === "waiting") return "queued";
+  if (job?.state === "paused") return "paused";
+  return job?.state === "idle" ? "idle" : "";
+}
+// The keys in each of the strip's states, in board order: {work: [key], need: [key], ...}.
+function buildStats() {
+  const stats = Object.fromEntries(STATS.map(([state]) => [state, []]));
+  for (const sec of doc.sections) for (const c of sec.cards) {
+    const state = buildState(c, sec);
+    if (state) stats[state].push(cardKey(c));
+  }
+  return stats;
+}
+// Where everything under root is scrolled to, as a function that puts it back once root has
+// been drawn again: root itself, each column's tiles, and each log pane (one at its newest line
+// stays at the newest). Without it a redraw sends every column back to its top.
+function scrollPlaces(root) {
+  const own = [root.scrollLeft, root.scrollTop];
+  const cols = [...root.querySelectorAll(".column > .cards")].map(list => list.scrollTop);
+  const panes = [...root.querySelectorAll("pre[data-log]")].map(pre => [pre.dataset.log, atEnd(pre) ? null : pre.scrollTop]);
+  return () => {
+    [...root.querySelectorAll(".column > .cards")].forEach((list, i) => { if (cols[i]) list.scrollTop = cols[i]; });
+    for (const [key, top] of panes) {
+      const pre = root.querySelector(`pre[data-log="${key}"]`);
+      if (pre) { pre.scrollTop = top ?? pre.scrollHeight; pre.dataset.shown = "1"; }
+    }
+    [root.scrollLeft, root.scrollTop] = own;
+  };
+}
 // A plan doc (anything in active/ or archive/ but the archive log, or any file that isn't
 // board-shaped) shows as a formatted document, not as columns.
 function isDocFile() { return (file.includes("/") && file !== "archive/archived.md") || readonly; }
-// Drawing the board again keeps a reply being typed: its text, ticks, focus and caret.
+// Drawing the board again keeps a reply being typed (its text, ticks, focus and caret) and
+// where the board, its columns and its log panes are scrolled to.
 function render() {
   const el = document.activeElement, typing = el?.dataset?.reply ? { key: el.dataset.reply, from: el.selectionStart, to: el.selectionEnd } : null;
-  const panes = [...boardEl.querySelectorAll("pre[data-log]")].map(pre => [pre.dataset.log, atEnd(pre) ? null : pre.scrollTop]);
+  const back = scrollPlaces(boardEl);
   renderBoard();
-  for (const [key, top] of panes) {
-    const pre = boardEl.querySelector(`pre[data-log="${key}"]`);
-    if (pre) { pre.scrollTop = top ?? pre.scrollHeight; pre.dataset.shown = "1"; }
-  }
+  back();
   if (!typing) return;
   const box = boardEl.querySelector(`textarea[data-reply="${typing.key}"]`);
   if (box) { box.focus(); box.setSelectionRange(typing.from, typing.to); }
 }
+// The strip is on the plans board while pickup is on. Its buttons are made once and then
+// kept current, so one that has the focus keeps it.
+let statFilter = "";  // the state the board is narrowed to by a click on the strip, or ""
+const statsShown = () => !isDocFile() && file === PICKUP_BOARD && pickups.enabled;
+function renderStats() {
+  const el = $("#stats");
+  el.hidden = !statsShown();
+  if (el.hidden) return;
+  if (!el.children.length) el.innerHTML = STATS.map(([state, mark, label]) => `<button type="button" data-stat="${state}"><b></b><span>${mark} ${label}</span></button>`).join("");
+  const stats = buildStats();
+  for (const b of el.children) {
+    const [state, , , means] = STATS.find(([id]) => id === b.dataset.stat), keys = stats[state], on = statFilter === state;
+    b.firstChild.textContent = keys.length;
+    b.classList.toggle("zero", !keys.length); b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on);
+    b.title = `${means}: ${keys.join(", ") || "none"}.\n${on ? "Click to show every tile again." : "Click to show only these tiles."}`;
+  }
+}
 function renderBoard() {
   const asDoc = isDocFile();
+  renderStats();
   boardEl.hidden = asDoc; $("#docView").hidden = !asDoc; $("#search").hidden = asDoc;
   $("#colSortLabel").hidden = asDoc || file === ARCHIVE_LOG;  // the archive list has its own sort
   $("#listSortLabel").hidden = asDoc || file !== ARCHIVE_LOG;
@@ -1577,13 +1667,14 @@ function renderBoard() {
   boardEl.innerHTML = "";
   renderEdges = linkEdges(); renderIndex = tileIndex();
   boardEl.classList.toggle("as-list", file === ARCHIVE_LOG);
+  const stat = statsShown() ? statFilter : "";
   if (file === ARCHIVE_LOG) return renderList(q);
   for (const s of doc.sections) {
     const col = document.createElement("section");
     col.className = "column"; col.dataset.id = s.id;
     const kind = columnKind(s.name) || s.name.trim();  // In progress, Shipped...: coloured as In flight, Done
     col.dataset.kind = kind.toLowerCase().replace(/\s+/g, "-");
-    const shown = sortCards(s.cards.filter(c => matchesFilter(c, q)));
+    const shown = sortCards(s.cards.filter(c => matchesFilter(c, q) && (!stat || buildState(c, s) === stat)));
     col.innerHTML = `
       <div class="col-head" draggable="true" title="Drag to reorder columns">
         <span class="col-name">${esc(s.name)}</span><span class="col-count">${q ? shown.length + "/" : ""}${s.cards.length}</span>
@@ -2095,7 +2186,7 @@ async function jumpTo(key) {
     f = file === t.file && findCardByKey(key);
     if (!f) return flash(`${key} isn't on ${boardLabel(t.file)} any more.`);
   }
-  if (!matchesFilter(f.c, $("#search").value.trim().toLowerCase())) { $("#search").value = ""; render(); }
+  if (!matchesFilter(f.c, $("#search").value.trim().toLowerCase()) || (statFilter && buildState(f.c, f.s) !== statFilter)) { $("#search").value = ""; statFilter = ""; render(); }
   const find = () => boardEl.querySelector(`.card[data-id="${f.c.id}"], .lcard[data-id="${f.c.id}"]`);
   if (!find()) {  // folded into a collapsed master: open the masters above it
     const index = tileIndex();
@@ -2510,6 +2601,13 @@ function showBoardButtons(on) {
 }
 $("#fileSel").addEventListener("click", e => { const b = e.target.closest("button[data-file]"); if (b && b.dataset.file !== file) openFile(b.dataset.file); });
 $("#search").addEventListener("input", () => doc && render());
+// A count on the stats strip narrows the board to its tiles; a second click shows them all again.
+$("#stats").addEventListener("click", e => {
+  const b = e.target.closest("button[data-stat]");
+  if (!b || !doc) return;
+  statFilter = statFilter === b.dataset.stat ? "" : b.dataset.stat;
+  render();
+});
 $("#colSort").value = colSort;
 $("#colSort").addEventListener("change", e => {
   colSort = e.target.value;
@@ -2621,11 +2719,12 @@ async function refreshStatus(key) {
   if (wasOpen && $("#cardText").value !== editing?.original && !await ask({ title: "Refresh the status?", body: "Your changes to this tile aren't saved, and the refresh drops them.", ok: "Refresh", danger: true })) return;
   if (dirty) await save();
   setStatus(`Checking ${key}…`);
-  // The button spins while the check runs. Refilling the tile below draws a fresh button.
-  const buttons = [...document.querySelectorAll(`[data-act=status][data-key="${key}"]`)];
-  const spin = on => buttons.forEach(b => { b.classList.toggle("busy", on); b.disabled = on; });
-  spin(true);
+  // The button spins while the check runs: the ones drawn now, and (statusBusy) the ones the
+  // board draws meanwhile. The redraw that ends the check, and refilling the tile below, draw fresh ones.
+  const spin = on => document.querySelectorAll(`[data-act=status][data-key="${key}"]`).forEach(b => { b.classList.toggle("busy", on); b.disabled = on; });
+  statusBusy.add(key); spin(true);
   const j = await postPickup({ key, status: true }).catch(() => (flash("Status check failed: server down?"), null));
+  statusBusy.delete(key);
   if (j) await reloadQuiet();
   spin(false);
   if (!j) return setStatus("Not checked", true);
@@ -2635,9 +2734,14 @@ async function refreshStatus(key) {
   if (!wasOpen || !dlg.open) return flash(statusToast(j.status), `${key} status`);
   const f = findCardByKey(key);
   if (!f) return dlg.close("cancel");
+  // The view keeps its scroll and its log pane's; the editor keeps its caret and scroll, where
+  // setCardMode would send the caret to the end.
+  const ta = $("#cardText"), caret = [ta.selectionStart, ta.selectionEnd], top = ta.scrollTop, back = scrollPlaces($("#cardView"));
   editing = { card: f.c, sec: f.s };
   fillCard([f.c.text, ...trimBlank(f.c.body)].join("\n"));
   setCardMode(dlg.dataset.mode);
+  back();
+  if (dlg.dataset.mode === "edit") { ta.setSelectionRange(...caret); ta.scrollTop = top; }
 }
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); flash(`Copied: ${text}`); }

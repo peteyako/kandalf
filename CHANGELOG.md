@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A stats strip runs under the header of the plans board while pickup is on: how many builds are
+  at work, need you, are ready for review, queued, paused, idle, or done but not merged. A count's
+  tooltip lists its stories, and a click narrows the board to them (click again for all).
+- The board keeps its place when it is drawn again: pressing **Status** (or any redraw, such as
+  an edit picked up from disk) no longer sends every column back to its top. The Status button
+  spins until the check is done, and a tile open for editing keeps its caret.
+- A Claude session's log on its tile is laid out as its own screen is: `❯` what it was told, `⏺`
+  what it said and `⏺ Tool(input)` for each tool, `⎿` under it for the result. Colour codes,
+  image notes and "Shell cwd was reset" lines are left out.
 - A paused story has **◌ Queue** beside Continue: it goes to the back of the queue and a new session
   takes it over from its handoff in its turn.
 - A sub-story picked up on its own is given its master's tile to read (and that master's master's),

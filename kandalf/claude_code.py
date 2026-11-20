@@ -191,33 +191,46 @@ def _result_text(content) -> str:
     return content if isinstance(content, str) else ""
 
 
-def _said(who: str, text: str) -> list:
-    return [f"{who}: {text.strip()}"] if text and text.strip() else []
+HIDDEN = re.compile(r"^\[Image: |^\[Request interrupted by user|^No response requested\.$")  # the transcript's own notes
+RESULT_NOISE = re.compile(r"^Shell cwd was reset to ")
+
+
+def _said(mark: str, text: str) -> list:
+    """Something said, as the session's screen has it: the mark, the text, later lines under it."""
+    text = (text or "").strip()
+    if not text or HIDDEN.match(text):
+        return []
+    first, *rest = text.splitlines()
+    return ["", f"{mark} {first}", *("  " + line if line else "" for line in rest)]
 
 
 def _record_lines(record: dict) -> list:
-    """One transcript record as log lines: what was said, a tool run, the start of its result."""
+    """One transcript record as log lines, laid out as the session's own screen lays them out:
+    "❯" what it was told, "⏺" what it said, "⏺ Tool(input)" a tool run and "⎿" the start of
+    its result."""
     kind, content = record.get("type"), (record.get("message") or {}).get("content")
     if kind not in ("user", "assistant"):
         return []
-    who = "You" if kind == "user" else NAME
+    mark = "❯" if kind == "user" else "⏺"
     if isinstance(content, str):
-        return _said(who, content)
+        return _said(mark, content)
     out = []
     for block in content if isinstance(content, list) else []:
         if not isinstance(block, dict):
             continue
         if block.get("type") == "text":
-            out += _said(who, block.get("text", ""))
+            out += _said(mark, block.get("text", ""))
         elif block.get("type") == "tool_use":
             given = block.get("input") or {}
             arg = next((str(given[k]) for k in TOOL_ARGS if given.get(k)), "")
-            out.append(f"● {block.get('name')}  {arg.splitlines()[0][:LINE_CUT] if arg else ''}".rstrip())
+            out += ["", f"⏺ {block.get('name')}({arg.splitlines()[0][:LINE_CUT] if arg else ''})"]
         elif block.get("type") == "tool_result":
-            lines = [line[:LINE_CUT] for line in _result_text(block.get("content")).splitlines() if line.strip()]
-            mark = "  ✗ " if block.get("is_error") else "  ⎿ "
-            shown = lines[:RESULT_LINES] + ([f"… {len(lines) - RESULT_LINES} more lines"] if len(lines) > RESULT_LINES else [])
-            out += [(mark if n == 0 else "    ") + line for n, line in enumerate(shown)]
+            lines = [line[:LINE_CUT] for line in ANSI_RE.sub("", _result_text(block.get("content"))).splitlines()
+                     if line.strip() and not RESULT_NOISE.match(line)]
+            if block.get("is_error") and lines:
+                lines[0] = "Error: " + lines[0]
+            shown = lines[:RESULT_LINES] + ([f"… +{len(lines) - RESULT_LINES} lines"] if len(lines) > RESULT_LINES else [])
+            out += [("  ⎿  " if n == 0 else "     ") + line for n, line in enumerate(shown)]
     return out
 
 
@@ -238,7 +251,7 @@ def transcript(session: str, limit: int = 400):
                 lines += _record_lines(json.loads(raw))
             except ValueError:
                 continue
-    return "\n".join(lines[-limit:])
+    return "\n".join(lines[-limit:]).strip("\n")
 
 
 # ---------- attaching to a session ----------

@@ -19,9 +19,10 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
+            setUnmerged: map => { unmerged = map; },
             setPickups: jobs => { pickups = { enabled: true, why: null, jobs }; },
             section: name => doc.sections.find(s => s.name === name),
             open(name, text, tiles) { file = name; doc = parse(text); serverTiles = tiles || {}; } };`
@@ -487,4 +488,80 @@ test("a queued tile has a Start button beside its queued mark", () => {
 test("a paused story has Queue beside Continue", () => {
   const acts = [...page.wakeButton({ key: "PLN-01", state: "paused" }).matchAll(/data-act="(\w+)"[^>]*>([^<]*)</g)].map(m => [m[1], m[2]]);
   assert.deepEqual(acts, [["continue", "▶ Continue"], ["queue", "◌ Queue"]]);
+});
+
+// A stand-in for a drawn board: columns of tiles and log panes, each with a scroll place.
+function drawn(cols, panes) {
+  const lists = cols.map(top => ({ scrollTop: top }));
+  const pres = Object.entries(panes).map(([key, p]) => ({ dataset: { log: key }, clientHeight: 100, ...p }));
+  return { scrollLeft: 0, scrollTop: 0, lists, pres,
+    querySelectorAll: sel => sel.includes("pre") ? pres : lists,
+    querySelector: sel => pres.find(p => sel.includes(`"${p.dataset.log}"`)) || null };
+}
+test("a board drawn again keeps each column and log pane where it was scrolled", () => {
+  const root = drawn([600, 0, 240], { "PLN-75": { scrollTop: 30, scrollHeight: 900 }, "PLN-74": { scrollTop: 800, scrollHeight: 900 } });
+  root.scrollLeft = 50;
+  const back = page.scrollPlaces(root);
+  // drawn again: new columns and panes at the top, the log grown, the board's own place lost
+  const again = drawn([0, 0, 0], { "PLN-75": { scrollTop: 0, scrollHeight: 1200 }, "PLN-74": { scrollTop: 0, scrollHeight: 1200 } });
+  Object.assign(root, again, { scrollLeft: 0 });
+  back();
+  assert.deepEqual(root.lists.map(l => l.scrollTop), [600, 0, 240]);
+  assert.equal(root.scrollLeft, 50);
+  assert.equal(root.pres[0].scrollTop, 30);    // scrolled up to read: left there
+  assert.equal(root.pres[1].scrollTop, 1200);  // at its newest line: kept at the newest
+});
+
+// One story in each state the stats strip counts, and some it leaves out.
+const BUILDS = `# Plans
+
+## To do
+
+- [ ] PLN-01 **Not begun.**
+- [ ] PLN-02 **Ready, moved back.**
+  **Ready for review:** all green.
+
+## In flight
+
+- [ ] PLN-10 **At work.**
+- [ ] PLN-11 **Asked a question.**
+- [ ] PLN-12 **Session gone.**
+- [ ] PLN-13 **Not started.**
+- [ ] PLN-14 **Finished.**
+  **Ready for review:** all green.
+- [ ] PLN-15 **Queued.**
+- [ ] PLN-16 **Paused.**
+- [ ] PLN-17 **Stopped without a word.**
+- [ ] PLN-18 **Ready, but back at work on a review reply.**
+  **Ready for review:** all green.
+- [ ] PLN-19 **Carried along with PLN-10.**
+
+## Done
+
+- [x] PLN-20 **Shipped, branch not merged.**
+- [x] PLN-21 **Shipped.**
+  **Ready for review:** all green.
+`;
+const BUILD_JOBS = [
+  { key: "PLN-10", state: "started", with: ["PLN-19"] }, { key: "PLN-11", state: "idle", waiting: "question" },
+  { key: "PLN-12", state: "lost" }, { key: "PLN-13", state: "failed", error: "no worktree" },
+  { key: "PLN-14", state: "idle", ready: true }, { key: "PLN-15", state: "waiting" }, { key: "PLN-16", state: "paused" },
+  { key: "PLN-17", state: "idle" }, { key: "PLN-18", state: "started" }, { key: "PLN-21", state: "ended" },
+];
+test("the stats strip counts each build once, by what it needs", () => {
+  page.open("plans.md", BUILDS);
+  page.setPickups(BUILD_JOBS); page.setUnmerged({ "PLN-20": ["feat/pln-20"] });
+  try {
+    assert.deepEqual(page.buildStats(), {
+      work: ["PLN-10", "PLN-18"],            // a session is on it; the tile it carries along isn't a build of its own
+      need: ["PLN-11", "PLN-12", "PLN-13"],  // asked, gone or not started: the tiles the board marks
+      ready: ["PLN-02", "PLN-14"],           // waits for review, in any column but Done
+      queued: ["PLN-15"], paused: ["PLN-16"],
+      idle: ["PLN-17"],                      // stopped without asking: a master waiting on its sub-stories, say
+      unmerged: ["PLN-20"],
+    });
+    const tile = key => page.section("In flight").cards.find(c => page.cardKey(c) === key);
+    assert.equal(page.buildState(tile("PLN-19"), page.section("In flight")), "");
+    assert.equal(page.buildState(page.section("To do").cards[0], page.section("To do")), "");
+  } finally { page.setPickups([]); page.setUnmerged({}); }
 });
