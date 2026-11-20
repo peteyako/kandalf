@@ -830,6 +830,12 @@ html, body { height: 100%; margin: 0; }
 :root:is([data-theme="realm"], [data-theme="sticker"]) #tagline { display: block; }
 :root[data-theme="realm"] #tagline { font-style: italic; font-size: 15px; }
 :root[data-theme="sticker"] #tagline { font-family: var(--head); }
+:root .session-reply { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; cursor: auto; }
+:root .session-reply textarea { width: 100%; box-sizing: border-box; min-height: 52px; resize: vertical; font: inherit; font-size: 13px; padding: 6px 8px; }
+:root .session-reply .reply-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+:root .session-reply .reply-steps { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; flex: 1; }
+:root .session-reply .reply-steps label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+:root .session-reply button[data-act="reply"] { margin-left: auto; }
 </style>
 <script>
 // The board's looks: Clean and light (the default: the first one here), Classic (the original),
@@ -1247,6 +1253,22 @@ function sessionState(job) {
   if (job.state === "idle" && job.waiting) return "waiting for you";
   return STOPPED[job.state] || "";
 }
+// The reply box: a session that waits for input, or has its story ready for review and has
+// stopped, can be answered from the tile; a review reply can also tick squash, merge and push
+// (pickup.py: reply). replyDrafts keeps what is typed while the board is drawn again.
+const replyDrafts = {};
+const wantsReply = job => !!job && ["idle", "lost"].includes(job.state) && !!(job.waiting || job.ready);
+function replyHTML(job) {
+  const draft = replyDrafts[job.key] || { text: "", steps: [] };
+  const step = (id, label) => `<label><input type="checkbox" data-step="${id}"${draft.steps.includes(id) ? " checked" : ""}> ${label}</label>`;
+  const trunks = [...new Set((job.repos || []).map(c => c.trunk).filter(Boolean))];  // the story's own repos' trunks
+  const into = trunks.length > 1 ? "each trunk" : esc(trunks[0] || STORE_TRUNK);
+  const steps = job.ready ? `<div class="reply-steps">${step("squash", "Squash")}${step("merge", `Merge into ${into}`)}${step("push", "Push")}</div>` : "";
+  const hint = job.ready ? `What to change, or tick what to do now` : `Answer ${AGENT}`;
+  return `<div class="session-reply" data-key="${job.key}">
+      <textarea data-reply="${job.key}" rows="2" placeholder="${esc(hint)} (⌘↵ sends)">${esc(draft.text)}</textarea>
+      <div class="reply-row">${steps}<button type="button" data-act="reply" data-key="${job.key}" title="${esc(`Send this into the same ${AGENT} conversation; it gets back to work`)}">Send</button></div></div>`;
+}
 function sessionHTML(session, key) {
   if (!session) return "";
   const job = sessionJob(session, key), state = sessionState(job), waiting = job?.state === "idle" && job.waiting;
@@ -1262,7 +1284,8 @@ function sessionHTML(session, key) {
       ${key ? `<button type="button" data-act="status" data-key="${key}" title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
       ${job && !away ? wakeButton(job) : ""}</span></div>
     ${away ? `<div class="session-ask">⏸ Paused: its handoff is on the tile. Move it back to In flight to have a new session carry on.</div>` : ""}
-    ${waiting ? `<div class="session-ask">⏸ Waiting for your input: ${WAITING[job.waiting] || "it stopped"}. Open it (Copy attach) to answer.</div>` : ""}
+    ${waiting ? `<div class="session-ask">⏸ Waiting for your input: ${WAITING[job.waiting] || "it stopped"}. Answer below, or open it (Copy attach).</div>` : ""}
+    ${wantsReply(job) ? replyHTML(job) : ""}
     ${session.rest ? `<div class="session-rest">${inline(session.rest)}</div>` : ""}</div>`;
 }
 // Where a pickup stands, for a tile whose text doesn't show it in a session block.
@@ -1460,7 +1483,15 @@ const matchesFilter = (c, q) => !q || (c.text + "\n" + c.body.join("\n")).toLowe
 // A plan doc (anything in active/ or archive/ but the archive log, or any file that isn't
 // board-shaped) shows as a formatted document, not as columns.
 function isDocFile() { return (file.includes("/") && file !== "archive/archived.md") || readonly; }
+// Drawing the board again keeps a reply being typed: its text, ticks, focus and caret.
 function render() {
+  const el = document.activeElement, typing = el?.dataset?.reply ? { key: el.dataset.reply, from: el.selectionStart, to: el.selectionEnd } : null;
+  renderBoard();
+  if (!typing) return;
+  const box = boardEl.querySelector(`textarea[data-reply="${typing.key}"]`);
+  if (box) { box.focus(); box.setSelectionRange(typing.from, typing.to); }
+}
+function renderBoard() {
   const asDoc = isDocFile();
   boardEl.hidden = asDoc; $("#docView").hidden = !asDoc; $("#search").hidden = asDoc;
   $("#colSortLabel").hidden = asDoc || file === ARCHIVE_LOG;  // the archive list has its own sort
@@ -2014,6 +2045,11 @@ boardEl.addEventListener("click", e => {
   const act = e.target.closest("[data-act]")?.dataset.act;
   const col = e.target.closest(".column"), sec = col && findSec(col.dataset.id);
   const cardEl = e.target.closest(".card");
+  if (e.target.closest(".session-reply")) {  // typing or ticking in the reply box doesn't open the tile
+    e.stopPropagation();
+    if (act === "reply") sendReply(e.target.closest(".session-reply"));
+    return;
+  }
   if (act === "open") { e.stopPropagation(); return; }  // a plan link opens in a new tab (target=_blank); don't open the tile
   if (act === "jump") { e.stopPropagation(); return jumpTo(e.target.closest("[data-key]").dataset.key); }
   if (act === "copy") { e.stopPropagation(); return copyText(e.target.closest("[data-copy]").dataset.copy); }
@@ -2174,6 +2210,10 @@ $("#cardView").addEventListener("click", e => {
   if (again) return restartPickup(again.dataset.key);
   if (nudge) return continuePickup(nudge.dataset.key);
   if (stat) return refreshStatus(stat.dataset.key);
+  const hold = e.target.closest("[data-act=pause]");
+  if (hold) return pausePickup(hold.dataset.key);
+  if (e.target.closest("[data-act=reply]")) return sendReply(e.target.closest(".session-reply"));
+  if (e.target.closest(".session-reply")) return;
   const box = e.target.closest("[data-line]");
   if (box) {  // tick a sub-task: rewrite that line of the markdown, saved with Save
     const lines = $("#cardText").value.split("\n"), i = +box.dataset.line;
@@ -2427,11 +2467,11 @@ setInterval(async () => {
 const toldPickups = new Set(), askedPickups = new Set();
 let pickupsLoaded = false;
 const pickupId = job => `${job.key}@${job.at}`;
-async function postPickup(body) {
+async function postPickup(body, failed = `${AGENT} wasn't started`) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
   if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs }; render(); }
-  return r.ok ? j : (flash(`${AGENT} wasn't started: ` + (j.error || r.status)), null);
+  return r.ok ? j : (flash(`${failed}: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });
 // Restart: resume the tile's session, or have a new one take over if it can't be resumed.
@@ -2443,6 +2483,33 @@ async function restartPickup(key) {
   else if (job?.state === "failed") flash(`${AGENT} couldn't be restarted on ${key}: ${job.error}`);
   setStatus(j ? "Restarted " + key : "Not restarted", !j);
 }
+// What a reply box holds: the text typed and the steps ticked.
+function replyOf(form) {
+  return { text: form.querySelector("textarea").value, steps: [...form.querySelectorAll("input[data-step]:checked")].map(b => b.dataset.step) };
+}
+// The reply box's Send: what was typed, and the steps ticked, go into the same conversation.
+async function sendReply(form) {
+  const key = form.dataset.key, reply = replyOf(form), text = reply.text.trim(), steps = reply.steps;
+  if (!text && !steps.length) return flash(`Type a reply to send to ${AGENT}, or tick what to do.`);
+  setStatus(`Sending to ${AGENT} on ${key}…`);
+  const j = await postPickup({ key, reply: text, steps }, "Not sent").catch(() => (flash("Not sent: server down?"), null));
+  if (j) { delete replyDrafts[key]; render(); if (dlg.open && dlg.dataset.mode === "view") setCardMode("view"); flash(`Sent to ${AGENT} on ${key}` + (steps.length ? ` (${steps.join(", ")})` : "") + "."); }
+  setStatus(j ? "Sent to " + key : "Not sent", !j);
+}
+// The reply box keeps its draft as it is typed and ticked, ⌘↵ or Ctrl+↵ sends, and a tile isn't
+// dragged from inside it (so text can be selected).
+document.addEventListener("input", e => {
+  const form = e.target.closest?.(".session-reply");
+  if (!form) return;
+  replyDrafts[form.dataset.key] = replyOf(form);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.target.matches?.("textarea[data-reply]")) { e.preventDefault(); sendReply(e.target.closest(".session-reply")); }
+});
+boardEl.addEventListener("pointerdown", e => {
+  const card = e.target.closest(".card");
+  if (card) card.draggable = !e.target.closest(".session-reply");
+});
 // Pause: the session writes its handoff and stops; the story waits in In flight for Continue.
 async function pausePickup(key) {
   setStatus(`Pausing ${AGENT} on ${key}…`);

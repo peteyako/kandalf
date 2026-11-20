@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A reply box on a tile whose session waits for input, or whose story is ready for review:
+  type and **Send**, and it goes into the same Claude or Copilot conversation. On a story ready
+  for review, **Squash**, **Merge into** the trunk and **Push** checkboxes tell the session to do
+  those, in that order (merge is a rebase and fast-forward). The box keeps what you type while the
+  board refreshes. Pause works in an opened tile too.
 - **Pause** on a tile's session block while it is at work: the session finishes or undoes its
   step, commits, writes a full `Handoff:` line on the tile and stops, and the story is paused,
   giving up its place in the queue. Moving a tile out of In flight while its session is at work

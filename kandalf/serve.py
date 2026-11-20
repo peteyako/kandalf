@@ -1001,6 +1001,11 @@ class Handler(BaseHTTPRequestHandler):
             why = pickup.why_off(self.store)
             if why:
                 return self.send_json(409, {"error": why})
+            if "reply" in data:  # {key, reply: text, steps: [squash, merge, push]}: the reply box
+                why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], on_start=note_session)
+                if why:
+                    return self.send_json(409, {"error": why, **pickup.summary(self.store)})
+                return self.send_json(200, pickup.summary(self.store))
             if data.get("pause"):
                 if not pickup.pause(self.store, data.get("key", ""), on_start=note_session):
                     return self.send_json(409, {"error": "that tile has no session at work to pause, or it couldn't be stopped", **pickup.summary(self.store)})

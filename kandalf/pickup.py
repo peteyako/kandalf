@@ -949,6 +949,93 @@ def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
     return True
 
 
+# ---------- replying from the board ----------
+STEPS = ("squash", "merge", "push")  # what a review reply may ask for, in the order they are done
+
+
+def reply_text(store, job, text: str, actions=()) -> str:
+    """What a reply from the board tells the session: the words typed, then the review steps
+    ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
+    to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them."""
+    key = job["key"]
+    said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
+    if not actions:
+        back = (" If it sends you back to work on the story, take the tile's \"Ready for review\" line off while you work and put it back when you are done."
+                if job.get("ready") else "")
+        return (f"{said}\n\nAct on it.{back} Keep the tile's \"Handoff:\" line current. "
+                "Don't squash, merge or push: those stay with the reviewer, whatever an earlier reply allowed.")
+    cuts = _cuts_of(store, job)
+    if len(cuts) > 1:
+        trunk, ref = "the trunk", "<trunk>"
+        where = ("Do each step in every repo this story works in, each against its own trunk: "
+                 + ", ".join(f"{c['name']} (trunk {c.get('trunk') or store.trunk}, worktree {c['worktree']})" for c in cuts) + ".\n\n")
+    else:
+        trunk = ref = (cuts[0].get("trunk") if cuts else None) or store.trunk
+        where = ""
+    steps = {
+        "squash": (f"Rebase the branch onto {trunk}, then squash the commits it has beyond {trunk} (from `git merge-base {ref} HEAD`) "
+                   f"into one, its subject carrying {key}. Never squash against an older {trunk}: that would undo newer work on it."),
+        "merge": (f"Merge it: rebase it onto {trunk} again if {trunk} has moved, and fast-forward {trunk} to it, so there is no merge commit: "
+                  f"where {trunk} is checked out, `git merge --ff-only <branch>` there, and if that checkout has uncommitted changes, stop and say so."),
+        "push": f"Then push {trunk}." if "merge" in actions else f"Push the branch {job.get('branch') or 'you are on'} to its remote.",
+    }
+    listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate((s for s in STEPS if s in actions), 1))
+    first = "First do what they wrote above. Then do these" if text else "They ask you to do these"
+    if "merge" in actions:
+        done = """When they are done, take the "Ready for review" line off the tile, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
+    else:
+        done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop."""
+    return (f"{said}\n\n{first}, in this order; your rules leave them to the reviewer, and this is the reviewer saying so, "
+            f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}\n\n"
+            f"If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
+
+
+def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time):
+    """The reply box on a tile whose session waits for input or whose story is ready for
+    review: send what was typed, and any review steps ticked (squash, merge, push), into the
+    same conversation (reply_text). An idle session is stopped first, as Continue does, and a
+    gone one is resumed. None when it was sent; otherwise why not. The job is as it was, but
+    for an idle session that was stopped and then couldn't be resumed: that one is gone (lost)."""
+    text, actions = (text or "").strip(), list(actions or [])
+    wrong = [a for a in actions if a not in STEPS]
+    if wrong:
+        return f"{', '.join(wrong)} is not an action: squash, merge or push"
+    if not text and not actions:
+        return "the message is empty"
+    with _lock:
+        state = load(store)
+        job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
+        if job is None or not job.get("id"):
+            return f"{key} has no session to reply to"
+        if job["state"] == "started":
+            return f"{key}'s session is at work: reply once it stops"
+        if job["state"] not in ("idle", "lost"):
+            return f"{key}'s session is {job['state']}: there is no conversation waiting for a reply"
+        if not job.get("session"):  # started before the board kept the full id
+            job["session"] = lookup(job["id"])
+        if not job.get("session"):
+            return f"{key}'s conversation can't be found"
+        if job["state"] == "idle":
+            try:
+                stop(job["id"])
+            except (OSError, subprocess.SubprocessError) as e:
+                return f"its session couldn't be stopped to take the reply: {e}"
+        told = resume(store, job, reply_text(store, job, text, actions))
+        if told["state"] != "started":
+            why = told.get("error") or "the conversation couldn't be resumed"
+            if job["state"] == "idle":  # it was stopped to take the reply: it is gone now
+                job["state"] = "lost"
+                job.pop("waiting", None)
+                save(store, state)
+                return f"not sent: {why}. Its session was stopped to take the reply; Continue on its tile resumes it"
+            return f"not sent: {why}"
+        job.update(told)
+        job.pop("waiting", None)
+        _report(store, job, now(), on_start, "given your reply" + (f" ({', '.join(s for s in STEPS if s in actions)})" if actions else ""))
+        save(store, state)
+        return None
+
+
 def _start_moved(store, job) -> bool:
     """True when the repos its tile names now start in another repo than the job's worktree
     is in: its session can't be resumed there, a new one has to take over."""

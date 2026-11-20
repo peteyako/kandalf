@@ -19,7 +19,7 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, wakeButton, sessionState, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, wakeButton, sessionState, wantsReply, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             section: name => doc.sections.find(s => s.name === name),
@@ -403,4 +403,22 @@ test("a session's state reads pausing while it writes its handoff, then paused",
   assert.equal(page.sessionState({ state: "paused" }), "paused");
   assert.equal(page.sessionState({ state: "started" }), "working");
   assert.equal(page.sessionState({ state: "waiting" }), "queued");
+});
+
+test("a session waiting for input, or a story ready for review, gets a box to reply in", () => {
+  assert.equal(page.wantsReply({ state: "idle", waiting: "question" }), true);
+  assert.equal(page.wantsReply({ state: "idle", ready: true }), true);
+  assert.equal(page.wantsReply({ state: "lost", ready: true }), true);
+  assert.equal(page.wantsReply({ state: "started", ready: true }), false);  // still at work: nothing to answer yet
+  assert.equal(page.wantsReply({ state: "idle" }), false);
+  assert.equal(page.wantsReply({ state: "paused", ready: true }), false);
+  assert.equal(page.wantsReply(undefined), false);
+  const box = page.replyHTML({ key: "PLN-01", state: "idle", waiting: "question" });
+  assert.match(box, /<textarea[^>]*data-reply="PLN-01"/);
+  assert.match(box, /data-act="reply" data-key="PLN-01"[^>]*>Send</);
+  assert.doesNotMatch(box, /type="checkbox"/);  // a question: words only
+  const review = page.replyHTML({ key: "PLN-01", state: "idle", ready: true });
+  assert.deepEqual([...review.matchAll(/type="checkbox" data-step="(\w+)"/g)].map(m => m[1]), ["squash", "merge", "push"]);
+  assert.match(page.replyHTML({ key: "PLN-01", state: "idle", ready: true, repos: [{ name: "app", trunk: "develop" }] }), /Merge into develop/);
+  assert.match(page.replyHTML({ key: "PLN-01", state: "idle", ready: true, repos: [{ trunk: "dev" }, { trunk: "main" }] }), /Merge into each trunk/);
 });

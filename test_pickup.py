@@ -725,6 +725,116 @@ class Queue(unittest.TestCase):
         jobs = pickup.load(self.store)["jobs"]
         self.assertEqual((jobs[0]["key"], len(jobs)), ("PLN-01", pickup.KEEP + 1))
 
+    def reply(self, key, text, resume=None, actions=()):
+        return pickup.reply(self.store, key, text, actions, resume=resume or self.fake.resume, stop=self.stop, now=lambda: self.clock)
+
+    def test_a_reply_goes_into_the_session_that_waits_for_input(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.idle.add("s1")
+        self.fake.asking["s1"] = "question"
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "  Use the blue one.\n"))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1"], ["s1-full"]))
+        self.assertIn("Use the blue one.", self.fake.told[0])
+        self.assertIn("PLN-01", self.fake.told[0])
+        self.assertEqual(self.jobs(), [("PLN-01", "started")])
+        self.assertNotIn("waiting", self.job())
+
+    def test_a_reply_to_a_story_ready_for_review_goes_to_its_session(self):
+        self.tick("## In flight\n")
+        ready = "## In flight\n\n- [ ] PLN-01 **One.**\n  **Ready for review:** gates green.\n"
+        self.tick(ready)
+        self.fake.idle.add("s1")
+        self.tick(ready)
+        self.assertTrue(self.job()["ready"])
+        self.assertIsNone(self.reply("PLN-01", "Rename the helper, then it's good."))
+        self.assertIn("Rename the helper", self.fake.told[0])
+        self.assertIn("Ready for review", self.fake.told[0])  # told what to do with the line
+
+    def test_a_review_reply_can_tell_it_to_squash_merge_and_push_in_that_order(self):
+        self.tick("## In flight\n")
+        ready = "## In flight\n\n- [ ] PLN-01 **One.**\n  **Ready for review:** gates green.\n"
+        self.tick(ready)
+        self.fake.idle.add("s1")
+        self.tick(ready)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["push", "squash", "merge"]))  # no words needed
+        told = self.fake.told[0]
+        steps = [told.index(w) for w in ("`git merge-base main HEAD`", "fast-forward main to it", "Then push main")]
+        self.assertEqual(steps, sorted(steps))
+        self.assertLess(told.index("Rebase the branch onto main"), told.index("squash the commits"))  # never squash against an old main
+        self.assertIn("no merge commit", told)
+        self.assertIn('take the "Ready for review" line off', told)
+        self.assertIn("for these steps, now", told)
+        self.fake.idle.add("s1")
+        self.tick(ready)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["push"]))  # pushing alone pushes the branch
+        self.assertIn("Push the branch", self.fake.told[-1])
+        self.assertNotIn("squash the commits", self.fake.told[-1])
+        self.assertIn('keep the "Ready for review" line', self.fake.told[-1])  # still not merged: still for review
+        self.assertIn("not an action", self.reply("PLN-01", "", actions=["deploy"]))
+
+    def test_words_and_ticked_steps_go_words_first_and_a_plain_reply_withholds_the_steps(self):
+        st = stores.Store(tempfile.mkdtemp())
+        job = {"key": "PLN-01", "branch": "b", "worktree": "/x/app", "ready": True}
+        both = pickup.reply_text(st, job, "Rename the helper.", ["merge"])
+        self.assertLess(both.index("Rename the helper."), both.index("First do what they wrote"))
+        self.assertLess(both.index("First do what they wrote"), both.index("fast-forward"))
+        plain = pickup.reply_text(st, job, "Rename the helper.")
+        self.assertIn("Don't squash, merge or push", plain)
+
+    def test_steps_for_a_story_in_several_repos_name_each_repo_and_its_trunk(self):
+        st = stores.Store(tempfile.mkdtemp())
+        job = {"key": "PLN-01", "branch": "b", "ready": True,
+               "repos": [{"name": "api", "worktree": "/x/api-wt", "trunk": "dev"}, {"name": "web", "worktree": "/x/web-wt", "trunk": "main"}]}
+        told = pickup.reply_text(st, job, "", ["squash", "merge", "push"])
+        self.assertIn("in every repo this story works in", told)
+        self.assertIn("api (trunk dev, worktree /x/api-wt)", told)
+        self.assertIn("web (trunk main, worktree /x/web-wt)", told)
+        self.assertIn("Then push the trunk.", told)
+
+    def test_a_reply_that_stopped_an_idle_session_but_could_not_resume_it_leaves_it_gone(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.idle.add("s1")
+        self.fake.asking["s1"] = "question"
+        self.tick(one)
+        why = self.reply("PLN-01", "hello", resume=lambda store, job, text=None: {"state": "failed", "error": "no such conversation"})
+        self.assertIn("Continue", why)
+        self.assertEqual(self.jobs(), [("PLN-01", "lost")])
+
+    def test_a_reply_to_a_gone_session_resumes_it_without_stopping_anything(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.live.clear()
+        self.tick(one)
+        self.assertIsNone(self.reply("PLN-01", "Carry on with the tests."))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), ([], ["s1-full"]))
+
+    def test_a_reply_is_refused_while_the_session_is_at_work_and_when_it_says_nothing(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.assertIn("at work", self.reply("PLN-01", "hello"))
+        self.fake.idle.add("s1")
+        self.tick(one)
+        self.assertIn("empty", self.reply("PLN-01", "  \n "))
+        self.assertIn("no session", self.reply("PLN-09", "hello"))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), ([], []))
+
+    def test_a_reply_that_cannot_reach_the_conversation_says_so_and_leaves_the_session(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.live.clear()
+        self.tick(one)
+        why = self.reply("PLN-01", "hello", resume=lambda store, job, text=None: {"state": "failed", "error": "no such conversation"})
+        self.assertIn("no such conversation", why)
+        self.assertEqual(self.jobs(), [("PLN-01", "lost")])
+
     def test_a_tile_moved_out_of_in_flight_while_at_work_is_paused_as_the_button_does(self):
         self.tick("## In flight\n")
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
