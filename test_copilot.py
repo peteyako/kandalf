@@ -1,6 +1,7 @@
 """The Copilot CLI agent (copilot_cli.py) and the choice of agent (agent.py), with a stand-in
 `copilot` on PATH."""
 
+import contextlib
 import io
 import json
 import os
@@ -12,7 +13,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kandalf import agent, copilot_cli
+from kandalf import agent, copilot_cli, pickup
+from kandalf import store as stores
 
 
 class Copilot(unittest.TestCase):
@@ -141,6 +143,29 @@ class Copilot(unittest.TestCase):
             agent.open_session("ab12cd34")
         mine.assert_called_once_with(began["id"])
         claudes.assert_called_once_with("ab12cd34")
+
+    def test_a_message_interrupts_a_running_copilot_session_and_resumes_the_same_conversation(self):
+        self.addCleanup(agent.use, "claude")
+        home = Path(tempfile.mkdtemp())
+        (home / "board.json").write_text(json.dumps({"key": "PLN", "app": str(self.work), "agent": "copilot"}))
+        store = stores.Store(home)  # a Copilot store: the agent in use is Copilot
+        self.assertEqual(agent.name(), "copilot")
+        with mock.patch.dict(os.environ, {"FAKE_SLEEP": "30"}):
+            began = copilot_cli.start([], self.work, "auto", "go")
+        old, full = began["id"], copilot_cli.known()[began["id"]]
+        self.assertEqual(copilot_cli.sessions(), {old: "busy"})
+        pickup.save(store, {"inflight": ["PLN-01"], "jobs": [{"key": "PLN-01", "title": "One", "state": "started", "id": old,
+                                                              "session": full, "worktree": str(self.work), "branch": "pln-01-one", "model": "auto", "started": 0}]})
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(pickup.reply(store, "PLN-01", "Leave the CSS alone.", stop=copilot_cli.stop))
+        self.assertNotEqual(copilot_cli.sessions().get(old), "busy")  # its process was stopped
+        job = pickup.load(store)["jobs"][0]
+        self.assertEqual(job["state"], "started")
+        self.wait_idle(job["id"])
+        args = (self.work / "args.txt").read_text()
+        self.assertIn(f"--resume={full}", args)  # the same conversation
+        self.assertIn("Leave the CSS alone.", args)
+        self.assertIn("interrupted", args)
 
 
 class Choice(unittest.TestCase):

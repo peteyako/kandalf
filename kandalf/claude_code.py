@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 CLI = "claude"
 NAME = "Claude"
@@ -95,15 +96,20 @@ def _agents(*flags):
 
 
 def sessions():
-    """{id: "busy" or "idle"} for the background sessions that are still there, or None when
-    they can't be listed. Idle: it finished its turn or its whole task (it can still be
-    attached to), was interrupted, or waits for you. A session that was stopped, closed or
+    """{id: "busy", "idle" or "waiting"} for the background sessions that are still there, or
+    None when they can't be listed. Idle: it finished its turn or its whole task (it can still
+    be attached to) or was interrupted. Waiting: it is blocked mid-turn on your input, a
+    question or a permission prompt (status "waiting" or state "blocked"). A session that was stopped, closed or
     removed has no status and isn't in it."""
     listed = _agents()
     if listed is None:
         return None
-    return {s["id"]: "idle" if s.get("status") == "idle" else "busy" for s in listed
-            if s.get("kind") == "background" and s.get("id") and s.get("status")}
+    def doing(s):
+        if s.get("status") == "waiting" or s.get("state") == "blocked":
+            return "waiting"
+        return "idle" if s.get("status") == "idle" else "busy"
+    return {s["id"]: doing(s) for s in listed
+            if s.get("kind") == "background" and s.get("id") and (s.get("status") or s.get("state") == "blocked")}
 
 
 def known():
@@ -171,6 +177,68 @@ def screen_tail(output: str, limit: int = 220) -> str:
     if words[-limit - 1] != " ":  # the cut fell inside a word: start at the next one
         tail = tail.split(" ", 1)[-1]
     return "… " + tail.strip()
+
+
+# ---------- a session's transcript ----------
+PROJECTS = Path.home() / ".claude" / "projects"  # where Claude Code keeps each session's transcript, a .jsonl by full id
+TOOL_ARGS = ("command", "file_path", "path", "pattern", "url", "query", "description", "prompt", "skill")  # a tool call's telling input
+RESULT_LINES, LINE_CUT = 6, 240  # how much of a tool's result the log shows
+
+
+def _result_text(content) -> str:
+    if isinstance(content, list):
+        return "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return content if isinstance(content, str) else ""
+
+
+def _said(who: str, text: str) -> list:
+    return [f"{who}: {text.strip()}"] if text and text.strip() else []
+
+
+def _record_lines(record: dict) -> list:
+    """One transcript record as log lines: what was said, a tool run, the start of its result."""
+    kind, content = record.get("type"), (record.get("message") or {}).get("content")
+    if kind not in ("user", "assistant"):
+        return []
+    who = "You" if kind == "user" else NAME
+    if isinstance(content, str):
+        return _said(who, content)
+    out = []
+    for block in content if isinstance(content, list) else []:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text":
+            out += _said(who, block.get("text", ""))
+        elif block.get("type") == "tool_use":
+            given = block.get("input") or {}
+            arg = next((str(given[k]) for k in TOOL_ARGS if given.get(k)), "")
+            out.append(f"● {block.get('name')}  {arg.splitlines()[0][:LINE_CUT] if arg else ''}".rstrip())
+        elif block.get("type") == "tool_result":
+            lines = [line[:LINE_CUT] for line in _result_text(block.get("content")).splitlines() if line.strip()]
+            mark = "  ✗ " if block.get("is_error") else "  ⎿ "
+            shown = lines[:RESULT_LINES] + ([f"… {len(lines) - RESULT_LINES} more lines"] if len(lines) > RESULT_LINES else [])
+            out += [(mark if n == 0 else "    ") + line for n, line in enumerate(shown)]
+    return out
+
+
+def transcript(session: str, limit: int = 400):
+    """A session's log, read from Claude Code's own transcript of it (by full id): what was
+    said, each tool run with its telling input, and the start of each result; its last
+    `limit` lines. None when there is no transcript. (`claude logs` is a redrawn terminal
+    screen, which doesn't read as a log.)"""
+    if not session or "/" in session:
+        return None
+    found = sorted(PROJECTS.glob(f"*/{session}.jsonl"), key=lambda f: f.stat().st_mtime) if PROJECTS.is_dir() else []
+    if not found:
+        return None
+    lines = []
+    with open(found[-1], encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            try:
+                lines += _record_lines(json.loads(raw))
+            except ValueError:
+                continue
+    return "\n".join(lines[-limit:])
 
 
 # ---------- attaching to a session ----------

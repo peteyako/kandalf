@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A Claude session that stops mid-turn to ask something (a question or a permission prompt: the
+  CLI lists it as waiting or blocked) shows on its tile as **waiting for you**, with its message
+  box open and Copy attach beside it, instead of as working, or as gone when it had no status.
+- A session's log on its tile, in the message box: what it said, the tools it ran and their
+  results, refreshed every few seconds while the box is open, with **↗ window** to open it in a
+  tab of its own. Claude's is read from its transcript, Copilot's from the board's record.
+- Every session the board can reach, Claude or Copilot, has a message box: open when it waits for
+  your input, folded behind a chevron otherwise. A message to a session at work interrupts it: it is
+  stopped mid-step, given the message, and told to act on it and carry on. A folded box you open
+  stays open while the board redraws.
 - The board's hooks are part of every store, not a question: `kandalf init` adds them (`--no-hooks`
   leaves them out and records `"hooks": false`), and `kandalf serve` adds them to a store without
   them when it starts. An app with a `.claude/settings.local.json` of its own gets them merged in,

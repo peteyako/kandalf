@@ -848,7 +848,8 @@ def _mark_ready(job, note):
 
 def _look(job, seen, in_flight: bool, at, why=idle_reason):
     """Set a tracked job's state from what its session is doing now: seen is "busy", "idle",
-    or None when the session isn't there any more. An idle one is asked (why) whether it
+    "waiting" (blocked mid-turn on your input: idle, waiting on a question), or None when the
+    session isn't there any more. An idle one is asked (why) whether it
     waits for input: job["waiting"] is then "interrupted" or "question"."""
     if at - job.get("started", 0) < SETTLE:  # just launched: it may not show as busy yet
         return
@@ -867,8 +868,10 @@ def _look(job, seen, in_flight: bool, at, why=idle_reason):
     elif not in_flight:  # its tile moved on, and so has the session
         job["state"] = "ended"
     else:
-        job["state"] = "idle" if seen == "idle" else "lost"
+        job["state"] = "idle" if seen in ("idle", "waiting") else "lost"
     waiting = why(job.get("id")) if job["state"] == "idle" else None
+    if seen == "waiting" and job["state"] == "idle" and not waiting:
+        waiting = "question"  # the CLI says it is blocked on input, whatever its screen shows
     if waiting:
         job["waiting"] = waiting
     else:
@@ -953,12 +956,17 @@ def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
 STEPS = ("squash", "merge", "push")  # what a review reply may ask for, in the order they are done
 
 
-def reply_text(store, job, text: str, actions=()) -> str:
+def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> str:
     """What a reply from the board tells the session: the words typed, then the review steps
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
-    to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them."""
+    to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them.
+    interrupted: the session was at work and was stopped mid-step to take the message."""
     key = job["key"]
     said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
+    if interrupted:
+        return (f"You were interrupted: the person on the plans board stopped your session with a message about {key}:\n\n{text}\n\n"
+                "Act on it, then carry on with the story from where you were: check `git status` and the tile first, since you were "
+                "stopped mid-step. Keep the tile's \"Handoff:\" line current. Don't squash, merge or push: those stay with the reviewer.")
     if not actions:
         back = (" If it sends you back to work on the story, take the tile's \"Ready for review\" line off while you work and put it back when you are done."
                 if job.get("ready") else "")
@@ -991,11 +999,12 @@ def reply_text(store, job, text: str, actions=()) -> str:
 
 
 def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time):
-    """The reply box on a tile whose session waits for input or whose story is ready for
-    review: send what was typed, and any review steps ticked (squash, merge, push), into the
-    same conversation (reply_text). An idle session is stopped first, as Continue does, and a
-    gone one is resumed. None when it was sent; otherwise why not. The job is as it was, but
-    for an idle session that was stopped and then couldn't be resumed: that one is gone (lost)."""
+    """The message box on a tile's session: send what was typed, and any review steps ticked
+    (squash, merge, push), into the same conversation (reply_text), Claude or Copilot alike. A
+    session at work is interrupted: stopped mid-step, and told to act on it and carry on. An
+    idle one is stopped first, as Continue does, and a gone one is resumed. Not for a paused or
+    pausing story, which has Continue. None when it was sent; otherwise why not. The job is as it was, but
+    for a session that was stopped and then couldn't be resumed: that one is gone (lost)."""
     text, actions = (text or "").strip(), list(actions or [])
     wrong = [a for a in actions if a not in STEPS]
     if wrong:
@@ -1007,23 +1016,24 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
         job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
         if job is None or not job.get("id"):
             return f"{key} has no session to reply to"
-        if job["state"] == "started":
-            return f"{key}'s session is at work: reply once it stops"
-        if job["state"] not in ("idle", "lost"):
+        if job.get("pausing"):
+            return f"{key}'s session is pausing, writing its handoff: Continue once it is paused"
+        if job["state"] not in ("started", "idle", "lost"):
             return f"{key}'s session is {job['state']}: there is no conversation waiting for a reply"
+        interrupted = job["state"] == "started"  # at work: stopped mid-step to take the message
         if not job.get("session"):  # started before the board kept the full id
             job["session"] = lookup(job["id"])
         if not job.get("session"):
             return f"{key}'s conversation can't be found"
-        if job["state"] == "idle":
+        if job["state"] in ("started", "idle"):
             try:
                 stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 return f"its session couldn't be stopped to take the reply: {e}"
-        told = resume(store, job, reply_text(store, job, text, actions))
+        told = resume(store, job, reply_text(store, job, text, actions, interrupted))
         if told["state"] != "started":
             why = told.get("error") or "the conversation couldn't be resumed"
-            if job["state"] == "idle":  # it was stopped to take the reply: it is gone now
+            if job["state"] in ("started", "idle"):  # it was stopped to take the reply: it is gone now
                 job["state"] = "lost"
                 job.pop("waiting", None)
                 save(store, state)
@@ -1293,7 +1303,7 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
             return f"session {sid} (the {agent.short()} sessions could not be listed)"
         if sid not in there:
             return f"session {sid} gone (Continue is on its tile)"
-        if there[sid] != "idle":
+        if there[sid] == "busy":
             return f"session {sid} at work"
         waiting = next((j.get("waiting") for j in jobs.values() if j.get("id") == sid), None)
         return f"session {sid} " + (f"waiting for your input ({WAITING[waiting]})" if waiting else "idle")
@@ -1431,8 +1441,8 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
     if len(cuts) > 1 or (cuts and store.main_repo and cuts[0][1] != store.main_repo):  # several repos: a part for each
         there = sessions()
         seen = "unknown" if there is None else there.get(sid)
-        if seen == "idle":
-            seen = why(sid) or "idle"
+        if seen in ("idle", "waiting"):  # blocked on input counts as a question
+            seen = why(sid) or ("question" if seen == "waiting" else "idle")
         stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now()))
         said = f"session `{sid}` {_doing(seen)}. " + " ".join(
             repo_status_text(c[0], git_facts(c[2], c[1].trunk) if c[1] and c[2] else None, c[1].trunk if c[1] else "", now())
@@ -1443,8 +1453,8 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
     path = job.get("worktree") or (tile_worktree(store, tile_text) or worktree(store, {"key": key}) if store.app else "")
     there = sessions()
     seen = "unknown" if there is None else there.get(sid)
-    if seen == "idle":
-        seen = why(sid) or "idle"
+    if seen in ("idle", "waiting"):
+        seen = why(sid) or ("question" if seen == "waiting" else "idle")
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now()))
     said = status_text(sid, seen, git_facts(path, store.trunk) if path else None, store.trunk, now())
     said += " " + eta_text(tile_text, job.get("at") or job.get("started"), now())

@@ -19,7 +19,7 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, wakeButton, sessionState, wantsReply, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, wakeButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             section: name => doc.sections.find(s => s.name === name),
@@ -444,4 +444,26 @@ test("kandalf check passes a board that differs only in blank lines, and still f
     assert.equal(run("## In flight\n\n## Done\n- [x] PLN-02 **Two.**\n").status, 0);
     assert.equal(run("## In flight\n\n- [ ] PLN-01 **One.**\nProse after a tile.\n").status, 1);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a session waiting for input has the box open; one at work or idle has it folded behind a chevron", () => {
+  for (const job of [{ state: "started" }, { state: "idle" }, { state: "lost" }, { state: "idle", waiting: "question" }])
+    assert.equal(page.canMessage(job), true, JSON.stringify(job));
+  for (const job of [{ state: "started", pausing: true }, { state: "paused" }, { state: "waiting" }, { state: "failed" }, undefined])
+    assert.equal(page.canMessage(job), false, JSON.stringify(job));
+  const open = page.replyHTML({ key: "PLN-01", state: "idle", waiting: "question" });
+  assert.match(open, /<details class="session-reply"[^>]* open>/);
+  const atWork = page.replyHTML({ key: "PLN-02", state: "started" });
+  assert.match(atWork, /<details class="session-reply" data-key="PLN-02">/);  // folded
+  assert.match(atWork, /<summary[^>]*>[^<]*interrupt with a message/);
+  assert.match(atWork, /data-act="reply" data-key="PLN-02"[^>]*>Interrupt and send</);
+  assert.match(page.replyHTML({ key: "PLN-03", state: "idle" }), /<summary[^>]*>[^<]*message Claude/);
+});
+
+test("the message box carries the session's log, with a link that opens it in a window", () => {
+  const box = page.replyHTML({ key: "PLN-02", state: "started" });
+  assert.match(box, /<summary[^>]*>[^<]*Log · interrupt with a message/);
+  assert.match(box, /<pre class="session-log" data-log="PLN-02"/);
+  assert.match(box, /href="\/log\?key=PLN-02" target="_blank"/);
+  assert.match(page.replyHTML({ key: "PLN-03", state: "idle" }), /<summary[^>]*>[^<]*Log · message Claude/);
 });

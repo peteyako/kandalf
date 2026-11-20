@@ -773,6 +773,16 @@ class Handler(BaseHTTPRequestHandler):
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
                                  "trunk": self.store.trunk,
                                  "repos": [{"name": r.name, "main": r.main} for r in self.store.repos]})
+        elif u.path == "/api/log":  # ?key=PLN-01: the last lines of that tile's session log
+            view = log_view(self.store, (qs.get("key") or [""])[0])
+            self.send_json(200, view) if view else self.send_json(404, {"error": "no session on that tile"})
+        elif u.path == "/log":
+            body = LOG_PAGE.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif u.path == "/api/pickup":
             self.send_json(200, pickup.summary(self.store))
         elif u.path == "/api/board":
@@ -1036,6 +1046,38 @@ def should_open(no_open: bool, env=None, isatty=None) -> bool:
     stdout isn't a terminal. env, isatty: os.environ and sys.stdout.isatty, as they are now."""
     env = os.environ if env is None else env
     return not no_open and not env.get("BOARD_NO_OPEN") and (isatty or sys.stdout.isatty)()
+
+
+def log_view(store, key: str):
+    """What the board's log pane shows for a tile: its session's id and state and the log's last
+    lines (agent.transcript). None for a tile no session was started on."""
+    job = next((j for j in reversed(pickup.load(store)["jobs"]) if j["key"] == key and j.get("id")), None)
+    if job is None:
+        return None
+    text = agent.transcript(job["id"], job.get("session") or pickup.full_id(job["id"]))
+    return {"key": key, "id": job["id"], "state": job["state"], "pausing": bool(job.get("pausing")),
+            "text": text or "", "found": text is not None}
+
+
+# The log in a window of its own (/log?key=PLN-01): the same lines, refreshed as the pane is.
+LOG_PAGE = """<!doctype html><meta charset="utf-8"><title>Session log</title>
+<style>body{margin:0;background:#16181c;color:#d8dee9;font:13px/1.5 ui-monospace,Menlo,monospace}
+header{position:sticky;top:0;background:#22262d;padding:8px 14px;font-family:system-ui,sans-serif}
+pre{margin:0;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere}</style>
+<header id="head">Session log</header><pre id="log"></pre>
+<script>
+const key = new URLSearchParams(location.search).get("key") || "";
+async function load() {
+  const r = await fetch("/api/log?key=" + encodeURIComponent(key)), j = await r.json();
+  if (!r.ok) { document.getElementById("head").textContent = key + ": " + (j.error || r.status); return; }
+  const pinned = innerHeight + scrollY >= document.body.scrollHeight - 40;
+  document.title = key + " log";
+  document.getElementById("head").textContent = key + " · session " + j.id + " · " + (j.pausing ? "pausing" : j.state);
+  document.getElementById("log").textContent = j.found ? j.text : "No transcript found for this session.";
+  if (pinned) scrollTo(0, document.body.scrollHeight);
+}
+load(); setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 3000);
+</script>"""
 
 
 def ensure_hooks(st) -> list:

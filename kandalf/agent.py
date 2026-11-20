@@ -53,6 +53,15 @@ def attach(sid: str) -> str:
     return f"kandalf attach {sid}"
 
 
+def transcript(sid: str, session: str = None, limit: int = 400):
+    """A session's log for the board, whichever agent ran it: by short id for Copilot, by full
+    id (session) for Claude. Its last `limit` lines, or None when it can't be read."""
+    if copilot_cli.has(sid):
+        text = copilot_cli.logs(sid)
+        return None if text is None else "\n".join(text.splitlines()[-limit:])
+    return claude_code.transcript(session, limit)
+
+
 def open_session(sid: str) -> int:
     """kandalf attach: open the session sid, whichever agent started it."""
     return (copilot_cli if copilot_cli.has(sid) else claude_code).attach(sid)

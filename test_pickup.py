@@ -20,6 +20,7 @@ from unittest import mock
 
 from kandalf import claude_code as agent
 from kandalf import agent as agents
+from kandalf import copilot_cli
 from kandalf import gitlog
 from kandalf import pickup
 from kandalf import serve
@@ -58,6 +59,7 @@ class Fake:
         self.started, self.resumed, self.switched, self.live, self.idle, self.n = [], [], [], set(), set(), 0
         self.stopped, self.told = [], []  # sessions stopped, and what each resumed one was told
         self.asking = {}  # {id: "interrupted" or "question"} for an idle session that waits for input
+        self.blocked = set()  # sessions the CLI lists as waiting for input mid-turn
 
     def why(self, sid):
         return self.asking.get(sid)
@@ -83,7 +85,7 @@ class Fake:
 
     def sessions(self):
         """{id: "busy" or "idle"} for the sessions that are still there."""
-        return {sid: "idle" if sid in self.idle else "busy" for sid in self.live}
+        return {sid: "waiting" if sid in self.blocked else "idle" if sid in self.idle else "busy" for sid in self.live}
 
 
 # What a session is told today, for a store with no pickup.md: the prompt for a plain job and a
@@ -725,6 +727,25 @@ class Queue(unittest.TestCase):
         jobs = pickup.load(self.store)["jobs"]
         self.assertEqual((jobs[0]["key"], len(jobs)), ("PLN-01", pickup.KEEP + 1))
 
+    def test_a_session_the_cli_says_is_blocked_on_input_is_waiting_for_you_not_working(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.blocked.add("s1")
+        self.tick(one)
+        self.assertEqual((self.job()["state"], self.job()["waiting"]), ("idle", "question"))
+        self.fake.blocked.clear()  # answered in the terminal: at work again
+        self.tick(one)
+        self.assertEqual(self.job()["state"], "started")
+        self.assertNotIn("waiting", self.job())
+
+    def test_the_session_list_reads_waiting_and_blocked_as_waiting(self):
+        listed = [{"kind": "background", "id": "a", "status": "busy"}, {"kind": "background", "id": "b", "status": "idle", "state": "done"},
+                  {"kind": "background", "id": "c", "status": "waiting", "state": "blocked", "waitingFor": "input needed"},
+                  {"kind": "background", "id": "d", "state": "blocked"}, {"kind": "background", "id": "e"}]
+        with mock.patch.object(agent, "_agents", lambda *flags: listed):
+            self.assertEqual(agent.sessions(), {"a": "busy", "b": "idle", "c": "waiting", "d": "waiting"})
+
     def reply(self, key, text, resume=None, actions=()):
         return pickup.reply(self.store, key, text, actions, resume=resume or self.fake.resume, stop=self.stop, now=lambda: self.clock)
 
@@ -814,11 +835,30 @@ class Queue(unittest.TestCase):
         self.assertIsNone(self.reply("PLN-01", "Carry on with the tests."))
         self.assertEqual((self.fake.stopped, self.fake.resumed), ([], ["s1-full"]))
 
-    def test_a_reply_is_refused_while_the_session_is_at_work_and_when_it_says_nothing(self):
+    def test_a_message_to_a_session_at_work_interrupts_it_and_it_carries_on_after(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.assertIsNone(self.reply("PLN-01", "Leave the CSS alone."))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1"], ["s1-full"]))
+        told = self.fake.told[0]
+        self.assertIn("interrupted", told)
+        self.assertIn("Leave the CSS alone.", told)
+        self.assertIn("carry on", told)
+        self.assertEqual(self.jobs(), [("PLN-01", "started")])
+
+    def test_no_message_goes_to_a_paused_or_pausing_story(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01")
+        self.assertIn("pausing", self.reply("PLN-01", "hello"))
+        self.pause("PLN-01")  # Pause now
+        self.assertIn("paused", self.reply("PLN-01", "hello"))
+        self.assertEqual(self.fake.resumed, ["s1-full"])  # only the handoff turn
+
+    def test_a_reply_is_refused_when_it_says_nothing(self):
         self.tick("## In flight\n")
         one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
         self.tick(one)
-        self.assertIn("at work", self.reply("PLN-01", "hello"))
         self.fake.idle.add("s1")
         self.tick(one)
         self.assertIn("empty", self.reply("PLN-01", "  \n "))
@@ -1542,6 +1582,59 @@ class Cli(unittest.TestCase):
         said = pickup.summary(self.store)
         self.assertFalse(said["enabled"])
         self.assertRegex(said["why"], r'"pickup": true')
+
+
+class Transcript(unittest.TestCase):
+    """A session's log as the board shows it: what was said, the tools run, their results."""
+
+    def setUp(self):
+        self.projects = Path(tempfile.mkdtemp())
+        patch = mock.patch.object(agent, "PROJECTS", self.projects)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def write(self, session, records):
+        folder = self.projects / "-x-app-pln-01"
+        folder.mkdir(exist_ok=True)
+        (folder / f"{session}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
+
+    def test_a_claude_transcript_reads_as_what_was_said_the_tools_run_and_their_results(self):
+        said = lambda kind, *blocks: {"type": kind, "message": {"content": list(blocks)}}
+        self.write("aaaa-1111", [
+            {"type": "permission-mode", "mode": "auto"},
+            {"type": "user", "message": {"content": "You are picking up PLN-01."}},
+            said("assistant", {"type": "thinking", "thinking": "hmm", "signature": "x"}, {"type": "text", "text": "Reading the tile first."}),
+            said("assistant", {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "go test ./internal/...", "description": "tests"}}),
+            said("user", {"type": "tool_result", "tool_use_id": "t1", "content": "ok  internal/service  4.2s\nok  internal/models  1.1s"}),
+            said("assistant", {"type": "tool_use", "id": "t2", "name": "Edit", "input": {"file_path": "/x/app/main.go", "old_string": "a", "new_string": "b"}}),
+            said("user", {"type": "tool_result", "tool_use_id": "t2", "is_error": True, "content": [{"type": "text", "text": "File has not been read yet."}]}),
+        ])
+        self.assertEqual(agent.transcript("aaaa-1111").splitlines(), [
+            "You: You are picking up PLN-01.",
+            "Claude: Reading the tile first.",
+            "● Bash  go test ./internal/...",
+            "  ⎿ ok  internal/service  4.2s",
+            "    ok  internal/models  1.1s",
+            "● Edit  /x/app/main.go",
+            "  ✗ File has not been read yet.",
+        ])
+        self.assertIsNone(agent.transcript("no-such-session"))
+
+    def test_the_log_comes_from_the_agent_that_ran_the_session_and_keeps_its_last_lines(self):
+        self.write("bbbb-2222", [{"type": "assistant", "message": {"content": [{"type": "text", "text": f"line {n}"}]}} for n in range(10)])
+        with mock.patch.object(copilot_cli, "has", lambda sid: False):
+            self.assertEqual(agents.transcript("bbbb", "bbbb-2222", limit=3).splitlines(), ["Claude: line 7", "Claude: line 8", "Claude: line 9"])
+        with mock.patch.object(copilot_cli, "has", lambda sid: sid == "cccc"), mock.patch.object(copilot_cli, "logs", lambda sid: "● bash  ls\nCopilot said hi"):
+            self.assertEqual(agents.transcript("cccc", "cccc-full"), "● bash  ls\nCopilot said hi")
+
+    def test_the_board_serves_a_tile_s_log_by_its_key(self):
+        store = stores.Store(tempfile.mkdtemp())
+        pickup.save(store, {"inflight": [], "jobs": [{"key": "PLN-01", "title": "One", "state": "started", "id": "bbbb", "session": "bbbb-2222"}]})
+        self.write("bbbb-2222", [{"type": "assistant", "message": {"content": [{"type": "text", "text": "at it"}]}}])
+        with mock.patch.object(copilot_cli, "has", lambda sid: False):
+            view = serve.log_view(store, "PLN-01")
+        self.assertEqual((view["id"], view["state"], view["text"]), ("bbbb", "started", "Claude: at it"))
+        self.assertIsNone(serve.log_view(store, "PLN-09"))
 
 
 if __name__ == "__main__":
