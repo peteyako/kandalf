@@ -6,9 +6,9 @@ This tool is neither original nor clever. It's a stupider version of something a
 
 It's a local kanban board for planning work for AI agents, served on your machine. Drag a story to In flight and a background Claude Code or GitHub Copilot CLI session starts on it, in its own git worktree. Everything is markdown in git: no database, and nothing to install beyond Python 3.10+ and git.
 
-And by the power of almighty Sauron, don't run this in production. Run it only on good vibes, in a closet, deep in the darkest basement, and away from the public internet. 
+For the love of Sauron, keep it on your own machine: for now, kandalf is meant to be a local tool for managing your plans and the AI sessions that work on them. It isn't built to be hosted or shared over a network.
 
-That said, feel free to contribute if you have nothing better to do, or tokens to burn.
+Feel free to contribute if you have nothing better to do, or tokens to burn.
 
 ![kandalf: a wizard at a kanban board](docs/kandalf.jpg)
 

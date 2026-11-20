@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.5
 
 - A stats strip runs under the header of the plans board while pickup is on: how many builds are
   at work, need you, are ready for review, queued, paused, idle, or done but not merged. A count's
