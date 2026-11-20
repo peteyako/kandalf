@@ -2,7 +2,7 @@
 
 A wizard for your backlog, straight outta middle management.
 
-This tool is neither original nor clever. It's a stupider version of something a hundred vibe-coded GitHub repos have probably built already. But this one is my stupid, so I love it. It's also useful to me, doing just what is really need. And that is enough.
+This tool is neither original nor clever. It's a stupider version of something a hundred vibe-coded GitHub repos have probably built already. But this one is my stupid, so I love it. It's also useful to me, doing just what I really need. And that is enough. Until it isn't. And that's how we get new features. 
 
 It's a local kanban board for planning work for AI agents, served on your machine. Drag a story to In flight and a background Claude Code or GitHub Copilot CLI session starts on it, in its own git worktree. Everything is markdown in git: no database, and nothing to install beyond Python 3.10+ and git.
 
@@ -145,6 +145,7 @@ A store's `board.json` is optional; every key has a default.
 | `sessions` | `2` | How many of a master's sub-stories have a session at work at once. A master's `Sessions:` line overrides it. |
 | `branch` | `{key}-{slug}` | A session's feature branch. `{key}` is the tile's key in lower case, `{KEY}` as written, `{slug}` its title, `{app}` the app folder's name. Must contain `{key}` or `{KEY}`. |
 | `worktree` | `{app}-{key}` | Its worktree, relative to the folder the app is in, same placeholders. Must contain `{key}` or `{KEY}` and climbs at most one folder (`../`). `kandalf init` sets `{app}/.worktrees/{key}`, inside the app. |
+| `hooks` | `true` | The board's hooks (see Hooks). `false`, set by `kandalf init --no-hooks`, keeps `kandalf serve` from adding them. |
 | `tidy` | `true` | Archiving a story removes its worktree, branch and session, when nothing would be lost. |
 | `push` | `true` | The commit queue pushes each commit to the store's upstream, when it has one. |
 | `commitDelay` | `300` | Seconds of quiet before the queue commits. |
@@ -188,7 +189,7 @@ kandalf hook autocommit     the Claude Code hook that queues an edit (reads the 
 kandalf hook check          the Claude Code hook that flags a file the board would open view-only
 ```
 
-`kandalf init` asks for what you don't pass when run in a terminal; `--yes` takes the defaults (pickup and hooks off; with `--pickup`, the agent is `claude` when it is on PATH, else `copilot` when that is).
+`kandalf init` asks for what you don't pass when run in a terminal; `--yes` takes the defaults (pickup off, hooks on; with `--pickup`, the agent is `claude` when it is on PATH, else `copilot` when that is).
 
 ## Commits and pushes
 
@@ -203,10 +204,11 @@ On start the server also picks up changes left over from before. A commit takes 
 
 ## Hooks
 
-The board's hooks are Claude Code hooks, which the Copilot CLI reads too. They live in the store, in `.claude/settings.json`, committed with the rest of it. `kandalf init --hooks` puts them there, and `kandalf hooks --add` adds them to a store made without them. The app gets nothing committed:
+The board's hooks are Claude Code hooks, which the Copilot CLI reads too. They live in the store, in `.claude/settings.json`, committed with the rest of it. They are part of the board, not an option: `kandalf init` puts them there, and `kandalf serve` adds them to a store that lacks them when it starts (as `kandalf hooks --add` does), unless `kandalf init --no-hooks` set `"hooks": false` in its `board.json`. The app gets nothing committed:
 
 - **Pickup sessions** start with `claude --settings <store>/.claude/settings.json`, so every worktree gets the hooks without a file of its own.
-- **Your own sessions in the app** get them through `.claude/settings.local.json`, a gitignored symlink to the store's file. If the app already has a `settings.local.json`, it is left alone: start `claude --settings <store>/.claude/settings.json`, or paste the block into it.
+- **Your own sessions in the app** get them through `.claude/settings.local.json`, a gitignored symlink to the store's file. If the app already has a `settings.local.json` of its own, the hooks are merged into it and everything else in it is kept.
+- **Old hooks** that run `board`, the command's name before it was `kandalf`, do nothing now. `kandalf hooks --add` replaces them in the store and in the app's `settings.local.json`; `kandalf doctor` points out any left in the app's committed `.claude/settings.json`, to take out by hand.
 
 `kandalf doctor` says where the hooks are. `kandalf hooks` prints the block:
 

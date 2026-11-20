@@ -45,6 +45,8 @@ board.json:
       "worktree": "{app}-{key}",     its worktree, relative to the folder the app is in (the
                                      default), with the same placeholders; e.g. "wt/{app}-{key}".
                                      Both need {key}; the worktree climbs at most one folder (../)
+      "hooks": true,                 the board's hooks: kandalf serve adds them to a store without them
+                                     (serve.ensure_hooks); false (kandalf init --no-hooks) leaves them out
       "tidy": true,                  archiving a story removes its worktree, feature branch and
                                      session, when the branch is in the trunk and nothing would
                                      be lost (pickup.tidy; default true)
@@ -123,6 +125,7 @@ class Store:
         self.worktree_pattern = cfg.get("worktree") or "{app}-{key}"
         self._commit_delay = 300 if cfg.get("commitDelay") is None else int(cfg["commitDelay"])
         self.tidy = bool(cfg.get("tidy", True))
+        self.hooks = bool(cfg.get("hooks", True))  # false: kandalf init --no-hooks, and serve leaves them out
         self.push = bool(cfg.get("push", True))
         self.root = git_root(self.dir) if self.dir.is_dir() else None
         self.hooks_file = self.dir / HOOKS_FILE

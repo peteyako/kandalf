@@ -1038,6 +1038,16 @@ def should_open(no_open: bool, env=None, isatty=None) -> bool:
     return not no_open and not env.get("BOARD_NO_OPEN") and (isatty or sys.stdout.isatty)()
 
 
+def ensure_hooks(st) -> list:
+    """The board's hooks are part of it: a store with an app that lacks them gets them when it
+    is served (init.add_hooks: in the store, committed, and in the app), unless its board.json
+    says "hooks": false. What was done, as lines for the console; [] when nothing was."""
+    from . import init
+    if not st.hooks or not st.app or not st.app.is_dir() or init.has_hooks(st.hooks_file):
+        return []
+    return ["The board's hooks were missing; added them:"] + ["  " + line for line in init.add_hooks(st)]
+
+
 def main(args=None):
     ap = argparse.ArgumentParser(prog="kandalf serve", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1053,6 +1063,8 @@ def main(args=None):
     Handler.store = st
     if st.root:
         gitlog.resume(st)  # changes queued before a restart still get committed
+    for line in ensure_hooks(st):
+        print(line, flush=True)
     why = pickup.why_off(st)  # None: pickup runs
     # Both list what is in flight first. Off the main thread: asking the CLI for its sessions takes a second.
     threading.Thread(target=report_in_flight if why else watch_pickups, args=(st,), daemon=True).start()

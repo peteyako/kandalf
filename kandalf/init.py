@@ -7,7 +7,7 @@ The store goes in DIR, or beside the git repo you're in in a folder named for th
 (<repo>-plans when the name is left at its default). It gets board.json,
 plans.md and backlog.md (from templates/), active/, archive/archived.md, a git repo of its own
 and a first commit. With an app, the app gets a gitignored docs/plans symlink to the store and,
-if asked, the board's hooks: they go in the store's .claude/settings.json (committed with it),
+the board's hooks (unless --no-hooks): they go in the store's .claude/settings.json (committed with it),
 which pickup sessions load with --settings and the app links in as a gitignored
 .claude/settings.local.json for your own sessions there; nothing is committed in the app.
 
@@ -45,7 +45,9 @@ HOOKS = {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [
     {"type": "command", "command": "command -v kandalf >/dev/null || exit 0; kandalf hook check"},
 ]}]}
 HOOK_MARK = "kandalf hook autocommit"  # a settings file that has this has the hooks already
-OLD_HOOK = "board hook "  # what the hooks ran before the command was called kandalf
+# What the hooks ran before the command was called kandalf: `board hook check`, or `"$b" hook check`
+# with $b found by `command -v board`. That command is gone, so those hooks quietly do nothing.
+OLD_HOOK_RE = re.compile(r"\bboard hook |command -v board\b")
 LOCAL = ".claude/settings.local.json"  # where an app links the store's hooks in
 
 PICKUP_ASK = """Pickup: when it is on, a story dragged to In flight starts a background agent session
@@ -372,7 +374,7 @@ def drop_old_hooks(post: list) -> bool:
     """Take the old `board hook ...` commands out of a PostToolUse list, and any group they
     leave empty; were there any?"""
     def old(hook):
-        return isinstance(hook, dict) and OLD_HOOK in str(hook.get("command", ""))
+        return isinstance(hook, dict) and bool(OLD_HOOK_RE.search(str(hook.get("command", ""))))
     dropped = False
     for group in list(post):
         if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
@@ -392,6 +394,11 @@ def mentions(f: Path, text: str) -> bool:
     return f.is_file() and text in f.read_text(encoding="utf-8", errors="replace")
 
 
+def has_old_hooks(f: Path) -> bool:
+    """Does this settings file still carry the old `board` hooks?"""
+    return f.is_file() and bool(OLD_HOOK_RE.search(f.read_text(encoding="utf-8", errors="replace")))
+
+
 def has_hooks(f: Path) -> bool:
     """Does this settings file carry the board's hooks?"""
     return mentions(f, HOOK_MARK)
@@ -405,15 +412,15 @@ def links_hooks(app: Path, hooks: Path) -> bool:
 
 def link_hooks(app: Path, hooks: Path) -> list:
     """Link the store's hooks file into the app as its .claude/settings.local.json (gitignored),
-    for the sessions you run there; pickup sessions load it with --settings. What was done."""
+    for the sessions you run there; pickup sessions load it with --settings. When the app has a
+    settings.local.json of its own, the hooks are merged into it, keeping the rest. What was done."""
     at = app / LOCAL
     if links_hooks(app, hooks):
         said = [f"hooks: {at} already links them"]
-    elif os.path.lexists(at):
-        if has_hooks(at):
+    elif os.path.lexists(at):  # the app's own: the hooks go in beside what it has
+        if has_hooks(at) and not has_old_hooks(at):
             return [f"hooks: {at} has them already"]
-        return [f"hooks: {at} is already there, so it was left as it is. Pickup sessions still get the "
-                f"store's hooks; for your own sessions in the app, start claude with --settings {hooks}"]
+        return [merge_hooks(at)]
     else:
         at.parent.mkdir(exist_ok=True)
         at.symlink_to(os.path.relpath(hooks, at.parent))
@@ -624,8 +631,8 @@ def parser():
     ap.add_argument("--no-pickup", dest="pickup", action="store_false")
     ap.add_argument("--agent", choices=sorted(agent.MODULES), help="the agent pickup hands stories to (default: claude if on PATH, else copilot)")
     ap.add_argument("--hooks", dest="hooks", action="store_true", default=None,
-                    help="keep the board's hooks in the store's .claude/settings.json and link them into the app")
-    ap.add_argument("--no-hooks", dest="hooks", action="store_false")
+                    help="the board's hooks, in the store's .claude/settings.json and linked into the app (the default)")
+    ap.add_argument("--no-hooks", dest="hooks", action="store_false", help="leave the hooks out, and don't add them later")
     ap.add_argument("--example", action="store_true", help="fill the store with a sample story")
     ap.add_argument("--yes", "-y", action="store_true", help="take the defaults, never ask")
     return ap
@@ -690,10 +697,11 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
             except ValueError as e:
                 raise SystemExit(f"kandalf init: {e}")
             agent.use(cfg["agent"])
-    hooks = bool(app) and (a.hooks if a.hooks is not None else ask(
-        f"Add the board's hooks? They queue a session's board edits for commit and check board files. They "
-        f"go in the store's {stores.HOOKS_FILE}, linked into the app as {LOCAL}, where Claude Code and the "
-        f"Copilot CLI both read them. [y/N]", False, yes_no))
+    # The board's hooks are part of it, not a question: --no-hooks leaves them out, and says so in
+    # board.json ("hooks": false), so kandalf serve doesn't add them later (serve.ensure_hooks).
+    hooks = bool(app) and a.hooks is not False
+    if app and a.hooks is False:
+        cfg["hooks"] = False
 
     write_store(folder, cfg, a.example, today())
     hooks_file = folder / stores.HOOKS_FILE
@@ -827,12 +835,15 @@ def hook_check(st):
     puts them), in the store only, in the app's own settings, or nowhere."""
     local = st.app / LOCAL
     for f in (st.hooks_file, st.app / ".claude" / "settings.json", local):
-        if mentions(f, OLD_HOOK):
-            return (INFO, f"{f} has the old hooks, which run `board`: `kandalf hooks --add` replaces them in the "
-                          f"store; take them out of the app's own settings by hand")
+        if has_old_hooks(f):
+            return (INFO, f"{f} has the old hooks, which run `board`, a command that is gone, so they do nothing: "
+                          f"`kandalf hooks --add` replaces them in the store and the app's {LOCAL}; take them out of "
+                          f"the app's committed settings by hand")
     if has_hooks(st.hooks_file):
         if links_hooks(st.app, st.hooks_file):
             return OK, f"hooks in {st.hooks_file}, linked into the app at {local}"
+        if has_hooks(local):
+            return OK, f"hooks in {st.hooks_file}, and in the app's own {local}"
         return (INFO, f"hooks in {st.hooks_file}: pickup sessions get them, but your own sessions in the app "
                       f"don't, as {local} doesn't link them (`kandalf hooks --add` links it when that file isn't there)")
     for f in (st.app / ".claude" / "settings.json", local):

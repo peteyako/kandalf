@@ -19,7 +19,7 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, wakeButton, sessionState, wantsReply, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, wakeButton, sessionState, wantsReply, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             section: name => doc.sections.find(s => s.name === name),
@@ -421,4 +421,27 @@ test("a session waiting for input, or a story ready for review, gets a box to re
   assert.deepEqual([...review.matchAll(/type="checkbox" data-step="(\w+)"/g)].map(m => m[1]), ["squash", "merge", "push"]);
   assert.match(page.replyHTML({ key: "PLN-01", state: "idle", ready: true, repos: [{ name: "app", trunk: "develop" }] }), /Merge into develop/);
   assert.match(page.replyHTML({ key: "PLN-01", state: "idle", ready: true, repos: [{ trunk: "dev" }, { trunk: "main" }] }), /Merge into each trunk/);
+});
+
+test("a board file that differs from the board's own writing only in blank lines still opens as a board", () => {
+  const reads = text => page.readsAsBoard(text, page.parse(text));
+  const tidy = "## In flight\n\n- [ ] PLN-01 **One.**\n\n## Done\n\n- [x] PLN-02 **Two.**\n";
+  assert.equal(reads(tidy), true);
+  assert.equal(reads(tidy.replace("## Done\n\n", "## Done\n")), true);  // a tile straight under its heading
+  assert.equal(reads(tidy.replace("**One.**\n", "**One.**\n\n- [ ] PLN-03 **Three.**\n")), true);  // a blank line between two tiles
+  assert.equal(reads(tidy.replace("## Done\n\n", "## Done\n\nSome prose.\n\n- [x] PLN-09 **Nine.**\nMore prose after a tile.\n")), false);  // prose would move: view-only
+});
+
+test("kandalf check passes a board that differs only in blank lines, and still fails one that would lose its shape", () => {
+  const { spawnSync } = require("child_process"), os = require("os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kandalf-check-"));
+  const run = text => {
+    const f = path.join(dir, "plans.md");
+    fs.writeFileSync(f, text);
+    return spawnSync("node", [path.join(__dirname, "kandalf", "check.js"), f], { encoding: "utf8" });
+  };
+  try {
+    assert.equal(run("## In flight\n\n## Done\n- [x] PLN-02 **Two.**\n").status, 0);
+    assert.equal(run("## In flight\n\n- [ ] PLN-01 **One.**\nProse after a tile.\n").status, 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

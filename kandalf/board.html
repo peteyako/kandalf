@@ -980,6 +980,15 @@ function serialize(d) {
   }
   return parts.join("\n\n") + "\n";
 }
+// Whether a board file opens as a board (d: parse(text)): it comes back from serialize the same
+// but for blank lines, such as a tile written straight under its column's heading or a blank
+// line between two tiles, which the board puts right the next time it saves. Anything else
+// (prose outside a tile, a heading the board doesn't know) would change the file, so it opens
+// view-only instead (check.js says why).
+const nonBlank = text => text.replace(/\r\n/g, "\n").split("\n").filter(line => line.trim()).join("\n");
+function readsAsBoard(text, d) {
+  return nonBlank(serialize(d)) === nonBlank(text);
+}
 
 // ---------- rendering ----------
 // ---------- the columns a board has one of ----------
@@ -1807,7 +1816,7 @@ function adopt(j) {
   serverLinks = j.linked ?? null;
   serverTiles = j.tiles || {};
   // A missing final newline (an editor or another tool saved it that way) isn't worth losing the board over.
-  readonly = serialize(doc) !== j.text.replace(/\r\n/g, "\n").replace(/\n*$/, "\n");
+  readonly = !readsAsBoard(j.text, doc);
 }
 
 // ---------- drag and drop ----------

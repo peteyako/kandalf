@@ -87,7 +87,7 @@ class Init(Setup):
         link = app / "docs" / "plans"
         self.assertEqual(os.readlink(link), "../../shop-plans")
         self.assertEqual(link.resolve(), store)
-        self.assertEqual((app / ".gitignore").read_text(), "docs/plans\n.worktrees/\n")
+        self.assertEqual((app / ".gitignore").read_text(), "docs/plans\n.worktrees/\n.claude/settings.local.json\n")
         self.assertEqual(git(app, "rev-list", "--count", "HEAD"), "1")  # nothing committed in the app
         self.assertEqual(git(store, "log", "--format=%s"), "board: a new store")
         self.assertEqual(git(store, "status", "--porcelain"), "")
@@ -202,7 +202,7 @@ class Init(Setup):
         self.assertEqual(asked[:3], ["Name [shop]: ", "Key prefix [TRA]: ", "Port [7788]: "])
         self.assertEqual(asked[3], "Let agents pick up stories? [y/N]: ")
         self.assertRegex(asked[4], r"^Agent: claude .* or copilot .*: $")
-        self.assertRegex(asked[5], r"hooks.*\[y/N\]: $")
+        self.assertEqual(len(asked), 5)  # the hooks aren't asked about: they are part of the board
         self.assertTrue(any("new git worktree under the app's .worktrees/" in line and "auto by default" in line for line in self.said))
         cfg = self.config(self.top / "Tracker")
         self.assertEqual((cfg["name"], cfg["key"], cfg["port"], cfg["pickup"], cfg["agent"]), ("Tracker", "TRA", 7799, True, "copilot"))
@@ -221,8 +221,7 @@ class Init(Setup):
         self.init(cwd=app)  # no_input fails the test if anything is asked
         self.init("--yes", str(self.top / "other"), cwd=app, tty=True)
         self.assertFalse(self.config(self.top / "shop-plans")["pickup"])
-        self.assertFalse((app / ".claude").exists())
-        self.assertFalse((self.top / "shop-plans" / ".claude").exists())
+        self.assertTrue(init.has_hooks(self.top / "shop-plans" / ".claude" / "settings.json"))  # not asked: part of the board
 
     def test_flags_are_not_asked_again(self):
         app = self.app()
@@ -249,7 +248,7 @@ class Init(Setup):
         self.init("--yes", cwd=app)
         self.assertTrue((app / "docs" / "plans").is_dir() and not (app / "docs" / "plans").is_symlink())
         self.assertTrue(any("left as it is" in line for line in self.said))
-        self.assertEqual((app / ".gitignore").read_text(), "/docs/\n.worktrees/\n")  # docs/ covers the link already
+        self.assertEqual((app / ".gitignore").read_text(), "/docs/\n.worktrees/\n.claude/settings.local.json\n")  # docs/ covers the link already
         self.assertTrue(any(line.startswith("Next: kandalf serve --dir") for line in self.said))
 
     def test_a_gitignore_line_covers_docs_plans_when_it_names_it_or_docs(self):
@@ -327,6 +326,15 @@ class Hooks(Setup):
         self.assertIn("left alone", said)
         self.assertIn(init.hooks_text(), said)
 
+    def test_the_old_board_hooks_in_their_other_form_are_spotted_and_replaced(self):
+        old = [{"type": "command", "command": 'b="$(command -v board || echo "$HOME/.local/bin/board")"; [ -x "$b" ] && "$b" hook autocommit 2>/dev/null || true'},
+               {"type": "command", "command": 'b="$(command -v board || echo "$HOME/.local/bin/board")"; [ -x "$b" ] || exit 0; "$b" hook check'}]
+        f = self.settings(json.dumps({"hooks": {"PostToolUse": [{"matcher": "Edit|Write|MultiEdit", "hooks": old}]}}))
+        self.assertTrue(init.has_old_hooks(f))
+        self.assertIn("replaced", init.merge_hooks(f))
+        self.assertFalse(init.has_old_hooks(f))
+        self.assertEqual(json.loads(f.read_text())["hooks"]["PostToolUse"], init.HOOKS["PostToolUse"])
+
     def test_the_old_board_hooks_are_replaced_and_the_rest_kept(self):
         mine = {"type": "command", "command": "echo mine"}
         old = [{"type": "command", "command": "command -v board >/dev/null && board hook autocommit 2>/dev/null || true"},
@@ -337,15 +345,17 @@ class Hooks(Setup):
         self.assertEqual(json.loads(f.read_text())["hooks"]["PostToolUse"],
                          [{"matcher": "Bash", "hooks": [mine]}] + init.HOOKS["PostToolUse"])
 
-    def test_an_apps_own_settings_local_json_is_left_alone(self):
+    def test_an_apps_own_settings_local_json_gets_the_hooks_merged_in(self):
         app, hooks = self.app(), self.settings(json.dumps({"hooks": init.HOOKS}))
         local = app / ".claude" / "settings.local.json"
         local.parent.mkdir()
         local.write_text('{"permissions": {}}')
         said = init.link_hooks(app, hooks)
-        self.assertEqual(local.read_text(), '{"permissions": {}}')
-        self.assertIn("left as it is", said[0])
-        self.assertIn(f"--settings {hooks}", said[0])
+        merged = json.loads(local.read_text())
+        self.assertEqual(merged["permissions"], {})  # the rest kept
+        self.assertEqual(merged["hooks"], init.HOOKS)
+        self.assertIn("added", said[0])
+        self.assertEqual(init.link_hooks(app, hooks), [f"hooks: {local} has them already"])
 
     def test_linking_twice_changes_nothing(self):
         app, hooks = self.app(), self.settings(json.dumps({"hooks": init.HOOKS}))
@@ -354,9 +364,35 @@ class Hooks(Setup):
         self.assertEqual(init.link_hooks(app, hooks), [f"hooks: {app / '.claude' / 'settings.local.json'} already links them"])
         self.assertEqual((app / ".gitignore").read_text(), ignored)
 
+    def test_a_store_gets_the_hooks_without_being_asked_and_keeps_a_no_hooks_choice(self):
+        self.init("--yes", cwd=self.app())
+        st = stores.Store(self.top / "shop-plans")
+        self.assertTrue(init.has_hooks(st.hooks_file))
+        self.assertTrue(st.hooks)
+        self.assertTrue(init.links_hooks(st.app, st.hooks_file))
+        self.init("--yes", "--no-hooks", cwd=self.app("lone"))
+        st = stores.Store(self.top / "lone-plans")
+        self.assertFalse(st.hooks_file.exists())
+        self.assertIs(self.config(st.dir)["hooks"], False)
+        self.assertFalse(st.hooks)
+
+    def test_serve_adds_the_hooks_to_a_store_without_them_unless_it_said_no(self):
+        app = self.app()
+        self.init("--yes", "--no-hooks", cwd=app)
+        st = stores.Store(self.top / "shop-plans")
+        self.assertEqual(serve.ensure_hooks(st), [])  # it said no
+        cfg = self.config(st.dir)
+        del cfg["hooks"]
+        (st.dir / "board.json").write_text(json.dumps(cfg))
+        st = stores.Store(st.dir)  # a store from before the hooks were standard
+        said = serve.ensure_hooks(st)
+        self.assertTrue(init.has_hooks(st.hooks_file))
+        self.assertTrue(any("committed" in line for line in said))
+        self.assertEqual(serve.ensure_hooks(st), [])  # there already
+
     def test_board_hooks_add_puts_them_in_a_store_made_without_them_commits_and_links_them(self):
         app = self.app()
-        self.init("--yes", cwd=app)
+        self.init("--yes", "--no-hooks", cwd=app)
         st = stores.Store(self.top / "shop-plans")
         with contextlib.redirect_stdout(io.StringIO()) as printed:
             self.assertEqual(cli.main(["hooks", "--add", "--dir", str(st.dir)]), 0)
@@ -388,7 +424,7 @@ class Doctor(Setup):
         info = " | ".join(t for m, t in found if m == init.INFO)
         self.assertIn("no upstream", info)
         self.assertIn(OFF, info)
-        self.assertIn("`kandalf hooks --add`", info)
+        self.assertTrue(any(m == init.OK and "hooks in" in t and "linked into the app" in t for m, t in found))
         self.assertTrue(any(m == init.OK and "links the store" in t for m, t in found))
         self.assertTrue(any(m == init.OK and "trunk dev" in t for m, t in found))
         said = []
@@ -564,7 +600,7 @@ class RepoCommands(Setup):
         st, api = self.made("--hooks"), self.app("api", "dev")
         self.add(st, api)
         self.assertEqual((api / ".claude" / "settings.local.json").resolve(), st.hooks_file)
-        self.init("--yes", cwd=self.app("lone"))
+        self.init("--yes", "--no-hooks", cwd=self.app("lone"))
         st2 = stores.Store(self.top / "lone-plans")
         other = self.app("other", "dev")
         self.add(st2, other)

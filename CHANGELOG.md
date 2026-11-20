@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The board's hooks are part of every store, not a question: `kandalf init` adds them (`--no-hooks`
+  leaves them out and records `"hooks": false`), and `kandalf serve` adds them to a store without
+  them when it starts. An app with a `.claude/settings.local.json` of its own gets them merged in,
+  keeping the rest. The old hooks that ran `board` in their `command -v board` form are found and
+  replaced too: they had quietly done nothing since the command became `kandalf`.
+- A board file that differs from the board's own layout only in blank lines (a tile written straight
+  under its column's heading, a blank line between two tiles) opens as a board instead of
+  view-only, and the board puts the blank lines right when it next saves. `kandalf check` and its
+  hook pass it too, and when they do fail they point at the first line that really differs.
 - A reply box on a tile whose session waits for input, or whose story is ready for review:
   type and **Send**, and it goes into the same Claude or Copilot conversation. On a story ready
   for review, **Squash**, **Merge into** the trunk and **Push** checkboxes tell the session to do
