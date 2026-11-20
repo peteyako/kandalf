@@ -1569,10 +1569,10 @@ const matchesFilter = (c, q) => !q || (c.text + "\n" + c.body.join("\n")).toLowe
 
 // The stats strip under the header counts the plans board's builds by what each needs:
 // [state, mark, label, what it means]. A build is a story a session was handed (or, for ready
-// and unmerged, one that was finished), counted once, in the first of these it fits.
+// and unmerged, one that was finished), counted once (buildState says where).
 const STATS = [
   ["work", "✦", "at work", "A session is working on these"],
-  ["need", "⚠", "need you", "Their session asked a question, ended on an error, is gone or couldn't be started"],
+  ["need", "⚠", "need you", "Not ready for review, and their session asked a question, ended on an error, is gone or couldn't be started"],
   ["ready", "✔", "ready for review", "Finished and waiting for you to review and merge"],
   ["queued", "◌", "queued", "In flight, waiting for a session"],
   ["paused", "❙❙", "paused", "Stopped with a handoff, waiting for Continue"],
@@ -1582,15 +1582,16 @@ const STATS = [
 // Which of the strip's states a tile is in, or "": most tiles are in none. A tile carried
 // along with another story's session isn't a build of its own. "need" is the tiles renderCard
 // marks (needs-you, lost) and the ones not started; a plain idle session isn't one of them.
+// A story ready for review is "ready" however its session stopped: what it waits for is the review.
 function buildState(c, sec) {
   const key = cardKey(c);
   if (!key) return "";
   if (unmerged[key]) return "unmerged";
   const job = isPickupColumn(sec.name) ? pickupFor(key) : undefined;
   if (job && job.key !== key) return "";
-  if (job && (["lost", "failed"].includes(job.state) || (job.state === "idle" && job.waiting))) return "need";
   if (job?.state === "started") return "work";
   if (storyParts(c).ready !== null && !isDoneCol(sec.name)) return "ready";
+  if (job && (["lost", "failed"].includes(job.state) || (job.state === "idle" && job.waiting))) return "need";
   if (job?.state === "waiting") return "queued";
   if (job?.state === "paused") return "paused";
   return job?.state === "idle" ? "idle" : "";

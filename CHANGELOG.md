@@ -11,6 +11,9 @@
   **Gates** sub-task; now a later run (after a rebase, a fix or a reply) unticks it or adds a new
   unticked one first, and every reply from the board says so, whatever the store's `pickup.md`
   says. A story no longer reads as all ticked while its tests are still being checked.
+- The stats strip counts a story that is ready for review under **ready for review** even when
+  its session stopped to wait for you or has gone; it was counted under **need you**, so a
+  finished story could show as 0 ready.
 
 ## 1.1.5
 
