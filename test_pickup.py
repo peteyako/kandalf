@@ -739,6 +739,35 @@ class Queue(unittest.TestCase):
         self.assertEqual(self.job()["state"], "started")
         self.assertNotIn("waiting", self.job())
 
+    def test_the_next_queued_tile_starts_when_the_one_at_work_stops_to_wait_for_input(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        three = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n- [ ] PLN-03 **Three.**\n"
+        self.tick(three)
+        self.assertEqual(self.jobs(), [("PLN-01", "started"), ("PLN-02", "waiting"), ("PLN-03", "waiting")])
+        self.fake.blocked.add("s1")  # PLN-01 asks a question mid-turn
+        self.tick(three)
+        self.assertEqual(self.jobs(), [("PLN-01", "idle"), ("PLN-02", "started"), ("PLN-03", "waiting")])
+        self.fake.blocked.clear()  # answered: PLN-01 is at work again, beside PLN-02
+        self.tick(three)
+        self.assertEqual(self.jobs(), [("PLN-01", "started"), ("PLN-02", "started"), ("PLN-03", "waiting")])
+        self.fake.idle.add("s2")
+        self.fake.asking["s2"] = "question"  # PLN-02 ends its turn on a question; PLN-01 still works, so PLN-03 waits
+        self.tick(three)
+        self.assertEqual(self.jobs(), [("PLN-01", "started"), ("PLN-02", "idle"), ("PLN-03", "waiting")])
+
+    def test_a_store_s_parallel_setting_is_how_many_tiles_on_their_own_work_at_once(self):
+        (self.store.dir / "board.json").write_text(json.dumps({"parallel": 2}))
+        self.store = stores.Store(self.store.dir)
+        self.assertEqual((self.store.parallel, stores.Store(tempfile.mkdtemp()).parallel), (2, 1))
+        self.tick("## In flight\n")
+        three = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n- [ ] PLN-03 **Three.**\n"
+        self.tick(three)
+        self.assertEqual(self.jobs(), [("PLN-01", "started"), ("PLN-02", "started"), ("PLN-03", "waiting")])
+        self.fake.idle.add("s1")
+        self.tick(three)
+        self.assertEqual(self.jobs(), [("PLN-01", "idle"), ("PLN-02", "started"), ("PLN-03", "started")])
+
     def test_the_session_list_reads_waiting_and_blocked_as_waiting(self):
         listed = [{"kind": "background", "id": "a", "status": "busy"}, {"kind": "background", "id": "b", "status": "idle", "state": "done"},
                   {"kind": "background", "id": "c", "status": "waiting", "state": "blocked", "waitingFor": "input needed"},
@@ -875,6 +904,23 @@ class Queue(unittest.TestCase):
         self.assertIn("no such conversation", why)
         self.assertEqual(self.jobs(), [("PLN-01", "lost")])
 
+    def test_a_paused_story_can_be_queued_again_and_is_taken_over_in_its_turn(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01", resume=lambda store, job, text=None: {"state": "failed"})
+        both = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n"
+        self.tick(both)  # PLN-02 takes the slot
+        self.assertTrue(pickup.requeue(self.store, "PLN-01", now=lambda: self.clock))
+        self.assertEqual(self.jobs(), [("PLN-02", "started"), ("PLN-01", "waiting")])
+        self.assertFalse(pickup.requeue(self.store, "PLN-01"))  # queued already
+        self.assertFalse(pickup.requeue(self.store, "PLN-02"))  # at work, not paused
+        self.tick(both)
+        self.assertEqual(self.fake.started, ["PLN-01", "PLN-02"])  # still waits its turn
+        self.fake.idle.add("s2")
+        self.tick(both)
+        self.assertEqual(self.fake.started, ["PLN-01", "PLN-02", "PLN-01*"])  # taken over from its handoff
+        self.assertEqual(dict(self.jobs())["PLN-01"], "started")
+
     def test_a_tile_moved_out_of_in_flight_while_at_work_is_paused_as_the_button_does(self):
         self.tick("## In flight\n")
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
@@ -914,6 +960,25 @@ class Queue(unittest.TestCase):
         self.tick("## In flight\n\n- [ ] PLN-02 **Two.**\n\n## To do\n\n- [ ] PLN-01 **One.**\n")
         self.assertEqual(self.jobs(), [("PLN-02", "started"), ("PLN-01", "paused")])
         self.assertEqual(self.job()["id"], "s1")  # its session and worktree are kept
+
+    def test_a_sub_story_picked_up_alone_is_given_its_master_s_tile_from_wherever_it_sits(self):
+        st = stores.Store(tempfile.mkdtemp())
+        (st.dir / "backlog.md").write_text("## Feature\n\n- [ ] PLN-01 **Grand plan.**\n  The [charter](https://example.com/charter).\n")
+        board = ("## To do\n\n- [ ] PLN-02 **Ladder look.**\n  Part of PLN-01. From the [design canvas](https://example.com/canvas).\n  No pickup. Model: haiku\n"
+                 "\n## In flight\n\n- [ ] PLN-03 **Session page.**\n  Part of PLN-02.\n- [ ] PLN-04 **On its own.**\n")
+        tiles = serve.in_flight_tiles(st, board)
+        sub_story, alone = tiles
+        self.assertEqual(sub_story["of"], "PLN-02")
+        self.assertIn("design canvas", sub_story["context"])
+        self.assertIn("charter", sub_story["context"])  # the master's own master, on the backlog
+        self.assertNotIn("context", alone)
+        job = pickup.entered([], tiles)[0]  # the master's No pickup and Model lines don't reach it: it isn't in flight
+        self.assertEqual((job["key"], job.get("master"), job["of"]), ("PLN-03", None, "PLN-02"))
+        self.assertEqual(pickup.model_for(st, job["text"]), st.model)
+        text = pickup.prompt(st, job, "b-name", Path("/x/app-wt"))
+        self.assertIn("a sub-story of PLN-02, whose tile follows it for you to read", text)
+        self.assertIn("https://example.com/canvas", text)
+        self.assertIn("Do only PLN-03", text)
 
     def test_a_new_session_on_a_paused_story_is_told_it_was_paused_and_to_go_by_the_handoff(self):
         st = stores.Store("/x/plans")

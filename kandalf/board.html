@@ -1245,11 +1245,16 @@ const pauseNowButton = job => `<button type="button" class="pickup-restart" data
 // The button for a job's session: Pause while it is at work (Pause now while it writes its
 // handoff), Start now when a paused story is queued again, Continue once it has stopped (idle,
 // paused or gone), Retry if it never started.
+// Start now: a queued tile's session starts at once, beside the one at work, without asking again.
+const startNowButton = job => `<button type="button" class="pickup-restart" data-act="startnow" data-key="${job.key}" title="${esc(`Queued behind ${job.behind || "the current session"}. Start ${AGENT} on this now, in parallel.`)}">▶ Start now</button>`;
+// Queue: a paused story goes to the back of the queue; a new session takes it over in its turn.
+const queueButton = job => `<button type="button" class="pickup-restart" data-act="queue" data-key="${job.key}" title="${esc(`Put this back in the queue: a new ${AGENT} session takes it over from its handoff when a session at work ends. Continue starts it now.`)}">◌ Queue</button>`;
 function wakeButton(job) {
   switch (job.state) {
     case "started": return job.pausing ? pauseNowButton(job) : pauseButton(job);
-    case "waiting": return `<button type="button" class="pickup-restart" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: a new ${AGENT} session takes this over from its handoff when ${job.behind || "the current"} session ends. Start it now instead.`)}">▶ Start now</button>`;
-    case "idle": case "paused": case "lost": return continueButton(job);
+    case "waiting": return startNowButton(job);
+    case "paused": return continueButton(job) + queueButton(job);
+    case "idle": case "lost": return continueButton(job);
     case "failed": return restartButton(job, "↻ Retry");
     default: return "";
   }
@@ -1266,7 +1271,6 @@ const WAITING = { interrupted: "it was interrupted", question: "it asked a quest
 function sessionState(job) {
   if (!job) return "";
   if (job.state === "started") return job.pausing ? "pausing" : "working";
-  if (job.state === "waiting") return "queued";
   if (job.state === "idle" && job.waiting) return "waiting for you";
   return STOPPED[job.state] || "";
 }
@@ -1353,12 +1357,13 @@ function sessionHTML(session, key) {
 // Where a pickup stands, for a tile whose text doesn't show it in a session block.
 function pickupTag(key, sec, session) {
   const job = pickupFor(key);
-  if (!job || sessionJob(session, key)) return "";
+  // A queued job is said beside the key even when the tile still has a session line (a paused story queued again).
+  if (!job || (sessionJob(session, key) && job.state !== "waiting")) return "";
   const inFlight = isPickupColumn(sec.name);
   if (job.state === "started") return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>` + (inFlight ? wakeButton(job) : "");
   if (!inFlight) return "";  // the rest only matters while the tile is in flight
   if (STOPPED[job.state]) return `<span class="pickup${job.state === "paused" ? "" : " bad"}" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + wakeButton(job);
-  if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. Click to start it now.`)}">◌ queued</span>`;
+  if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. It starts by itself then; Start now doesn't wait.`)}">◌ queued</span>` + (sessionJob(session, key) ? "" : startNowButton(job));  // with a session block, Start now is in its row of buttons
   if (job.state === "failed") return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
   return "";
 }
@@ -2127,6 +2132,8 @@ boardEl.addEventListener("click", e => {
   if (act === "status") { e.stopPropagation(); return refreshStatus(e.target.closest("[data-key]").dataset.key); }
   if (act === "hidewhy") { e.stopPropagation(); try { localStorage.setItem(HINT_KEY(), pickups.why); } catch {} return render(); }
   if (e.target.closest(".session") && String(getSelection())) return;  // selecting the session's text isn't a click on the tile
+  if (act === "queue") { e.stopPropagation(); return queuePickup(e.target.closest("[data-key]").dataset.key); }
+  if (act === "startnow") { e.stopPropagation(); return startPickup(e.target.closest("[data-key]").dataset.key); }
   if (act === "pickup") { e.stopPropagation(); return offerPickup(pickupFor(e.target.closest("[data-key]").dataset.key)); }
   const lcard = e.target.closest(".lcard");
   if (lcard) {  // archive list: Edit opens the tile dialog; a click elsewhere expands or collapses it
@@ -2278,6 +2285,10 @@ $("#cardView").addEventListener("click", e => {
   if (again) return restartPickup(again.dataset.key);
   if (nudge) return continuePickup(nudge.dataset.key);
   if (stat) return refreshStatus(stat.dataset.key);
+  const line = e.target.closest("[data-act=queue]");
+  if (line) return queuePickup(line.dataset.key);
+  const go = e.target.closest("[data-act=startnow]");
+  if (go) return startPickup(go.dataset.key);
   const hold = e.target.closest("[data-act=pause]");
   if (hold) return pausePickup(hold.dataset.key);
   if (e.target.closest("[data-act=reply]")) return sendReply(e.target.closest(".session-reply"));
@@ -2578,6 +2589,12 @@ boardEl.addEventListener("pointerdown", e => {
   const card = e.target.closest(".card");
   if (card) card.draggable = !e.target.closest(".session-reply");
 });
+// Queue: a paused story waits its turn again.
+async function queuePickup(key) {
+  const j = await postPickup({ key, queue: true }, "Not queued").catch(() => (flash("Not queued: server down?"), null));
+  if (j) flash(`${key} is queued: a new ${AGENT} session takes it over in its turn. Start now doesn't wait.`);
+  setStatus(j ? "Queued " + key : "Not queued", !j);
+}
 // Pause: the session writes its handoff and stops; the story waits in In flight for Continue.
 async function pausePickup(key) {
   setStatus(`Pausing ${AGENT} on ${key}…`);

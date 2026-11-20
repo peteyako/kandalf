@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A paused story has **◌ Queue** beside Continue: it goes to the back of the queue and a new session
+  takes it over from its handoff in its turn.
+- A sub-story picked up on its own is given its master's tile to read (and that master's master's),
+  wherever the master sits: another column or the backlog. A design or decision linked only from
+  the master reaches the session. The master's `Model:`, `Repos:`, `Sessions:` and `No pickup`
+  lines still apply only when the master is in flight itself.
+- `"parallel"` in `board.json` sets how many tiles on their own have a session at work at once
+  (default 1, as before); a master's sub-stories keep `"sessions"`.
+- A queued tile has a **▶ Start now** button beside its queued mark: it starts the session at once,
+  in parallel, without asking again.
 - A Claude session that stops mid-turn to ask something (a question or a permission prompt: the
   CLI lists it as waiting or blocked) shows on its tile as **waiting for you**, with its message
   box open and Copy attach beside it, instead of as working, or as gone when it had no status.

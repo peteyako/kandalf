@@ -19,9 +19,10 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, wakeButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
+            setPickups: jobs => { pickups = { enabled: true, why: null, jobs }; },
             section: name => doc.sections.find(s => s.name === name),
             open(name, text, tiles) { file = name; doc = parse(text); serverTiles = tiles || {}; } };`
 )();
@@ -390,7 +391,7 @@ test("a session at work gets Pause; a stopped one, idle, paused or gone, Continu
   const act = (state, more = {}) => (page.wakeButton({ key: "PLN-01", state, ...more }).match(/data-act="(\w+)"[^>]*>([^<]*)</) || []).slice(1);
   assert.deepEqual(act("started"), ["pause", "⏸ Pause"]);
   assert.deepEqual(act("started", { pausing: true }), ["pause", "⏸ Pause now"]);  // writing its handoff: stop it there if it hangs
-  assert.deepEqual(act("waiting"), ["pickup", "▶ Start now"]);  // a paused story queued again
+  assert.deepEqual(act("waiting"), ["startnow", "▶ Start now"]);  // queued, with a session block: Start now is in its row of buttons
   assert.deepEqual(act("idle"), ["continue", "▶ Continue"]);
   assert.deepEqual(act("paused"), ["continue", "▶ Continue"]);
   assert.deepEqual(act("lost"), ["continue", "▶ Continue"]);
@@ -402,7 +403,7 @@ test("a session's state reads pausing while it writes its handoff, then paused",
   assert.equal(page.sessionState({ state: "started", pausing: true }), "pausing");
   assert.equal(page.sessionState({ state: "paused" }), "paused");
   assert.equal(page.sessionState({ state: "started" }), "working");
-  assert.equal(page.sessionState({ state: "waiting" }), "queued");
+  assert.equal(page.sessionState({ state: "waiting" }), "");  // the pill beside the key says queued
 });
 
 test("a session waiting for input, or a story ready for review, gets a box to reply in", () => {
@@ -466,4 +467,24 @@ test("the message box carries the session's log, with a link that opens it in a 
   assert.match(box, /<pre class="session-log" data-log="PLN-02"/);
   assert.match(box, /href="\/log\?key=PLN-02" target="_blank"/);
   assert.match(page.replyHTML({ key: "PLN-03", state: "idle" }), /<summary[^>]*>[^<]*Log · message Claude/);
+});
+
+test("a queued tile has a Start button beside its queued mark", () => {
+  page.setPickups([{ key: "PLN-05", title: "Five", state: "waiting", behind: "PLN-01", at: 1 }]);
+  try {
+    const tag = page.pickupTag("PLN-05", { name: "In flight" }, null);
+    assert.match(tag, /◌ queued/);
+    assert.match(tag, /data-act="startnow" data-key="PLN-05"[^>]*>▶ Start now</);
+    assert.equal(page.pickupTag("PLN-05", { name: "To do" }, null), "");
+    // a paused story queued again still has its old session line: the pill shows all the same
+    page.setPickups([{ key: "PLN-05", title: "Five", state: "waiting", again: "paused", id: "ab12cd34", at: 2 }]);
+    const again = page.pickupTag("PLN-05", { name: "In flight" }, { id: "ab12cd34", rest: "" });
+    assert.match(again, /◌ queued/);
+    assert.doesNotMatch(again, /startnow/);  // its Start now is in the session block's row of buttons
+  } finally { page.setPickups([]); }
+});
+
+test("a paused story has Queue beside Continue", () => {
+  const acts = [...page.wakeButton({ key: "PLN-01", state: "paused" }).matchAll(/data-act="(\w+)"[^>]*>([^<]*)</g)].map(m => [m[1], m[2]]);
+  assert.deepEqual(acts, [["continue", "▶ Continue"], ["queue", "◌ Queue"]]);
 });

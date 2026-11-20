@@ -188,6 +188,8 @@ def entered(prev, tiles, sessions: int = 2) -> list:
         if key in masters or OPT_OUT_RE.search(text):
             continue
         job = {"key": key, "title": by_key[key]["title"], "with": [], "text": text}
+        if by_key[key].get("context"):  # its master isn't in flight: its tile is given to read, and nothing more
+            job.update(of=by_key[key]["of"], context=by_key[key]["context"])
         if above:
             limit = SESSIONS_RE.search(text)
             job.update(master=above[-1]["key"], limit=max(1, int(limit.group(1))) if limit else sessions)
@@ -392,6 +394,10 @@ def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str
     if job.get("master"):
         tiles = (f"this tile, a sub-story of {job['master']}, whose tile follows it for you to read. Do only {job['key']}: "
                  f"the other sub-stories of {job['master']} have sessions of their own, some at work beside you now")
+    elif job.get("context"):
+        tiles = (f"this tile, a sub-story of {job['of']}, whose tile follows it for you to read: a design or a decision it "
+                 f"links is yours to follow. Do only {job['key']}: {job['of']} isn't in flight")
+    told = job.get("text", "") + ("\n" + job["context"] if job.get("context") else "")
     if again:
         why = ("was paused from the board, and wrote what it left on the tile's \"Handoff:\" line before it stopped; "
                "you carry on from there" if again == "paused" else "has closed; it can't be resumed, so you carry on from what it left")
@@ -399,7 +405,7 @@ def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str
 
 When it was picked up, {tiles} read as below. The board has moved on since: read the tile as it is now in {store.dir / 'plans.md'}, above all its "Handoff:" line and which sub-tasks are ticked.
 
-{job.get('text', '')}
+{told}
 
 You are in that session's git worktree of {where} at {path}, on branch {branch_name} (cut from {trunk}).{linked}
 
@@ -409,7 +415,7 @@ First find where it stopped: `git log {trunk}..HEAD`, `git status` and the tile.
 
 From {store.dir / 'plans.md'}, {tiles}:
 
-{job.get('text', '')}
+{told}
 
 You are in a fresh git worktree of {where} at {path}, on branch {branch_name}, cut from {trunk}.{linked}
 
@@ -695,7 +701,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         for job in entered(state["inflight"], tiles, store.sessions):
             mine = next((j for j in reversed(jobs) if j["key"] == job["key"]), None)
             if mine and mine["state"] == "paused":  # back from where it was paused: a new session takes over in turn
-                for k in ("master", "limit"):  # as the tile stands now, a sub-story or not
+                for k in ("master", "limit", "of", "context"):  # as the tile stands now, a sub-story or not
                     mine.pop(k, None)
                 mine.update(job, state="waiting", again="paused", at=int(now()))
                 jobs.remove(mine)
@@ -749,9 +755,9 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
                         _remodel(store, j, model_for(store, text), switch, now(), on_start, defer=_moves(store, j, names))
                         _rerepo(store, j, names, reroute, now(), on_start, was)
                 live = [j for j in tracked if j["state"] == "started"]
-                # In turn: a tile on its own starts when no session is at work, a master's
-                # sub-story while fewer than its limit are. A start that fails lets the next one go.
-                while waiting and len(live) < waiting[0].get("limit", 1):
+                # In turn: a tile on its own starts while fewer sessions than the store's "parallel"
+                # (default 1) are at work, a master's sub-story while fewer than its limit are. A start that fails lets the next one go.
+                while waiting and len(live) < waiting[0].get("limit", store.parallel):
                     job = waiting.pop(0)
                     _begin(store, job, start, now(), on_start)
                     live += [job] if job["state"] == "started" else []
@@ -926,6 +932,24 @@ def pause(store, key: str, *, resume=resume, lookup=full_id, on_start=None, stop
             job["session"] = lookup(job["id"])
         if not _pause(store, job, resume, stop, now(), on_start, "Pause on its tile"):
             return False
+        save(store, state)
+        return True
+
+
+def requeue(store, key: str, *, now=time.time) -> bool:
+    """The Queue button on a paused story: back of the queue, to be taken over from its handoff
+    by a new session when its turn comes (as moving it out of In flight and back does), where
+    Continue starts that session at once. False when the tile has no paused job."""
+    with _lock:
+        state = load(store)
+        jobs = state["jobs"]
+        job = next((j for j in reversed(jobs) if j["key"] == key), None)
+        if job is None or job["state"] != "paused":
+            return False
+        job.update(state="waiting", again="paused", at=int(now()))
+        jobs.remove(job)
+        jobs.append(job)
+        log(f"{key} is queued again: a new session takes it over from its handoff in turn")
         save(store, state)
         return True
 

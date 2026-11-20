@@ -37,6 +37,8 @@ board.json:
       "model": "opus",               the model those sessions run on, an alias or a full id
                                      (default opus for claude, auto for copilot); a tile's own
                                      "Model: x" line overrides it
+      "parallel": 1,                 how many tiles on their own have a session at work at once
+                                     (default 1); the rest are queued, each with Start now
       "sessions": 2,                 how many of a master's sub-stories have a session at work
                                      at once (default 2); the master's "Sessions: n" line overrides it
       "branch": "{key}-{slug}",      a session's feature branch (the default): {key} is the tile's
@@ -120,6 +122,7 @@ class Store:
         self.permission = cfg.get("permission") or "auto"
         self.model = cfg.get("model") or agent.default_model()
         self.sessions = max(1, int(cfg.get("sessions") or 2))
+        self.parallel = max(1, int(cfg.get("parallel") or 1))  # tiles on their own with a session at work at once
         self.pickup_column = (cfg.get("pickupColumn") or "").strip()  # "": any In flight column
         self.branch_pattern = cfg.get("branch") or "{key}-{slug}"
         self.worktree_pattern = cfg.get("worktree") or "{app}-{key}"

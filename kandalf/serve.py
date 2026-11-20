@@ -413,12 +413,35 @@ def tile_index(store, files: dict) -> dict:
 
 def in_flight_tiles(store, text: str) -> list:
     """The keyed tiles in the plans board's In flight column (pickup.is_pickup_column), for
-    pickup.py: [{"key", "title", "text", "parent"}]."""
-    part, out = part_re(store), []
-    for t in board_tiles(store, text):
-        if t["key"] and pickup.is_pickup_column(store, t["column"]):
-            parent = next((m.group(1) for m in part.finditer(t["text"]) if m.group(1) != t["key"]), None)
-            out.append({"key": t["key"], "title": tile_title(store, t["text"]), "text": t["text"], "parent": parent})
+    pickup.py: [{"key", "title", "text", "parent"}]. A tile whose master isn't in flight (it
+    sits in another column, or on the backlog) also carries "of", that master's key, and
+    "context", the tiles of the masters above it, for its session to read: a design or a
+    decision is often linked from the master alone."""
+    part = part_re(store)
+
+    def parent_of(t):
+        return next((m.group(1) for m in part.finditer(t["text"]) if m.group(1) != t["key"]), None)
+
+    every = [t for t in board_tiles(store, text) if t["key"]]
+    flying = [t for t in every if pickup.is_pickup_column(store, t["column"])]
+    in_flight = {t["key"] for t in flying}
+    elsewhere = {t["key"]: t for t in every if t["key"] not in in_flight}
+    backlog = store.dir / "backlog.md"
+    if backlog.is_file() and any(parent_of(t) not in in_flight for t in flying if parent_of(t)):
+        for t in board_tiles(store, backlog.read_text(encoding="utf-8")):
+            if t["key"]:
+                elsewhere.setdefault(t["key"], t)
+    out = []
+    for t in flying:
+        tile = {"key": t["key"], "title": tile_title(store, t["text"]), "text": t["text"], "parent": parent_of(t)}
+        above, seen, up = [], {t["key"]}, tile["parent"]
+        while up in elsewhere and up not in seen:
+            above.append(elsewhere[up])
+            seen.add(up)
+            up = parent_of(elsewhere[up])
+        if above:
+            tile.update(of=above[0]["key"], context="\n".join(a["text"] for a in above))
+        out.append(tile)
     return out
 
 
@@ -1015,6 +1038,10 @@ class Handler(BaseHTTPRequestHandler):
                 why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], on_start=note_session)
                 if why:
                     return self.send_json(409, {"error": why, **pickup.summary(self.store)})
+                return self.send_json(200, pickup.summary(self.store))
+            if data.get("queue"):  # {key, queue: true}: the Queue button on a paused story
+                if not pickup.requeue(self.store, data.get("key", "")):
+                    return self.send_json(409, {"error": "that tile has no paused session to queue", **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))
             if data.get("pause"):
                 if not pickup.pause(self.store, data.get("key", ""), on_start=note_session):
