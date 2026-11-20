@@ -151,7 +151,7 @@ class Choice(unittest.TestCase):
         agent.use("copilot")
         self.assertEqual((agent.label(), agent.cli()), ("Copilot CLI", "copilot"))
         agent.use("claude")
-        self.assertEqual((agent.label(), agent.cli(), agent.attach("ab12cd34")), ("Claude Code", "claude", "claude attach ab12cd34"))
+        self.assertEqual((agent.label(), agent.cli(), agent.attach("ab12cd34")), ("Claude Code", "claude", "kandalf attach ab12cd34"))
         with self.assertRaises(ValueError):
             agent.use("gemini")
 

@@ -46,7 +46,7 @@ Before the first story, run `claude` once in your repo and accept its trust prom
 
 Pickup needs an agent CLI: [Claude Code](https://claude.com/claude-code) (the default) or the GitHub Copilot CLI (see [Platforms and requirements](#platforms-and-requirements)). Pick the agent when `kandalf init` asks (or pass `--agent copilot`), switch a store later with `kandalf agent copilot`, or set `"agent": "copilot"` to use the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot`) instead: each session is a detached `copilot -p --output-format json` process, tracked under `~/.kandalf/copilot/` (`KANDALF_COPILOT_DIR` overrides it). The tile's attach command is `kandalf attach ab12cd34`: it prints what the session has said and the tools it ran, follows it while it works (Ctrl-C leaves it working), and once it has finished opens the conversation in `copilot --resume` in its worktree, so you can read it and carry on, with the folders and permissions it ran with. Quit it (`/exit`) before Restart on the tile: while it is open, the board can't resume the session. A Copilot session can't stop to ask, so Status and the tile call it waiting for your input when it ended on an error or with a question. Copilot reads Claude Code hooks from a repo's `.claude/settings.local.json`, so a Copilot session gets the board's hooks through a link there in its worktree (kept out of git by the repo's `info/exclude`). A Copilot session reaches only its worktree and the folders it is given, so it is given the store too (`--add-dir`), for the board and plan docs behind `docs/plans`. `permission` `auto` runs with `--allow-all-tools --allow-all-paths` (any tool, any file path; URLs are still checked), `acceptEdits` with `--allow-all-tools`, `bypassPermissions` with `--allow-all`, `plan` with `--mode plan`, others ask for nothing and so deny what isn't pre-approved. Run the agent (`claude` or `copilot`) once in your repo and accept its trust prompt before the first pickup.
 
-`kandalf agent NAME` switches an existing store: it sets `agent`, drops `model` (it was the old agent's), and leaves each story the old agent picked up lost, so Restart on its tile starts the new agent in the same worktree. It refuses while an old session is at work or idle; `--force` stops those first. Restart `kandalf serve` afterwards.
+`kandalf agent NAME` switches an existing store: it sets `agent`, drops `model` (it was the old agent's), and leaves each story the old agent picked up lost, so Continue on its tile starts the new agent in the same worktree. It refuses while an old session is at work or idle; `--force` stops those first. Restart `kandalf serve` afterwards.
 
 ## What a session does with a story
 
@@ -57,16 +57,22 @@ While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a key
 
 When the server starts, a tile already in flight that never had a session (no session line on it, and no sub-stories) is picked up too. Unkeyed tiles and tiles that say `No pickup` never are (take the words out and the tile is picked up on the next look); the server's startup list says when a tile's `No pickup` is why it has no session.
 
-**On the tile.** The session is written into the tile as one line: ``Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.`` A Copilot store's line says ``Copilot session `ab12cd34`: `kandalf attach ab12cd34`.`` A story in several repos names each one's worktree instead: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.`` The board shows it as a block with the session's state and a button that copies the attach command:
+**On the tile.** The session is written into the tile as one line: ``Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.`` A Copilot store's line says ``Copilot session `ab12cd34`: `kandalf attach ab12cd34`.`` A story in several repos names each one's worktree instead: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.`` The board shows it as a block with the session's state and a button that copies the attach command:
 
-- **working**: the session is at work.
-- **idle**: it finished its turn. The block gets **Restart**.
+- **working**: the session is at work. The block gets **Pause** (below).
+- **pausing**: it was paused and is writing its handoff before it stops. The block gets **Pause now**, which stops it there if it hangs, leaving the Handoff line the tile has.
+- **paused**: it wrote its handoff and stopped. The block gets **Continue**.
+- **idle**: it finished its turn. The block gets **Continue**.
 - **waiting for you**: idle because it needs input (interrupted, or it asked a question). The tile gets an amber outline. This is a best guess from `claude logs`.
-- **gone**: it was stopped, closed or removed. The tile flashes red until you restart it or move it out of In flight.
+- **gone**: it was stopped, closed or removed. The tile flashes red until you continue it or move it out of In flight. The block gets **Continue**.
+
+**Pause** puts a story aside. It stops the session (Claude or Copilot) and resumes it once, told to finish or undo the step it is on, commit what is worth keeping, rewrite the tile's `Handoff:` line in full (done, uncommitted, next, undecided) and stop. Once it stops the story is **paused**: it gives up its place, so the next queued tile starts. Moving a tile out of In flight while its session is at work, to To do or any other column, pauses it the same way.
+
+**Continue** gets a stopped session going again. On a paused story a new session takes over from the tile's `Handoff:` line and the branch, in the same worktree; the old conversation isn't needed, so this works on another day, after a server restart, or with the store switched to another agent. A paused tile out of In flight has no button: move it back to In flight and it queues, at the back, for that take-over (**queued**, with **Start now** to start it beside the session at work). The take-over runs on the model and repos the tile names then. On an idle or gone session, Continue resumes the same conversation, told to carry on from where it was, check `git status` and the tile, and take another way rather than wait again; if the conversation can't be resumed, a new session takes over in the same worktree.
 
 **Status** in the block checks the story right now and writes the result under the session line: session state, commits ahead of the trunk, the last commit, uncommitted files, sub-tasks ticked and an ETA, and the last words on the session's screen. The board measures it from the CLI's session list, git in the worktree and the tile; it asks the session for nothing. The ETA goes by the pace of ticked sub-tasks, or, with none ticked, by what is left of the tile's estimate.
 
-**Handoff.** Each session keeps an indented `Handoff:` line on the tile: what is done, what it is doing, what comes next. The tile and the branch are all a new session needs, so **Restart** resumes the same conversation, or, if it can't be resumed, starts a new session in the same worktree.
+**Handoff.** Each session keeps an indented `Handoff:` line on the tile: what is done, what it is doing, what comes next. The tile and the branch are all a new session needs, so **Continue** resumes the same conversation, or, if it can't be resumed, starts a new session in the same worktree; after a Pause it always starts a new one from the handoff.
 
 **Ready for review.** When every sub-task is ticked and every gate has passed, the session adds a `**Ready for review:**` line (gate results, commit count, what to look at first) and stops. The board outlines the tile in green until it is in Done or the line is removed. You review, squash and merge.
 
@@ -167,7 +173,7 @@ kandalf commit status       what's queued, and when it will commit
 kandalf commit now          commit and push the queue right away
 kandalf check FILE...       would the board open this file view-only? names the first bad line, and a second In flight or Done column
 kandalf where               which store, its key, port, app and repo
-kandalf attach ID|KEY       open a story's session (`claude attach`, or for Copilot follow it, then `copilot --resume`)
+kandalf attach ID|KEY       open a story's session (for Claude, `claude attach`; for Copilot, follow it, then `copilot --resume`)
 kandalf status KEY          the Status line for a story's session, as the tile's Status button writes it
 kandalf agent [NAME]        the agent pickup hands stories to; or switch to claude or copilot (--force)
 kandalf repo add PATH       another repo stories can work in (--name NAME, --trunk BRANCH)

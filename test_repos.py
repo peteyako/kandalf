@@ -161,7 +161,7 @@ class TileRepos(unittest.TestCase):
 
         def tick(tiles):
             return pickup.tick(st, tiles, start=fake.start, sessions=fake.sessions, switch=fake.switch,
-                               why=fake.why, now=lambda: 1000)
+                               why=fake.why, now=lambda: 1000, resume=fake.resume, stop=lambda sid: None)
 
         tile = lambda key, extra="": {"key": key, "title": "t", "parent": None, "text": f"- [ ] {key} **t**{extra}"}
         tick([])
@@ -388,7 +388,7 @@ class SessionLine(Tree):
 
     def test_a_main_only_job_writes_today_s_line(self):
         job = {"key": "PLN-07", "id": "ab12cd34", "branch": "pln-70-dark-mode", "worktree": "/x/app-pln-70", "model": "opus", "started": 1795000000}
-        want = "  Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-70-dark-mode`, worktree `app-pln-70`. Model `opus`. Started " + test_pickup.DAY + "."
+        want = "  Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-70-dark-mode`, worktree `app-pln-70`. Model `opus`. Started " + test_pickup.DAY + "."
         bare = stores.Store(tempfile.mkdtemp())
         self.assertEqual(self.line(bare, job), want)
         self.assertEqual(self.line(bare, {**job, "repos": [{"name": "app", "worktree": "/x/app-pln-70", "trunk": "dev"}]}), want)
@@ -399,7 +399,7 @@ class SessionLine(Tree):
     def test_a_multi_repo_job_names_each_worktree_by_repo(self):
         st = self.tree()
         self.assertEqual(self.line(st, self.job_in(st, "api", "web")),
-                         "  Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-07-small-thing`, worktrees "
+                         "  Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-07-small-thing`, worktrees "
                          "api `api/.worktrees/pln-07`, web `web/.worktrees/pln-07`. Model `opus`. Started " + test_pickup.DAY + ".")
 
     def test_tile_cuts_reads_both_forms(self):
@@ -584,9 +584,9 @@ class InFlight(Tree):
         def start(store, job, again=False):
             calls.append(("start", again, job["want"]))
             return pickup.start(store, job, again)
-        def resume(store, job):
+        def resume(store, job, text=None):
             calls.append(("resume",))
-            return pickup.resume(store, job)
+            return pickup.resume(store, job, text)
         pickup.restart(st, "PLN-07", start=start, resume=resume)
         return calls
 

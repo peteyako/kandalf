@@ -577,6 +577,8 @@ def tidy_archived(store, tiles, told=None) -> list:
     for tile in tiles:
         found = store.key_re.search(tile.split("\n", 1)[0])
         key = found.group(0) if found else None
+        if key:
+            pickup.archived(store, key)
         try:
             lines = pickup.tidy(store, tile, merged=lambda repo, b: _branch_merged(store, b, repo),
                                 job=pickup.job_for(store, key) if key else None)
@@ -983,7 +985,7 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans or p.name not in PULLS:
                 return self.send_json(404, {"error": "only plans.md pulls linked tiles in"})
             return self.pull(p)
-        if u.path == "/api/pickup":  # {key}: start a waiting job now, in parallel; {key, restart: true}: the Restart button
+        if u.path == "/api/pickup":  # {key}: start a waiting job now, in parallel; {key, restart: true}: the Restart button; {key, continue: true}: the Continue button; {key, pause: true}: the Pause button
             data = self.read_body()
             if data.get("status"):  # {key, status: true}: write where the story's session and branch stand into its tile
                 return self.refresh_status(data.get("key", ""))
@@ -999,6 +1001,14 @@ class Handler(BaseHTTPRequestHandler):
             why = pickup.why_off(self.store)
             if why:
                 return self.send_json(409, {"error": why})
+            if data.get("pause"):
+                if not pickup.pause(self.store, data.get("key", ""), on_start=note_session):
+                    return self.send_json(409, {"error": "that tile has no session at work to pause, or it couldn't be stopped", **pickup.summary(self.store)})
+                return self.send_json(200, pickup.summary(self.store))
+            if data.get("continue"):
+                if not pickup.restart(self.store, data.get("key", ""), on_start=note_session, nudge=True):
+                    return self.send_json(409, {"error": "that tile's session couldn't be stopped to continue it, or the board didn't start one", **pickup.summary(self.store)})
+                return self.send_json(200, pickup.summary(self.store))
             act = pickup.restart if data.get("restart") else pickup.start_now
             if not act(self.store, data.get("key", ""), on_start=note_session):
                 return self.send_json(409, {"error": "that tile has no session to start", **pickup.summary(self.store)})

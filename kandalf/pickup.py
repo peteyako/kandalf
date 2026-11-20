@@ -14,7 +14,7 @@ The In flight column is any named like one (in flight, in progress, doing, WIP..
 the one "pickupColumn" names (is_pickup_column). The session is told the tile, what the
 board reads back from it, and the store's working rules (its pickup.md, else the default in
 templates/). Every call to the claude CLI goes through claude_code.py (the agent seam).
-`claude agents` lists the session; `claude attach <id>`
+`claude agents` lists the session; `kandalf attach <id>` (or the tile key)
 opens it, and the id is written into the tile ("Claude session `ab12cd34`"). It runs in the
 store's permission mode ("permission" in board.json, default auto): in auto mode it works
 without stopping to ask, and Claude Code's own auto-mode checks decide what it may run.
@@ -32,10 +32,15 @@ tiles already in flight the first time the board looks.
 A session is at work while `claude agents` shows it busy. Once it finishes its turn or is
 interrupted it is idle, and the next tile starts; if it is stopped, closed or removed it is
 lost, and its tile flashes on the board. An idle session that waits for input (it was
-interrupted, or it asked a question: read from `claude logs`, idle_reason) is marked so. Either way the tile gets a Restart button
+interrupted, or it asked a question: read from `claude logs`, idle_reason) is marked so. Either way the tile gets a Continue button
 (restart): that resumes the same conversation, or, when it can't be resumed, starts a new
-session in the same worktree. The session is told to keep a handoff note on the tile as it
-works, so a new session can take over from the tile and the branch alone.
+session in the same worktree. A session that looks stuck, at work or idle, gets Continue
+(restart with nudge): it is stopped and resumed, told to carry on. The session is told to keep a handoff note on the tile as it
+works, so a new session can take over from the tile and the branch alone. Pause (pause) puts a
+story aside: its session, at work, is stopped and resumed once to write a full handoff and stop;
+then it is paused, its place given up, until Continue has a new session take over from the
+tile. Moving a tile at work out of In flight pauses it the same way, and moving a paused one
+back in queues it for that take-over.
 
 On only with "pickup": true in board.json, for a store with an "app", and with a claude CLI
 that has what pickup needs (why_off says what is in the way).
@@ -137,7 +142,12 @@ def load(store) -> dict:
 
 
 def save(store, state: dict):
-    state["jobs"] = state["jobs"][-KEEP:]
+    """Write the state, remembering the last KEEP jobs that are done with, and every job a tile
+    still holds (KEPT: queued, paused or with a session), however old."""
+    jobs = state["jobs"]
+    done = [i for i, j in enumerate(jobs) if j["state"] not in KEPT]
+    forgot = set(done[:-KEEP]) if len(done) > KEEP else set()
+    state["jobs"] = [j for i, j in enumerate(jobs) if i not in forgot]
     p = state_path(store)
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
@@ -371,7 +381,8 @@ You are in {path}; the others were added to your session, so read and edit them 
 
 def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str:
     """What a new session is told. again: an earlier session on this tile can't be resumed,
-    and this one takes over from what it left on the tile and the branch."""
+    and this one takes over from what it left on the tile and the branch; "paused": that
+    session was paused (pause) and left a handoff for this one."""
     repos = wanted(store, job) if job.get("want") is not None else []
     start = repos[0] if repos and not repos[0].main else None  # a session that starts outside the main repo
     where, trunk = (f"the {start.name} repo", start.trunk) if start else ("the app", store.trunk)
@@ -382,7 +393,9 @@ def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str
         tiles = (f"this tile, a sub-story of {job['master']}, whose tile follows it for you to read. Do only {job['key']}: "
                  f"the other sub-stories of {job['master']} have sessions of their own, some at work beside you now")
     if again:
-        opening = f"""You are taking over {job['key']} "{job['title']}" on the {store.name} plans board. An earlier Claude session was developing it and has closed; it can't be resumed, so you carry on from what it left.
+        why = ("was paused from the board, and wrote what it left on the tile's \"Handoff:\" line before it stopped; "
+               "you carry on from there" if again == "paused" else "has closed; it can't be resumed, so you carry on from what it left")
+        opening = f"""You are taking over {job['key']} "{job['title']}" on the {store.name} plans board. An earlier Claude session was developing it and {why}.
 
 When it was picked up, {tiles} read as below. The board has moved on since: read the tile as it is now in {store.dir / 'plans.md'}, above all its "Handoff:" line and which sub-tasks are ticked.
 
@@ -411,6 +424,8 @@ When every sub-task is ticked and every gate this repo asks for has passed, mark
 
 
 RESUME = """Your session was stopped or interrupted, and has been restarted from the plans board. Carry on with {key} from where you left off: check `git status` and the tile first, since either may have changed while you were away. Keep the tile's "Handoff:" line current as before."""
+PAUSE = """The Pause button on the plans board stopped your session to put {key} aside. A new session will take it over later, perhaps on another day, with only the tile and this branch to go on, so don't start anything new. Finish or undo the step you are on, commit what is worth keeping on this branch, then rewrite the tile's "Handoff:" line in full: what is done, what is uncommitted and why, what comes next, and anything not yet decided. Then stop."""
+NUDGE = """You looked stuck, so the Continue button on the plans board stopped your session and started it again. Carry on with {key} from where you left off: check `git status` and the tile first, since you may have been stopped mid-step. If a command hung or you were waiting for an answer, don't wait again: take another way, or say on the tile's "Handoff:" line what you need. Keep the tile's "Handoff:" line current as before."""
 
 
 def _git(repo: Path, *args) -> subprocess.CompletedProcess:
@@ -629,7 +644,7 @@ def _report(store, job, at, on_start=None, how="picked up"):
         log(f"{name} could not be started: {job.get('error')}")
         return
     where = f", branch {job['branch']} in {job['worktree']}" if job.get("worktree") else ""
-    log(f"{name} {how}: session {job['id']} (claude attach {job['id']}){where}")
+    log(f"{name} {how}: session {job['id']} ({agent.attach(job['id'])}){where}")
     if on_start:
         try:
             on_start(store, job)
@@ -638,17 +653,24 @@ def _report(store, job, at, on_start=None, how="picked up"):
 
 
 def _begin(store, job, start, at, on_start=None):
-    """Start a waiting job."""
-    job.update(start(store, job))
-    _report(store, job, at, on_start)
+    """Start a waiting job. One that was paused and came back to In flight (again: "paused")
+    is taken over by a new session from its handoff."""
+    again = job.pop("again", None)
+    job.update(start(store, job, again) if again else start(store, job))
+    _report(store, job, at, on_start, "taken over from its handoff by a new session" if again else "picked up")
 
 
 TRACKED = ("started", "idle", "lost")  # a session was started and its tile is still in flight
+STOPPED = ("idle", "lost", "failed")  # a job Restart can get going again
+KEPT = ("waiting", "paused", *TRACKED)  # a tile with one of these keeps it: it isn't picked up again
 
 
-def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, reroute=switch_repos, why=idle_reason, now=time.time, on_start=None) -> dict:
-    """One look at the board. tiles: the In flight tiles now. Queues the ones that arrived,
-    drops a waiting one that left again, notes each session as at work, idle or lost, moves a
+def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, reroute=switch_repos, why=idle_reason, now=time.time, on_start=None,
+         resume=resume, stop=agent.stop) -> dict:
+    """One look at the board. tiles: the In flight tiles now. Queues the ones that arrived (a
+    paused one, to be taken over from its handoff), drops a waiting one that left again (a
+    paused one goes back to paused), pauses a session at work whose tile left In flight, as
+    the Pause button does (resume and stop), notes each session as at work, idle or lost, moves a
     session whose tile changed model onto that model or repos onto those repos, and starts the oldest waiting job if
     no session is at work. Returns the state."""
     with _lock:
@@ -656,7 +678,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         jobs = state["jobs"]
         by_key = {t["key"]: t for t in tiles}
         # A tile that says No pickup isn't counted as seen, so it is picked up once the words go.
-        live = {j["key"] for j in jobs if j["state"] == "waiting" or j["state"] in TRACKED}
+        live = {j["key"] for j in jobs if j["state"] in KEPT}
         held = [k for k in by_key if k not in live and OPT_OUT_RE.search(family_text(by_key, k))]
         for k in held:
             if k not in state.get("held", []):
@@ -669,9 +691,17 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
             return state
         # One tile, one session: a tile that already has a session (at work, idle or lost) or
         # a place in the queue isn't picked up again, however it came to look newly arrived.
-        taken = {j["key"] for j in jobs if j["state"] == "waiting" or j["state"] in TRACKED}
+        taken = {j["key"] for j in jobs if j["state"] in KEPT}
         for job in entered(state["inflight"], tiles, store.sessions):
-            if job["key"] in taken:
+            mine = next((j for j in reversed(jobs) if j["key"] == job["key"]), None)
+            if mine and mine["state"] == "paused":  # back from where it was paused: a new session takes over in turn
+                for k in ("master", "limit"):  # as the tile stands now, a sub-story or not
+                    mine.pop(k, None)
+                mine.update(job, state="waiting", again="paused", at=int(now()))
+                jobs.remove(mine)
+                jobs.append(mine)  # at the back of the queue
+                log(f"{job['key']} is in flight again: a new session takes it over from its handoff in turn")
+            elif job["key"] in taken:
                 log(f"{job['key']} is in flight again and keeps the session it has")
             else:
                 want = repo_names(job["text"])
@@ -679,7 +709,11 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
                              **({"want": want} if want is not None else {})})
         for j in jobs:
             if j["state"] == "waiting" and j["key"] not in by_key:
-                log(f"{j['key']} left In flight before its turn: dropped from the queue")
+                if j.pop("again", None):
+                    j["state"] = "paused"
+                    log(f"{j['key']} left In flight before its turn: paused again")
+                else:
+                    log(f"{j['key']} left In flight before its turn: dropped from the queue")
         jobs[:] = [j for j in jobs if j["state"] != "waiting" or j["key"] in by_key]
         state["inflight"] = keys
         waiting = [j for j in jobs if j["state"] == "waiting"]
@@ -702,9 +736,13 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
             there = sessions()
             if there is not None:
                 for j in tracked:
+                    gone = j["key"] not in by_key and j["state"] == "started" and not j.get("pausing")
+                    if gone and (there.get(j.get("id")) == "busy" or now() - j.get("started", 0) < SETTLE):
+                        _pause(store, j, resume, stop, now(), on_start, "its tile left In flight")  # as the Pause button does
+                        continue
                     _look(j, there.get(j.get("id")), j["key"] in by_key, now(), why)
                 for j in [*tracked, *waiting]:
-                    if j["key"] in by_key and j["state"] in ("waiting", *TRACKED):
+                    if j["key"] in by_key and j["state"] in ("waiting", *TRACKED) and not j.get("pausing"):
                         text, was = family_text(by_key, j["key"]), j.get("model")
                         names = repo_names(text)
                         # a session that is moved onto other repos is restarted once, on the new model too
@@ -721,6 +759,14 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
                     if j.get("behind") != live[0]["key"]:
                         j["behind"] = live[0]["key"]
                         log(f"{j['key']} \"{j['title']}\" queued behind {j['behind']}")
+        for j in jobs:  # a paused story is taken over on the model and repos its tile says now
+            if j["state"] == "paused" and j["key"] in by_key and latest[j["key"]] is j:
+                text = family_text(by_key, j["key"])
+                j["model"], names = model_for(store, text), repo_names(text)
+                if names is None:
+                    j.pop("want", None)
+                else:
+                    j["want"] = names
         save(store, state)
         return state
 
@@ -744,7 +790,7 @@ def _remodel(store, job, model: str, switch, at, on_start=None, defer=False):
         job.update(moved)
         _report(store, job, at, on_start, f"switched from {was} to {model}")
     else:
-        log(f"{job['key']} session {job.get('id')} could not be switched to {model}: {moved.get('error')}. Restart it from its tile")
+        log(f"{job['key']} session {job.get('id')} could not be switched to {model}: {moved.get('error')}. Continue it from its tile")
 
 
 def _folded(store, names):
@@ -788,7 +834,7 @@ def _rerepo(store, job, names, reroute, at, on_start=None, model_was=None):
         job.update(moved)
         _report(store, job, at, on_start, f"repos changed to {', '.join(r.name for r in repos)}")
     else:
-        log(f"{job['key']} session {job.get('id')} could not be moved to {', '.join(names or ['the main repo'])}: {moved.get('error')}. Restart it from its tile")
+        log(f"{job['key']} session {job.get('id')} could not be moved to {', '.join(names or ['the main repo'])}: {moved.get('error')}. Continue it from its tile")
 
 
 def _mark_ready(job, note):
@@ -807,6 +853,15 @@ def _look(job, seen, in_flight: bool, at, why=idle_reason):
     if at - job.get("started", 0) < SETTLE:  # just launched: it may not show as busy yet
         return
     was, waited = job["state"], job.get("waiting")
+    if job.get("pausing"):  # writing its handoff; once it stops it is paused, in or out of In flight
+        if seen == "busy":
+            job["state"] = "started"
+            return
+        job.pop("pausing")
+        job.pop("waiting", None)
+        job["state"] = "paused"
+        log(f"{job['key']} session {job.get('id')} is paused: Continue on its tile, or moving it back to In flight, has a new session take over from its handoff")
+        return
     if seen == "busy":
         job["state"] = "started"
     elif not in_flight:  # its tile moved on, and so has the session
@@ -824,7 +879,7 @@ def _look(job, seen, in_flight: bool, at, why=idle_reason):
     elif job["state"] != was:
         said = {"started": "is at work again", "ended": "is finished with: its tile left In flight",
                 "idle": "is idle: it finished its turn",
-                "lost": "is gone (stopped, closed or removed): Restart is on its tile"}[job["state"]]
+                "lost": "is gone (stopped, closed or removed): Continue is on its tile"}[job["state"]]
         log(f"{name} {said}")
 
 
@@ -840,6 +895,60 @@ def start_now(store, key: str, *, start=start, on_start=None) -> bool:
         return True
 
 
+def pause(store, key: str, *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time) -> bool:
+    """The Pause button: put a story aside. Its session, at work, is stopped and resumed once,
+    told to write a full handoff on the tile and stop (PAUSE); it is "pausing" until it stops,
+    then paused (_look): its tile stays in In flight but gives up its place, and Continue
+    (restart, nudge) has a new session take over from the tile. One that can't be resumed for
+    the handoff is paused at once, with the Handoff line the tile has; Pause again while it
+    writes the handoff (Pause now) stops it there. False when the tile has no session at work,
+    or it couldn't be stopped."""
+    with _lock:
+        state = load(store)
+        job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
+        if job is None or job["state"] != "started" or not job.get("id"):
+            return False
+        if job.get("pausing"):  # it hangs on its handoff: Pause now stops it, with the Handoff line the tile has
+            try:
+                stop(job["id"])
+            except (OSError, subprocess.SubprocessError) as e:
+                log(f"{key} session {job['id']} could not be stopped: {e}")
+                return False
+            job.pop("pausing")
+            job["state"] = "paused"
+            log(f"{key} session {job['id']} is paused: stopped before it finished its handoff")
+            save(store, state)
+            return True
+        if not job.get("session"):  # started before the board kept the full id
+            job["session"] = lookup(job["id"])
+        if not _pause(store, job, resume, stop, now(), on_start, "Pause on its tile"):
+            return False
+        save(store, state)
+        return True
+
+
+def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
+    """Stop the job's session, at work, and resume it once told to write its handoff and stop
+    (PAUSE): it is "pausing" until _look sees it stop. Paused at once when it can't be
+    resumed. False when it couldn't be stopped. why: what paused it, for the console."""
+    key = job["key"]
+    try:
+        stop(job["id"])
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"{key} session {job['id']} could not be stopped to pause it ({why}): {e}")
+        return False
+    job.pop("waiting", None)
+    told = resume(store, job, PAUSE.format(key=key)) if job.get("session") else {"state": "failed"}
+    if told["state"] == "started":
+        job.update(told)
+        _report(store, job, at, on_start, f"paused ({why}): told to write its handoff and stop")
+        job["pausing"] = True
+    else:
+        job["state"] = "paused"
+        log(f"{key} session {job['id']} is paused ({why}); it couldn't be told to write a handoff: {told.get('error') or 'not resumed'}")
+    return True
+
+
 def _start_moved(store, job) -> bool:
     """True when the repos its tile names now start in another repo than the job's worktree
     is in: its session can't be resumed there, a new one has to take over."""
@@ -848,31 +957,53 @@ def _start_moved(store, job) -> bool:
     return bool(here and repos and repos[0].name.lower() != here.lower())
 
 
-def restart(store, key: str, *, start=start, resume=resume, lookup=full_id, on_start=None) -> bool:
+def restart(store, key: str, *, start=start, resume=resume, lookup=full_id, on_start=None, nudge=False, stop=agent.stop) -> bool:
     """Get a tile's session going again after it went idle, was lost, or never started: the
     Restart button. Resumes the same conversation; when that can't be done, starts a new
-    session in the same worktree to take over. False if the tile has no stopped session."""
+    session in the same worktree to take over. False if the tile has no stopped session.
+    nudge: the Continue button, for a session that looks stuck. A session still there, at work
+    or idle, is stopped first, and the resumed one is told to carry on (NUDGE); False when
+    the tile has no session the board started, or it couldn't be stopped. On a paused story
+    (pause) a new session takes over from its handoff."""
     with _lock:
         state = load(store)
         job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
-        if job is None or job["state"] not in ("idle", "lost", "failed"):
+        if job is None or job["state"] not in (("started", "paused", *STOPPED) if nudge else STOPPED) or job.get("pausing"):
             return False
+        paused = job["state"] == "paused"  # it left a handoff: a new session takes over, the old conversation isn't resumed
+        stuck = nudge and job["state"] in ("started", "idle")  # stopped here to wake it: told it looked stuck
         if job.get("id") and not job.get("session"):  # started before the board kept the full id
             job["session"] = lookup(job["id"])
+        if nudge and job["state"] in ("started", "idle"):
+            try:
+                stop(job["id"])
+            except (OSError, subprocess.SubprocessError) as e:
+                log(f"{key} session {job['id']} could not be stopped to continue it: {e}")
+                return False
+            job.pop("waiting", None)
         moved = _start_moved(store, job)  # its first repo changed: no resume, a new session takes over
         repos = resolve_repos(store, job.get("want"))[0] if job.get("want") is not None and _cuts_of(store, job) else []
-        if job.get("session") and not moved and any(cut_of(store, job, r) is None for r in repos):
+        if paused:
+            again = {"state": "failed"}
+        elif job.get("session") and not moved and any(cut_of(store, job, r) is None for r in repos):
             again = _add_repos(store, {**job, "repos": _cuts_of(store, job)}, repos, job["session"])  # repos added to a stopped story's line
         else:
-            again = resume(store, job) if job.get("session") and not moved else {"state": "failed"}
+            text = NUDGE.format(key=key) if stuck else None
+            again = resume(store, job, text) if job.get("session") and not moved else {"state": "failed"}
         if again["state"] == "started":
             job.update(again)
-            _report(store, job, time.time(), on_start, "resumed")
+            _report(store, job, time.time(), on_start, "nudged to continue" if stuck else "resumed")
         else:
             took_over = bool(job.get("id"))  # there was a session before: the new one takes over from it
             job.pop("error", None)
-            job.update(start(store, job, took_over))
-            _report(store, job, time.time(), on_start, "restarted with a new session" if took_over else "picked up")
+            job.update(start(store, job, "paused" if paused else took_over))
+            if paused:
+                how = "taken over from its handoff by a new session"
+            elif took_over:
+                how = "restarted with a new session"
+            else:
+                how = "picked up"
+            _report(store, job, time.time(), on_start, how)
         save(store, state)
         return True
 
@@ -892,6 +1023,17 @@ def retire(session: str) -> bool:
     agent.stop(session)
     agent.remove(session)
     return not listed()
+
+
+def archived(store, key: str):
+    """A story was archived: a paused job on it is done with ("ended"), so it doesn't stay
+    paused in the state file for good, as nothing else would move it on."""
+    with _lock:
+        state = load(store)
+        job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
+        if job and job["state"] == "paused":
+            job["state"] = "ended"
+            save(store, state)
 
 
 def job_for(store, key: str):
@@ -1063,7 +1205,7 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
         if there is None:
             return f"session {sid} (the {agent.short()} sessions could not be listed)"
         if sid not in there:
-            return f"session {sid} gone (Restart is on its tile)"
+            return f"session {sid} gone (Continue is on its tile)"
         if there[sid] != "idle":
             return f"session {sid} at work"
         waiting = next((j.get("waiting") for j in jobs.values() if j.get("id") == sid), None)
@@ -1077,6 +1219,8 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
             what = f"queued behind {job['behind']}" if job.get("behind") else "queued"
         elif job and job["state"] == "failed":
             what = f"not started: {job.get('error')}"
+        elif job and job["state"] == "paused":
+            what = f"paused (session {job.get('id')}): Continue on its tile has a new session take over"
         elif sid:
             what = doing(sid)
         else:

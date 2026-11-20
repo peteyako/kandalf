@@ -56,6 +56,7 @@ class Fake:
 
     def __init__(self):
         self.started, self.resumed, self.switched, self.live, self.idle, self.n = [], [], [], set(), set(), 0
+        self.stopped, self.told = [], []  # sessions stopped, and what each resumed one was told
         self.asking = {}  # {id: "interrupted" or "question"} for an idle session that waits for input
 
     def why(self, sid):
@@ -68,8 +69,9 @@ class Fake:
         self.live.add(sid)
         return {"state": "started", "id": sid, "session": sid + "-full"}
 
-    def resume(self, store, job):
+    def resume(self, store, job, text=None):
         self.resumed.append(job["session"])
+        self.told.append(text)
         self.live.add(job["id"])
         self.idle.discard(job["id"])
         return {"state": "started", "id": job["id"], "session": job["session"]}
@@ -309,6 +311,7 @@ class Queue(unittest.TestCase):
         self.clock += later  # by default, long enough that a session just started has shown itself busy
         return pickup.tick(self.store, serve.in_flight_tiles(self.store, text), start=self.fake.start,
                            sessions=self.fake.sessions, switch=self.fake.switch, why=self.fake.why, now=lambda: self.clock,
+                           resume=self.fake.resume, stop=self.stop,
                            on_start=lambda store, job: self.noted.append((job["key"], job["model"])))
 
     def jobs(self):
@@ -527,7 +530,7 @@ class Queue(unittest.TestCase):
         self.fake.live.clear()
         self.tick(one)
         self.assertEqual(self.jobs(), [("PLN-01", "lost")])
-        self.fake.resume = lambda store, job: {"state": "failed", "error": "no such conversation"}
+        self.fake.resume = lambda store, job, text=None: {"state": "failed", "error": "no such conversation"}
         self.assertTrue(self.restart("PLN-01"))
         self.assertEqual(self.fake.started, ["PLN-01", "PLN-01*"])  # the second with the restart prompt
         job = pickup.load(self.store)["jobs"][0]
@@ -538,6 +541,237 @@ class Queue(unittest.TestCase):
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
         self.assertFalse(self.restart("PLN-01"))  # it is at work
         self.assertFalse(self.restart("PLN-09"))  # never picked up
+
+    def nudge(self, key):
+        return pickup.restart(self.store, key, start=self.fake.start, resume=self.fake.resume, stop=self.stop, nudge=True)
+
+    def stop(self, sid):
+        self.fake.stopped.append(sid)
+        self.fake.live.discard(sid)
+
+    def test_continue_stops_a_session_at_work_and_resumes_it_told_to_carry_on(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.assertTrue(self.nudge("PLN-01"))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1"], ["s1-full"]))
+        self.assertIn("looked stuck", self.fake.told[0])
+        self.assertIn("PLN-01", self.fake.told[0])
+        self.assertEqual(self.jobs(), [("PLN-01", "started")])
+
+    def test_continue_stops_an_idle_session_that_waits_for_input_before_resuming_it(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.idle.add("s1")
+        self.fake.asking["s1"] = "question"
+        self.tick(one)
+        self.assertTrue(self.nudge("PLN-01"))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1"], ["s1-full"]))
+        self.assertNotIn("waiting", pickup.load(self.store)["jobs"][0])
+
+    def test_continue_on_a_lost_session_resumes_it_without_stopping_anything(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.live.clear()
+        self.tick(one)
+        self.assertTrue(self.nudge("PLN-01"))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), ([], ["s1-full"]))
+        self.assertEqual(self.fake.told, [None])  # told it was restarted (RESUME), not that it looked stuck
+
+    def test_continue_starts_a_new_session_when_the_stuck_one_cannot_be_resumed(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.fake.resume = lambda store, job, text=None: {"state": "failed", "error": "no such conversation"}
+        self.assertTrue(self.nudge("PLN-01"))
+        self.assertEqual((self.fake.stopped, self.fake.started), (["s1"], ["PLN-01", "PLN-01*"]))
+
+    def test_continue_that_cannot_stop_the_session_leaves_it_as_it_was(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        def stuck(sid):
+            raise OSError("claude stop hung")
+        self.assertFalse(pickup.restart(self.store, "PLN-01", start=self.fake.start, resume=self.fake.resume, stop=stuck, nudge=True))
+        self.assertEqual((self.fake.resumed, self.jobs()), ([], [("PLN-01", "started")]))
+
+    def test_continue_is_only_for_a_tile_the_board_started_a_session_for(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.assertFalse(self.nudge("PLN-09"))
+        self.assertEqual(self.fake.stopped, [])
+
+    def pause(self, key, resume=None):
+        return pickup.pause(self.store, key, resume=resume or self.fake.resume, stop=self.stop, now=lambda: self.clock)
+
+    def job(self, key="PLN-01"):
+        return next(j for j in reversed(pickup.load(self.store)["jobs"]) if j["key"] == key)
+
+    def test_pause_stops_a_session_at_work_and_has_it_write_its_handoff_and_stop(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.assertTrue(self.pause("PLN-01"))
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1"], ["s1-full"]))
+        self.assertIn("Pause", self.fake.told[0])
+        self.assertIn('"Handoff:" line in full', self.fake.told[0])
+        self.assertEqual((self.job()["state"], self.job().get("pausing")), ("started", True))
+
+    def test_a_pausing_session_that_stops_is_paused_and_the_next_tile_starts(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        both = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n"
+        self.tick(both)
+        self.pause("PLN-01")
+        self.tick(both)  # still writing its handoff: PLN-02 waits
+        self.assertEqual(self.jobs(), [("PLN-01", "started"), ("PLN-02", "waiting")])
+        self.fake.idle.add("s1")  # done: it stopped
+        self.tick(both)
+        self.assertEqual(self.jobs(), [("PLN-01", "paused"), ("PLN-02", "started")])
+        self.assertNotIn("pausing", self.job())
+
+    def test_a_paused_tile_is_left_alone_until_continue_has_a_new_session_take_over(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.pause("PLN-01")
+        self.fake.live.clear()  # its session closed after the handoff
+        self.tick(one)
+        self.tick(one)
+        self.assertEqual((self.jobs(), self.fake.started), ([("PLN-01", "paused")], ["PLN-01"]))
+        self.assertTrue(self.nudge("PLN-01"))
+        self.assertEqual(self.fake.started, ["PLN-01", "PLN-01*"])  # a new session, told it takes over
+        self.assertEqual(self.fake.resumed, ["s1-full"])  # only the handoff turn: the old conversation isn't resumed
+        self.assertEqual((self.job()["state"], self.job()["id"]), ("started", "s2"))
+
+    def test_pause_is_only_for_a_session_at_work(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.fake.idle.add("s1")
+        self.tick(one)
+        self.assertFalse(self.pause("PLN-01"))  # idle
+        self.assertFalse(self.pause("PLN-09"))  # never picked up
+        self.assertEqual(self.fake.stopped, [])
+
+    def test_a_session_that_cannot_be_told_to_write_its_handoff_is_paused_at_once(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.assertTrue(self.pause("PLN-01", resume=lambda store, job, text=None: {"state": "failed", "error": "no such conversation"}))
+        self.assertEqual(self.jobs(), [("PLN-01", "paused")])
+
+    def test_pause_that_cannot_stop_the_session_leaves_it_at_work(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        def stuck(sid):
+            raise OSError("claude stop hung")
+        self.assertFalse(pickup.pause(self.store, "PLN-01", resume=self.fake.resume, stop=stuck, now=lambda: self.clock))
+        self.assertEqual((self.fake.resumed, self.jobs()), ([], [("PLN-01", "started")]))
+
+    def test_pause_on_a_session_still_writing_its_handoff_stops_it_now(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01")
+        self.assertTrue(self.pause("PLN-01"))  # it hung on its handoff: Pause now
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1", "s1"], ["s1-full"]))
+        self.assertEqual(self.jobs(), [("PLN-01", "paused")])
+        self.assertNotIn("pausing", self.job())
+
+    def test_a_model_change_while_it_writes_its_handoff_waits_for_the_take_over(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01")
+        sonnet = "## In flight\n\n- [ ] PLN-01 **One.**\n  Model: sonnet\n"
+        self.tick(sonnet)
+        self.assertEqual(self.fake.switched, [])  # not resumed with "carry on" over the pause
+        self.assertTrue(self.job().get("pausing"))
+        self.fake.idle.add("s1")
+        self.tick(sonnet)
+        self.assertTrue(self.nudge("PLN-01"))
+        self.assertEqual((self.fake.started, self.job()["model"]), (["PLN-01", "PLN-01*"], "sonnet"))
+
+    def test_a_paused_story_is_taken_over_with_the_repos_its_tile_names_now(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01", resume=lambda store, job, text=None: {"state": "failed"})
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n  Repos: api, web\n")
+        self.assertEqual(self.job()["want"], ["api", "web"])
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.assertNotIn("want", self.job())
+
+    def test_a_paused_tile_back_in_flight_queues_behind_those_already_waiting(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-03 **Three.**\n")
+        self.pause("PLN-03", resume=lambda store, job, text=None: {"state": "failed"})
+        away = "## To do\n\n- [ ] PLN-03 **Three.**\n\n## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(away)
+        self.tick(away.replace("- [ ] PLN-01 **One.**\n", "- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n"))
+        back = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n- [ ] PLN-03 **Three.**\n"
+        self.tick(back)
+        self.fake.idle.add("s2")  # PLN-01 finishes its turn
+        self.tick(back)
+        self.assertEqual(self.fake.started, ["PLN-03", "PLN-01", "PLN-02"])  # PLN-02 queued first, so it goes first
+        self.assertEqual(dict(self.jobs())["PLN-03"], "waiting")
+
+    def test_an_archived_paused_story_is_done_with(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01", resume=lambda store, job, text=None: {"state": "failed"})
+        serve.tidy_archived(self.store, ["- [x] PLN-01 **One.**"])
+        self.assertEqual(self.jobs(), [("PLN-01", "ended")])
+
+    def test_a_paused_job_is_remembered_however_many_jobs_come_after_it(self):
+        paused = {"key": "PLN-01", "title": "One", "state": "paused", "id": "s1"}
+        ended = [{"key": f"PLN-{n:02}", "title": "x", "state": "ended"} for n in range(2, 2 + pickup.KEEP + 5)]
+        pickup.save(self.store, {"inflight": [], "jobs": [paused, *ended]})
+        jobs = pickup.load(self.store)["jobs"]
+        self.assertEqual((jobs[0]["key"], len(jobs)), ("PLN-01", pickup.KEEP + 1))
+
+    def test_a_tile_moved_out_of_in_flight_while_at_work_is_paused_as_the_button_does(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        todo = "## To do\n\n- [ ] PLN-01 **One.**\n\n## In flight\n"
+        self.tick(todo)
+        self.assertEqual((self.fake.stopped, self.fake.resumed), (["s1"], ["s1-full"]))
+        self.assertIn('"Handoff:" line in full', self.fake.told[0])
+        self.assertEqual((self.job()["state"], self.job().get("pausing")), ("started", True))
+        self.fake.idle.add("s1")
+        self.tick(todo)
+        self.assertEqual(self.jobs(), [("PLN-01", "paused")])
+        self.tick(todo)  # and it stays paused out there
+        self.assertEqual((self.jobs(), self.fake.stopped), ([("PLN-01", "paused")], ["s1"]))
+
+    def test_a_paused_tile_moved_back_into_in_flight_is_taken_over_by_a_new_session(self):
+        self.tick("## In flight\n")
+        one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
+        self.tick(one)
+        self.tick("## To do\n\n- [ ] PLN-01 **One.**\n\n## In flight\n")
+        self.fake.idle.add("s1")
+        self.tick("## To do\n\n- [ ] PLN-01 **One.**\n\n## In flight\n")
+        self.tick(one)
+        self.assertEqual(self.fake.started, ["PLN-01", "PLN-01*"])  # a new session, told it takes over
+        self.assertEqual(self.fake.resumed, ["s1-full"])  # only the handoff turn
+        self.assertEqual((self.jobs(), self.job()["id"]), ([("PLN-01", "started")], "s2"))
+
+    def test_a_paused_tile_moved_back_in_waits_its_turn_and_stays_paused_if_it_leaves_first(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.pause("PLN-01")
+        self.fake.idle.add("s1")
+        self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
+        self.tick("## In flight\n\n- [ ] PLN-02 **Two.**\n\n## To do\n\n- [ ] PLN-01 **One.**\n")  # PLN-02 at work, PLN-01 out
+        both = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n"
+        self.tick(both)
+        self.assertEqual(self.jobs(), [("PLN-02", "started"), ("PLN-01", "waiting")])  # at the back of the queue
+        self.tick("## In flight\n\n- [ ] PLN-02 **Two.**\n\n## To do\n\n- [ ] PLN-01 **One.**\n")
+        self.assertEqual(self.jobs(), [("PLN-02", "started"), ("PLN-01", "paused")])
+        self.assertEqual(self.job()["id"], "s1")  # its session and worktree are kept
+
+    def test_a_new_session_on_a_paused_story_is_told_it_was_paused_and_to_go_by_the_handoff(self):
+        st = stores.Store("/x/plans")
+        job = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
+        text = pickup.prompt(st, job, "b-name", Path("/x/app-wt"), "paused")
+        self.assertIn("was paused from the board", text)
+        self.assertIn('"Handoff:" line', text)
+        self.assertNotIn("can't be resumed", text)
 
     def test_a_session_just_started_counts_as_live_before_it_shows_busy(self):
         self.tick("## In flight\n")
@@ -568,10 +802,10 @@ class Queue(unittest.TestCase):
             self.tick(both)
         lines = [line.split(" ", 2)[2] for line in out.getvalue().splitlines()]  # after the date and time
         self.assertEqual(lines, [
-            'pickup: PLN-01 "One" picked up: session s1 (claude attach s1)',
+            'pickup: PLN-01 "One" picked up: session s1 (kandalf attach s1)',
             'pickup: PLN-02 "Two" queued behind PLN-01',
-            "pickup: PLN-01 session s1 is gone (stopped, closed or removed): Restart is on its tile",
-            'pickup: PLN-02 "Two" picked up: session s2 (claude attach s2)'])
+            "pickup: PLN-01 session s1 is gone (stopped, closed or removed): Continue is on its tile",
+            'pickup: PLN-02 "Two" picked up: session s2 (kandalf attach s2)'])
 
     def test_the_console_says_why_a_start_failed(self):
         out = io.StringIO()
@@ -634,7 +868,7 @@ class Startup(unittest.TestCase):
             "5 in flight:",
             '  PLN-01 "At work": session aaaa1111 at work',
             '  PLN-02 "Idle one": session bbbb2222 idle',
-            '  PLN-03 "Gone one": session cccc3333 gone (Restart is on its tile)',
+            '  PLN-03 "Gone one": session cccc3333 gone (Continue is on its tile)',
             '  PLN-04 "Queued one": queued behind PLN-01',
             '  PLN-05 "By hand": no session',
             "1 other session the board started:",
@@ -656,7 +890,7 @@ class Note(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())
         self.job = {"key": "PLN-70", "id": "ab12cd34", "branch": "pln-70-dark-mode", "worktree": "/x/app-pln-70", "model": "opus", "started": 1795000000}
-        self.line = "  Claude session `ab12cd34`: `claude attach ab12cd34`. Branch `pln-70-dark-mode`, worktree `app-pln-70`. Model `opus`. Started " + DAY + "."
+        self.line = "  Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-70-dark-mode`, worktree `app-pln-70`. Model `opus`. Started " + DAY + "."
 
     def round_trips(self, text):
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
@@ -684,7 +918,7 @@ class Note(unittest.TestCase):
         edited = once.replace("Started " + DAY, "(cut from dev at `ebf12a01b`). Started " + DAY)  # the session added to it
         twice = serve.with_session(self.store, edited, {**self.job, "id": "ffff0000"})
         self.assertEqual(twice.count("Claude session"), 1)
-        self.assertIn("  Claude session `ffff0000`: `claude attach ffff0000`. Branch `pln-70-dark-mode`", twice)
+        self.assertIn("  Claude session `ffff0000`: `kandalf attach ffff0000`. Branch `pln-70-dark-mode`", twice)
 
     def test_a_tile_that_is_gone_leaves_the_board_as_it_was(self):
         self.assertEqual(serve.with_session(self.store, PLANS, {**self.job, "key": "PLN-99"}), PLANS)

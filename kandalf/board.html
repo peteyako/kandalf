@@ -132,7 +132,8 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] .session.lost { border-left-color: var(--warn); background: var(--warn-soft); }
 /* It waits for input: an amber block and outline that stay until it is answered. */
 :root[data-theme="classic"] .session.waiting { border-left-color: var(--p2); background: color-mix(in srgb, var(--p2) 16%, transparent); }
-:root[data-theme="classic"] .session-state.s-waiting { color: var(--p2); }
+:root[data-theme="classic"] .session-state.s-waiting, :root[data-theme="classic"] .session-state.s-paused { color: var(--p2); }
+:root[data-theme="classic"] .session-state.s-pausing { color: var(--story); }
 :root[data-theme="classic"] .session-ask { margin-top: 4px; font-weight: 700; color: var(--text); }
 :root[data-theme="classic"] .card.needs-you { outline: 2px solid var(--p2); outline-offset: -2px; }
 /* Finished and waiting for review: a green outline and note, until the tile is in Done. */
@@ -629,7 +630,8 @@ html, body { height: 100%; margin: 0; }
 :root:not([data-theme="classic"]) .session-top { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; }
 :root:not([data-theme="classic"]) .session-state { order: -1; }
 :root:not([data-theme="classic"]) .session-state.s-started { --sb: var(--st-work); }   /* working */
-:root:not([data-theme="classic"]) .session-state.s-waiting { --sb: var(--st-wait); }   /* waiting for you */
+:root:not([data-theme="classic"]) .session-state:is(.s-waiting, .s-paused) { --sb: var(--st-wait); }   /* waiting for you, paused */
+:root:not([data-theme="classic"]) .session-state.s-pausing { --sb: var(--st-work); }   /* writing its handoff */
 :root:not([data-theme="classic"]) .session-state.s-lost { --sb: var(--st-gone); }      /* gone */
 :root:not([data-theme="classic"]) .session-id { font-size: 12px; color: var(--muted); white-space: nowrap; }
 :root:not([data-theme="classic"]) .session-id code { background: none; padding: 0; font: 600 12px var(--mono); color: var(--text); }
@@ -1018,7 +1020,7 @@ const PRIO_ICON = { P1: "⇈", P2: "↑", P3: "=", P4: "↓" };
 const EST = String.raw`\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw]`;  // 4h, 1.5d, 2-3d, 1w
 const EST_RE = new RegExp(`^${EST}$`);
 // The store's key prefix (PLN, FLY, …) and name; /api/files reports them (listFiles).
-let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_ATTACH = "claude attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
+let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_ATTACH = "kandalf attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
 let HEAD_RE, KEY_NUM_RE, LINK_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
@@ -1199,34 +1201,67 @@ const pickupHintHTML = sec => pickupHintShows(file, sec.name, pickups.why, hidde
 const pickupFor = key => key ? pickups.jobs.findLast(j => j.key === key || (j.with || []).includes(key)) : undefined;
 const reposTag = repos => repos.length ? `<span class="repos" title="Its ${AGENT} session works in ${esc(repos.join(", "))}">⎇ ${esc(repos.join(", "))}</span>` : "";
 const modelTag = model => model ? `<span class="model" title="Its ${AGENT} session runs on ${esc(model)}, not the store's default (${esc(STORE_MODEL)})">◈ ${esc(model)}</span>` : "";
-const STOPPED = { idle: "idle", lost: "gone" };  // a session that isn't at work, as the tile says it
+const STOPPED = { idle: "idle", lost: "gone", paused: "paused" };  // a session that isn't at work, as the tile says it
 const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? `Try starting ${AGENT} on this tile again` : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
+// Continue: get a stopped session going again. An idle or gone one is resumed in the same
+// conversation, told to carry on (pickup.py: NUDGE); a paused one is taken over by a new
+// session from the tile's Handoff line (pickup.py: pause).
+function continueTitle(job) {
+  switch (job.state) {
+    case "paused": return `A new ${AGENT} session takes this story over from the tile's Handoff line and the branch`;
+    case "lost": return "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over in the same worktree";
+    default: return `Wake ${AGENT} up: its session is resumed in the same conversation, told to carry on`;
+  }
+}
+const continueButton = job => `<button type="button" class="pickup-restart" data-act="continue" data-key="${job.key}" title="${esc(continueTitle(job))}">▶ Continue</button>`;
+// Pause: put a story aside. Its session finishes or undoes the step it is on, commits, writes
+// a full Handoff line on the tile and stops; the tile stays in In flight until Continue.
+const pauseButton = job => `<button type="button" class="pickup-restart" data-act="pause" data-key="${job.key}" title="${esc(`Put this story aside: ${AGENT} finishes or undoes the step it is on, commits, writes a full Handoff line on the tile and stops. Continue later has a new session take over from it.`)}">⏸ Pause</button>`;
+// Pause now: a session that hangs on its handoff is stopped there, with the Handoff line the tile has.
+const pauseNowButton = job => `<button type="button" class="pickup-restart" data-act="pause" data-key="${job.key}" title="${esc(`${AGENT} is still writing its handoff. Stop it now: the tile keeps the Handoff line it has.`)}">⏸ Pause now</button>`;
+// The button for a job's session: Pause while it is at work (Pause now while it writes its
+// handoff), Start now when a paused story is queued again, Continue once it has stopped (idle,
+// paused or gone), Retry if it never started.
+function wakeButton(job) {
+  switch (job.state) {
+    case "started": return job.pausing ? pauseNowButton(job) : pauseButton(job);
+    case "waiting": return `<button type="button" class="pickup-restart" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: a new ${AGENT} session takes this over from its handoff when ${job.behind || "the current"} session ends. Start it now instead.`)}">▶ Start now</button>`;
+    case "idle": case "paused": case "lost": return continueButton(job);
+    case "failed": return restartButton(job, "↻ Retry");
+    default: return "";
+  }
+}
 // The job behind a tile's session line, if the board started that session.
 function sessionJob(session, key) {
   const job = session && pickupFor(key);
   return job && job.id === session.id ? job : undefined;
 }
 // A tile's session as a block: which session, what it is doing, the command that opens it,
-// and Restart once it has stopped.
+// and the button that gets it going (wakeButton).
 const WAITING = { interrupted: "it was interrupted", question: "it asked a question", error: "it ended on an error" };  // pickup.py: WAITING
 // What a job's session is doing, in a word or two, for the block's label.
 function sessionState(job) {
   if (!job) return "";
-  if (job.state === "started") return "working";
+  if (job.state === "started") return job.pausing ? "pausing" : "working";
+  if (job.state === "waiting") return "queued";
   if (job.state === "idle" && job.waiting) return "waiting for you";
   return STOPPED[job.state] || "";
 }
 function sessionHTML(session, key) {
   if (!session) return "";
   const job = sessionJob(session, key), state = sessionState(job), waiting = job?.state === "idle" && job.waiting;
+  const stateClass = waiting ? "waiting" : job?.pausing ? "pausing" : job?.state;
   const attach = attachCmd(session.id);
   const look = job?.state === "lost" ? " lost" : waiting ? " waiting" : "";
+  // A paused story out of In flight carries on by moving back there, not with a button.
+  const away = !!key && job?.state === "paused" && !isPickupColumn(findCardByKey(key)?.s.name || "");
   return `<div class="session${look}"><div class="session-top">
       <span class="session-id">✦ ${AGENT} session <code>${session.id}</code></span>
-      ${state ? `<span class="session-state s-${waiting ? "waiting" : job.state}">${state}</span>` : ""}<span class="session-acts">
+      ${state ? `<span class="session-state s-${stateClass}">${state}</span>` : ""}<span class="session-acts">
       <button type="button" data-act="copy" data-copy="${attach}" title="Copy the command that opens this session: ${attach}">Copy attach</button>
       ${key ? `<button type="button" data-act="status" data-key="${key}" title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
-      ${job && STOPPED[job.state] ? restartButton(job) : ""}</span></div>
+      ${job && !away ? wakeButton(job) : ""}</span></div>
+    ${away ? `<div class="session-ask">⏸ Paused: its handoff is on the tile. Move it back to In flight to have a new session carry on.</div>` : ""}
     ${waiting ? `<div class="session-ask">⏸ Waiting for your input: ${WAITING[job.waiting] || "it stopped"}. Open it (Copy attach) to answer.</div>` : ""}
     ${session.rest ? `<div class="session-rest">${inline(session.rest)}</div>` : ""}</div>`;
 }
@@ -1234,9 +1269,10 @@ function sessionHTML(session, key) {
 function pickupTag(key, sec, session) {
   const job = pickupFor(key);
   if (!job || sessionJob(session, key)) return "";
-  if (job.state === "started") return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>`;
-  if (!isPickupColumn(sec.name)) return "";  // the rest only matters while the tile is in flight
-  if (STOPPED[job.state]) return `<span class="pickup bad" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + restartButton(job);
+  const inFlight = isPickupColumn(sec.name);
+  if (job.state === "started") return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>` + (inFlight ? wakeButton(job) : "");
+  if (!inFlight) return "";  // the rest only matters while the tile is in flight
+  if (STOPPED[job.state]) return `<span class="pickup${job.state === "paused" ? "" : " bad"}" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + wakeButton(job);
   if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. Click to start it now.`)}">◌ queued</span>`;
   if (job.state === "failed") return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
   return "";
@@ -1272,7 +1308,7 @@ function nextKey() {
 // file round-trips unchanged.
 const SUB_RE = /^  [-*] \[( |x|X)\] (.*)$/;
 // The line the server writes into a tile when a Claude session starts on it (serve.py:
-// with_session): "Claude session `id`: `claude attach id`. Branch ..., worktree .... Started ...".
+// with_session): "Claude session `id`: `kandalf attach id`. Branch ..., worktree .... Started ...".
 // It shows as a block of its own, not as part of the description.
 const SESSION_RE = /^\s*(?:Claude|Copilot) session `([0-9a-f]{6,})`: `[^`]+`\.?\s*(.*)$/;
 function sessionLine(line) {
@@ -1982,6 +2018,8 @@ boardEl.addEventListener("click", e => {
   if (act === "jump") { e.stopPropagation(); return jumpTo(e.target.closest("[data-key]").dataset.key); }
   if (act === "copy") { e.stopPropagation(); return copyText(e.target.closest("[data-copy]").dataset.copy); }
   if (act === "restart") { e.stopPropagation(); return restartPickup(e.target.closest("[data-key]").dataset.key); }
+  if (act === "continue") { e.stopPropagation(); return continuePickup(e.target.closest("[data-key]").dataset.key); }
+  if (act === "pause") { e.stopPropagation(); return pausePickup(e.target.closest("[data-key]").dataset.key); }
   if (act === "status") { e.stopPropagation(); return refreshStatus(e.target.closest("[data-key]").dataset.key); }
   if (act === "hidewhy") { e.stopPropagation(); try { localStorage.setItem(HINT_KEY(), pickups.why); } catch {} return render(); }
   if (e.target.closest(".session") && String(getSelection())) return;  // selecting the session's text isn't a click on the tile
@@ -2130,10 +2168,11 @@ $("#cardMode").addEventListener("click", () => setCardMode(dlg.dataset.mode === 
 $("#cardView").addEventListener("click", e => {
   const ref = e.target.closest("[data-act=jump]");
   if (ref) return jumpTo(ref.dataset.key);
-  const copy = e.target.closest("[data-act=copy]"), again = e.target.closest("[data-act=restart]");
+  const copy = e.target.closest("[data-act=copy]"), again = e.target.closest("[data-act=restart]"), nudge = e.target.closest("[data-act=continue]");
   const stat = e.target.closest("[data-act=status]");
   if (copy) return copyText(copy.dataset.copy);
   if (again) return restartPickup(again.dataset.key);
+  if (nudge) return continuePickup(nudge.dataset.key);
   if (stat) return refreshStatus(stat.dataset.key);
   const box = e.target.closest("[data-line]");
   if (box) {  // tick a sub-task: rewrite that line of the markdown, saved with Save
@@ -2328,7 +2367,7 @@ async function listFiles(select) {
   STORE_REPOS = j.repos || [];
   STORE_SESSIONS = j.sessions || 2;
   STORE_TRUNK = j.trunk || "main";
-  STORE_ATTACH = j.attach || "claude attach {id}";
+  STORE_ATTACH = j.attach || "kandalf attach {id}";
   AGENT = j.agent || "Claude";
   if (j.models) MODELS = j.models;
   STORE_PICKUP_COLUMN = j.pickupColumn || "";
@@ -2404,6 +2443,25 @@ async function restartPickup(key) {
   else if (job?.state === "failed") flash(`${AGENT} couldn't be restarted on ${key}: ${job.error}`);
   setStatus(j ? "Restarted " + key : "Not restarted", !j);
 }
+// Pause: the session writes its handoff and stops; the story waits in In flight for Continue.
+async function pausePickup(key) {
+  setStatus(`Pausing ${AGENT} on ${key}…`);
+  const j = await postPickup({ key, pause: true }).catch(() => (flash("Pause failed: server down?"), null));
+  const job = j && pickupFor(key);
+  if (job?.pausing) flash(`${AGENT} is writing its handoff on ${key}, then stops. Continue picks it up again.`);
+  else if (job?.state === "paused") flash(`${key} is paused. Continue has a new session take it over.`);
+  setStatus(j ? "Paused " + key : "Not paused", !j);
+}
+// Continue: get a stopped session going again: resume it told to carry on, or for a paused
+// story have a new one take over from its handoff.
+async function continuePickup(key) {
+  setStatus(`Waking ${AGENT} on ${key}…`);
+  const j = await postPickup({ key, continue: true }).catch(() => (flash("Continue failed: server down?"), null));
+  const job = j && pickupFor(key);
+  if (job?.state === "started") flash(`${AGENT} is carrying on with ${key}. Open it with: ${attachCmd(job.id)}`);
+  else if (job?.state === "failed") flash(`${AGENT} couldn't be woken on ${key}: ${job.error}`);
+  setStatus(j ? "Continued " + key : "Not continued", !j);
+}
 // The Status button: the server checks the story's session and branch now and writes what it
 // finds under the tile's session line. An opened tile stays open and shows it under the session block.
 async function refreshStatus(key) {
@@ -2453,7 +2511,7 @@ async function pollPickups() {
     if (first) continue;  // what happened before this page opened isn't news
     if (job.state === "started") flash(`${AGENT} picked up ${job.key}. Open it with: ${attachCmd(job.id)}`);
     if (job.state === "failed") flash(`${AGENT} couldn't be started for ${job.key}: ${job.error}`);
-    if (job.state === "lost") flash(`The ${AGENT} session on ${job.key} is gone. Restart is on its tile.`);
+    if (job.state === "lost") flash(`The ${AGENT} session on ${job.key} is gone. Continue is on its tile.`);
     if (job.ready) flash(`${job.key} is ready for review: its tile is outlined in green.`);
     else if (job.state === "idle" && job.waiting) flash(`${AGENT} is waiting for your input on ${job.key}: ${WAITING[job.waiting]}. Open it with: ${attachCmd(job.id)}`);
   }

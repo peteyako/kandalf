@@ -528,7 +528,7 @@ def uninstall(st) -> list:
 def set_agent(st, name: str, force: bool = False, stop=None) -> list:
     """kandalf agent NAME: switch the agent pickup hands stories to. board.json's "agent" is set
     and its "model" (the old agent's) dropped. A story whose session the old agent started is
-    left lost, without that session's id, so Restart starts the new agent in the same worktree.
+    left lost, without that session's id, so Continue starts the new agent in the same worktree.
     One still running is refused unless force, which stops it first. stop(old, id): stops a session."""
     try:
         name = check_agent(name)
@@ -545,7 +545,7 @@ def set_agent(st, name: str, force: bool = False, stop=None) -> list:
         keys = ", ".join(j["key"] for j in live)
         raise SystemExit(f"kandalf agent: {keys} {'has' if len(live) == 1 else 'have'} a {old} session. Let "
                          f"{'it' if len(live) == 1 else 'them'} finish, or pass --force to stop {'it' if len(live) == 1 else 'them'}: "
-                         f"each story keeps its worktree, and Restart on its tile hands it to {name}.")
+                         f"each story keeps its worktree, and Continue on its tile hands it to {name}.")
     said = []
     for j in tracked:
         if j["state"] in ("started", "idle") and j.get("id"):
@@ -558,7 +558,7 @@ def set_agent(st, name: str, force: bool = False, stop=None) -> list:
         j.pop("session", None)
     if tracked:
         pickup.save(st, state)
-        said.append(f"{', '.join(j['key'] for j in tracked)}: Restart on the tile starts {name} in the story's worktree")
+        said.append(f"{', '.join(j['key'] for j in tracked)}: Continue on the tile starts {name} in the story's worktree")
     cfg = read_config(st)
     cfg["agent"] = name
     model = cfg.pop("model", None)

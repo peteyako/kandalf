@@ -302,7 +302,7 @@ def attach(sid: str, out=sys.stdout, poll: float = 0.5) -> int:
     if meta.get("stopped"):
         print(f"Session {sid} was stopped.", file=out)
     print(f"Opening the conversation: {CLI} --resume={meta['session']}. While it is open here the board"
-          " can't resume it: quit it (/exit) before Restart on the tile.", file=out, flush=True)
+          " can't resume it: quit it (/exit) before Continue on the tile.", file=out, flush=True)
     os.chdir(meta.get("cwd") or ".")
     os.execvp(CLI, [CLI, f"--resume={meta['session']}", *meta.get("reach", [])])
 

@@ -19,7 +19,7 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, wakeButton, sessionState, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             section: name => doc.sections.find(s => s.name === name),
@@ -384,4 +384,23 @@ test("kandalf check fails a board with two In flight or two Done columns", () =>
     assert.match(twice.stderr, /2 In flight columns: In flight, In progress/);
     assert.match(twice.stderr, /2 Done columns: Done, Shipped/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a session at work gets Pause; a stopped one, idle, paused or gone, Continue; one that never started Retry", () => {
+  const act = (state, more = {}) => (page.wakeButton({ key: "PLN-01", state, ...more }).match(/data-act="(\w+)"[^>]*>([^<]*)</) || []).slice(1);
+  assert.deepEqual(act("started"), ["pause", "⏸ Pause"]);
+  assert.deepEqual(act("started", { pausing: true }), ["pause", "⏸ Pause now"]);  // writing its handoff: stop it there if it hangs
+  assert.deepEqual(act("waiting"), ["pickup", "▶ Start now"]);  // a paused story queued again
+  assert.deepEqual(act("idle"), ["continue", "▶ Continue"]);
+  assert.deepEqual(act("paused"), ["continue", "▶ Continue"]);
+  assert.deepEqual(act("lost"), ["continue", "▶ Continue"]);
+  assert.deepEqual(act("failed"), ["restart", "↻ Retry"]);
+  assert.deepEqual(act("ended"), []);
+});
+
+test("a session's state reads pausing while it writes its handoff, then paused", () => {
+  assert.equal(page.sessionState({ state: "started", pausing: true }), "pausing");
+  assert.equal(page.sessionState({ state: "paused" }), "paused");
+  assert.equal(page.sessionState({ state: "started" }), "working");
+  assert.equal(page.sessionState({ state: "waiting" }), "queued");
 });

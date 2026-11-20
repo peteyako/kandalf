@@ -47,10 +47,9 @@ def short() -> str:
 
 
 def attach(sid: str) -> str:
-    """The command that opens a session, by its short id: `claude attach` for Claude, and for
-    Copilot `kandalf attach`, which follows it while it runs and then opens its conversation."""
-    if _current["name"] == "claude":
-        return f"claude attach {sid}"
+    """The command that opens a session, by its short id: `kandalf attach`, whichever agent runs
+    it (open_session). For Claude it hands over to `claude attach`; for Copilot it follows the
+    session while it runs and then opens its conversation."""
     return f"kandalf attach {sid}"
 
 

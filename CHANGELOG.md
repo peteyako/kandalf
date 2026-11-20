@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Pause** on a tile's session block while it is at work: the session finishes or undoes its
+  step, commits, writes a full `Handoff:` line on the tile and stops, and the story is paused,
+  giving up its place in the queue. Moving a tile out of In flight while its session is at work
+  pauses it the same way, and moving a paused tile back in queues it. **Continue** on a paused
+  story has a new session take over from the handoff, so it can come back on another day, after
+  a restart or on another agent. **Pause now** stops a session that hangs on its handoff, and a
+  paused story queued again gets **Start now**. A paused or queued job is never dropped from the
+  board's job list, however old.
+- A session at work gets Pause instead of Continue, and a gone one gets Continue instead of
+  Restart: Continue is the button for every stopped session (idle, paused or gone); Retry stays
+  for one that never started.
+- A Claude session's tile line and the console name `kandalf attach <id>`, as Copilot's do, instead of
+  `claude attach <id>`; for a Claude session it hands over to `claude attach`. Tiles that already
+  say `claude attach` still work.
+- A tile's session block has **Continue** while its session is at work or idle: it wakes a stuck Claude or Copilot session by stopping it and resuming the same conversation, told to carry on. It replaces Restart on an idle session; a gone one keeps Restart.
+
 ## 1.1.0
 
 - `kandalf uninstall` removes the `docs/plans` link from each of the store's repos; the store itself is left alone.
