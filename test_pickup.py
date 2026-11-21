@@ -22,6 +22,7 @@ from kandalf import claude_code as agent
 from kandalf import agent as agents
 from kandalf import copilot_cli
 from kandalf import gitlog
+from kandalf import init
 from kandalf import pickup
 from kandalf import serve
 from kandalf import store as stores
@@ -1817,6 +1818,92 @@ class Transcript(unittest.TestCase):
             view = serve.log_view(store, "PLN-01")
         self.assertEqual((view["id"], view["state"], view["text"]), ("bbbb", "started", "⏺ at it"))
         self.assertIsNone(serve.log_view(store, "PLN-09"))
+
+
+class Base(unittest.TestCase):
+    """A story is cut from and merged into the store's trunk, or the branch its Base line names."""
+
+    def setUp(self):
+        top = Path(tempfile.mkdtemp()).resolve()
+        self.app, self.plans = top / "app", top / "plans"
+        (self.app / "docs").mkdir(parents=True)
+        self.plans.mkdir()
+        (self.plans / "board.json").write_text(json.dumps({"app": "../app"}))  # no trunk: dev, which the app has
+        (self.app / "README").write_text("app\n")
+        git(self.app, "init", "-q", "-b", "dev")
+        self.commit("init")
+        git(self.app, "switch", "-qc", "feature-x")
+        (self.app / "feature").write_text("x\n")
+        self.commit("feature x")
+        git(self.app, "switch", "-q", "dev")
+        self.store = stores.Store(self.plans)
+
+    def commit(self, message, repo=None):
+        git(repo or self.app, "add", "-A")
+        git(repo or self.app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+
+    def job(self, tile):
+        return pickup.entered([], serve.in_flight_tiles(self.store, "## In flight\n\n" + tile))[0]
+
+    def test_a_base_line_names_a_branch_with_or_without_backticks_and_a_full_stop(self):
+        for line, want in (("  Base: feature-x", "feature-x"), ("  base: `release/2.0`.", "release/2.0"), ("\tBase:dev", "dev")):
+            self.assertEqual(pickup.base_named("- [ ] PLN-01 **One.**\n" + line), want, line)
+        for line in ("Base: dev", "  Based on dev", "  Base: two words", "  Base: -x"):  # not indented, no colon, not a branch
+            self.assertIsNone(pickup.base_named("- [ ] PLN-01 **One.**\n" + line), line)
+
+    def test_a_store_s_trunk_is_dev_when_the_app_has_one_unless_board_json_names_another(self):
+        self.assertEqual(self.store.trunk, "dev")
+        self.assertEqual(init.default_trunk(self.app), "dev")
+        git(self.app, "branch", "-qm", "dev", "main")
+        self.assertEqual(stores.Store(self.plans).trunk, "main")  # no dev: main
+        (self.plans / "board.json").write_text(json.dumps({"app": "../app", "trunk": "feature-x"}))
+        self.assertEqual(stores.Store(self.plans).trunk, "feature-x")
+
+    def test_a_story_with_a_base_line_is_cut_from_that_branch_and_merged_into_it(self):
+        job = self.job("- [ ] PLN-07 **Small thing.**\n  Base: feature-x\n")
+        self.assertEqual(job["base"], "feature-x")
+        cuts, name = pickup.prepare_all(self.store, job, [self.store.main_repo])
+        path = Path(cuts[0]["worktree"])
+        self.assertEqual(cuts[0]["trunk"], "feature-x")
+        self.assertEqual(pickup._git(path, "merge-base", "--is-ancestor", "feature-x", "HEAD").returncode, 0)
+        cut = {**job, "repos": cuts, "branch": name, "worktree": str(path)}
+        self.assertIn("cut from feature-x.", pickup.prompt(self.store, cut, name, path))
+        told = pickup.reply_text(self.store, cut, "", ["squash", "merge", "push"])
+        for part in ("Rebase the branch onto feature-x", "fast-forward feature-x to it", "Then push feature-x."):
+            self.assertIn(part, told)
+        self.assertEqual(pickup.story_trunk(self.store, self.store.main_repo, {**cut, "base": "dev"}), "feature-x")  # as it was cut
+
+    def test_a_base_the_repo_has_not_got_falls_back_to_the_trunk_and_the_session_is_told(self):
+        job = self.job("- [ ] PLN-07 **Small thing.**\n  Base: nowhere\n")
+        cuts, name = pickup.prepare_all(self.store, job, [self.store.main_repo])
+        self.assertEqual(cuts[0]["trunk"], "dev")
+        path = Path(cuts[0]["worktree"])
+        text = pickup.prompt(self.store, {**job, "repos": cuts, "worktree": str(path)}, name, path)
+        self.assertIn("cut from dev. Its Base line names nowhere, which isn't a branch there, so it was cut from dev.", text)
+
+    def test_a_sub_story_takes_its_master_s_base_and_its_own_line_wins(self):
+        tiles = serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-70 **Master.**\n  Base: feature-x\n"
+                                      "- [ ] PLN-71 **One.**\n  Part of PLN-70.\n- [ ] PLN-72 **Two.**\n  Part of PLN-70.\n  Base: dev\n")
+        self.assertEqual([(j["key"], j.get("base")) for j in pickup.entered([], tiles)], [("PLN-71", "feature-x"), ("PLN-72", "dev")])
+
+    def test_a_story_merged_into_its_base_is_tidied_and_not_outlined_unmerged(self):
+        job = self.job("- [ ] PLN-07 **Small thing.**\n  Base: feature-x\n")
+        cuts, name = pickup.prepare_all(self.store, job, [self.store.main_repo])
+        path = Path(cuts[0]["worktree"])
+        (path / "more").write_text("more\n")
+        self.commit("the work", path)
+        git(self.app, "switch", "-q", "feature-x")
+        git(self.app, "merge", "-q", "--ff-only", name)
+        git(self.app, "switch", "-q", "dev")
+        tile = (f"- [x] PLN-07 **Small thing.**\n  Base: feature-x\n  Claude session `ab12cd34`: `claude attach ab12cd34`. "
+                f"Branch `{name}`, worktree `{path.name}`. Model `opus`. Started {DAY}.")
+        self.assertEqual(serve.unmerged_done(self.store, "## Done\n\n" + tile + "\n"), {})  # in feature-x, though not in dev
+        self.assertIn(name, serve.unmerged_done(self.store, "## Done\n\n" + tile.replace("  Base: feature-x\n", "") + "\n")["PLN-07"])
+        trunks = []
+        done = pickup.tidy(self.store, tile, merged=lambda r, b: trunks.append(r.trunk) or serve._branch_merged(self.store, b, r),
+                           sessions=lambda: {}, retire=lambda sid: False)
+        self.assertEqual(trunks, ["feature-x"])
+        self.assertIn(f"deleted branch {name}", " ".join(done))
 
 
 if __name__ == "__main__":

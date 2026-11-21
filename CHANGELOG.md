@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A story can name the branch it is cut from and merged into: a `Base: feature-x` line on the
+  tile, written by the new Base field in the tile dialog, which suggests the app's branches. The
+  review steps, the full suite after a last sub-story, tidying and the red unmerged outline all
+  go by that branch; a sub-story takes its master's. A branch the repo hasn't got falls back to
+  the trunk, and the session is told.
+- The trunk defaults to `dev` when the app has a dev branch (else `main`, as before), both for
+  `kandalf init` and for a store whose `board.json` names no trunk. A store's own `trunk` still wins.
 - A sub-story runs only the tests for what it changes, not the whole suite. The full suite runs
   on the trunk once, when the last of its master's sub-stories is merged from the board: that
   merge reply adds a step, after the merge and before the push, and a **Full suite** sub-task on

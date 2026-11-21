@@ -52,10 +52,12 @@ import re
 import subprocess
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from . import agent
 from . import gitlog
+from . import store as stores
 
 # The columns that mean under way, however they are spelt: In flight, in-flight, In progress (or a slip
 # of it, "In progrees"), Doing, WIP, Working, Underway, Ongoing, Active; never one that says "not".
@@ -68,6 +70,8 @@ OPT_OUT_RE = re.compile(r"\bno pickup\b", re.I)
 READY_RE = re.compile(r"^\s+(?:\*\*)?Ready for review\b[:.]?(?:\*\*)?[:.]?[ \t]*(.*)$", re.I | re.M)
 REPOS_RE = re.compile(r"^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$", re.I | re.M)  # same in board.html
 MODEL_RE = re.compile(r"^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$", re.I | re.M)
+# A tile picks the branch its story is cut from and merged into with a line of its own, "Base: feature-x".
+BASE_RE = re.compile(r"^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._/-]*?)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
 STATE = "board-pickup.json"
 KEEP = 30  # jobs remembered
 # Seconds a session just started counts as at work, before it has shown itself busy.
@@ -189,6 +193,9 @@ def entered(prev, tiles, sessions: int = 2) -> list:
         if key in masters or OPT_OUT_RE.search(text):
             continue
         job = {"key": key, "title": by_key[key]["title"], "with": [], "text": text}
+        base = base_named(text)
+        if base:
+            job["base"] = base
         if by_key[key].get("context"):  # its master isn't in flight: its tile is given to read, and nothing more
             job.update(of=by_key[key]["of"], context=by_key[key]["context"])
         if above:
@@ -211,6 +218,13 @@ def model_for(store, text: str) -> str:
     "model" (board.json; opus unless set)."""
     own = MODEL_RE.search(text)
     return own.group(1) if own else store.model
+
+
+def base_named(text: str):
+    """The branch the first "Base: x" line in text names (a tile's family_text, so the nearest
+    line counts), or None if there is no such line."""
+    found = BASE_RE.search(text or "")
+    return found.group(1) if found else None
 
 
 def repo_names(text: str):
@@ -373,7 +387,7 @@ def repos_paragraph(store, job, branch_name: str, path: Path) -> str:
     if job.get("want") is None or [r.main for r in repos] == [True]:
         return ""
     cut = {c["name"]: c["worktree"] for c in job.get("repos") or []}
-    lines = [f"- {r.name}: {cut.get(r.name, '(no worktree)')} (cut from {r.trunk})" for r in repos]
+    lines = [f"- {r.name}: {cut.get(r.name, '(no worktree)')} (cut from {story_trunk(store, r, job)})" for r in repos]
     return f"""
 
 Repos: this story works in {len(repos)} repo{'s' if len(repos) > 1 else ''}, each in a git worktree of its own, all on the branch {branch_name}:
@@ -402,9 +416,13 @@ def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str
     session was paused (pause) and left a handoff for this one."""
     repos = wanted(store, job) if job.get("want") is not None else []
     start = repos[0] if repos and not repos[0].main else None  # a session that starts outside the main repo
-    where, trunk = (f"the {start.name} repo", start.trunk) if start else ("the app", store.trunk)
+    where = f"the {start.name} repo" if start else "the app"
+    home = start or store.main_repo
+    trunk = story_trunk(store, home, job) if home else store.trunk
     linked = f" The plans store is linked in at docs/{store.link}." if not start or (
         path / "docs" / store.link).is_symlink() else ""
+    if job.get("base") and job["base"] != trunk:  # named on the tile, but that repo hasn't it
+        linked = f" Its Base line names {job['base']}, which isn't a branch there, so it was cut from {trunk}." + linked
     tiles = "this tile" if not job.get("with") else f"these tiles ({job['key']} and its sub-stories {', '.join(job['with'])})"
     if job.get("master"):
         tiles = (f"this tile, a sub-story of {job['master']}, whose tile follows it for you to read. Do only {job['key']}: "
@@ -465,9 +483,9 @@ def cut_of(store, job, repo):
 def prepare(store, job, repo=None, name: str = None) -> tuple:
     """(worktree path, branch): the job's worktree in a repo (default the main one) beside it
     (the one it has already, when that is still there), made if it isn't there yet on the
-    branch name (default branch(); cut from the repo's trunk), with the store linked in at
+    branch name (default branch(); cut from the story's trunk, story_trunk), with the store linked in at
     docs/<link> as the repo's own checkout has it."""
-    repo = repo or store.main_repo
+    repo = as_story(store, repo or store.main_repo, job)
     own = cut_of(store, job, repo)
     path = own if own and own.is_dir() else worktree(store, job, repo)
     name = name or branch(store, job, repo)
@@ -501,7 +519,7 @@ def prepare_all(store, job, repos) -> tuple:
             name = name or got
         except RuntimeError as e:
             raise RuntimeError(f"{repo.name}: {e}") from None
-        cuts.append({"name": repo.name, "worktree": str(path), "trunk": repo.trunk})
+        cuts.append({"name": repo.name, "worktree": str(path), "trunk": story_trunk(store, repo, job)})
     return cuts, name
 
 
@@ -534,6 +552,22 @@ def _cuts_of(store, job) -> list:
         return job["repos"]
     main = store.main_repo
     return [{"name": main.name, "worktree": job["worktree"], "trunk": main.trunk}] if job.get("worktree") and main else []
+
+
+def story_trunk(store, repo, job=None, tile_text: str = "") -> str:
+    """The branch a story is cut from and merged into in a repo: the one its worktree there was
+    cut from (the job's record), else the branch its Base line names (tile_text's, else the
+    job's) when the repo has it, else the repo's trunk."""
+    for cut in _cuts_of(store, job) if job else []:
+        if cut["name"] == repo.name and cut.get("trunk"):
+            return cut["trunk"]
+    base = base_named(tile_text) or (job or {}).get("base")
+    return base if base and stores.has_branch(repo.path, base) else repo.trunk
+
+
+def as_story(store, repo, job=None, tile_text: str = ""):
+    """The repo with the story's own trunk (story_trunk) as its trunk."""
+    return replace(repo, trunk=story_trunk(store, repo, job, tile_text))
 
 
 def start(store, job, again: bool = False) -> dict:
@@ -716,7 +750,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         for job in entered(state["inflight"], tiles, store.sessions):
             mine = next((j for j in reversed(jobs) if j["key"] == job["key"]), None)
             if mine and mine["state"] == "paused":  # back from where it was paused: a new session takes over in turn
-                for k in ("master", "limit", "of", "context"):  # as the tile stands now, a sub-story or not
+                for k in ("master", "limit", "of", "context", "base"):  # as the tile stands now, a sub-story or not
                     mine.pop(k, None)
                 mine.update(job, state="waiting", again="paused", at=int(now()))
                 jobs.remove(mine)
@@ -1265,6 +1299,7 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
     if not got:
         return []
     name, session, cuts = got
+    cuts = [(n, as_story(store, r, job, tile_text) if r else None, p) for n, r, p in cuts]  # merged into the story's own trunk
     if name in {r.trunk for _, r, _ in cuts if r} | {store.trunk} or any(r and p and p.resolve() == r.path for _, r, p in cuts):
         return []
     many = len(cuts) > 1 or bool(cuts and cuts[0][1] != store.main_repo)  # the several-repo form, as with_session writes it
@@ -1292,7 +1327,7 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
         return [f"kept {held}: a worktree's path isn't known"]
     behind = [r for r in have if merged(r, name) is not True]
     if behind:
-        where = " or ".join(f"{r.name}'s {r.trunk}" for r in behind) if many else store.trunk
+        where = " or ".join(f"{r.name}'s {r.trunk}" for r in behind) if many else behind[0].trunk
         return [f"kept {held}: the branch isn't in {where} yet"]
     if session and (sessions() or {}).get(session) == "busy":
         return [f"kept {held}: the session is still at work"]
@@ -1337,7 +1372,8 @@ def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
         save(store, state)
     if not jobs and not TILE_SESSION_RE.search(tile_text):
         return []
-    got = _tidy_cuts(store, tile_text, job_for(store, key))
+    last = job_for(store, key)
+    got = _tidy_cuts(store, tile_text, last)
     sessions = {j["id"] for j in jobs if j.get("id")} | ({got[1]} if got and got[1] else set())
     done = [f"closed session {sid}" for sid in sorted(sessions) if retire(sid)]
     if not got:
@@ -1356,11 +1392,12 @@ def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
             done.append(f"removed worktree {path.name}{at}" if gone.returncode == 0
                         else f"kept worktree {path.name}{at}: {gone.stderr.strip() or 'git worktree remove failed'}")
         _git(repo.path, "worktree", "prune")
-        if name == repo.trunk or _git(repo.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode != 0:
+        trunk = story_trunk(store, repo, last, tile_text)
+        if name in (repo.trunk, trunk) or _git(repo.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode != 0:
             continue
-        ahead = _git(repo.path, "rev-list", "--count", f"{repo.trunk}..{name}").stdout.strip()
+        ahead = _git(repo.path, "rev-list", "--count", f"{trunk}..{name}").stdout.strip()
         if ahead not in ("", "0"):
-            done.append(f"kept branch {name}{at}: {ahead} commit{'s' if ahead != '1' else ''} not in {repo.trunk}")
+            done.append(f"kept branch {name}{at}: {ahead} commit{'s' if ahead != '1' else ''} not in {trunk}")
             continue
         cut = _git(repo.path, "branch", "-D", name)
         done.append(f"deleted branch {name}{at}" if cut.returncode == 0
@@ -1540,9 +1577,11 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
         if seen in ("idle", "waiting"):  # blocked on input counts as a question
             seen = why(sid) or ("question" if seen == "waiting" else "idle")
         stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now()))
-        said = f"session `{sid}` {_doing(seen)}. " + " ".join(
-            repo_status_text(c[0], git_facts(c[2], c[1].trunk) if c[1] and c[2] else None, c[1].trunk if c[1] else "", now())
-            for c in cuts)
+        parts = []
+        for name, repo, path in cuts:
+            trunk = story_trunk(store, repo, job, tile_text) if repo else ""
+            parts.append(repo_status_text(name, git_facts(path, trunk) if repo and path else None, trunk, now()))
+        said = f"session `{sid}` {_doing(seen)}. " + " ".join(parts)
         said += " " + eta_text(tile_text, job.get("at") or job.get("started"), now())
         showing = screen(sid) if seen not in (None, "unknown") else ""
         return f"Status {stamp}: {said}" + (f' On its screen (rough): "{showing}".' if showing else "")
@@ -1552,7 +1591,8 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
     if seen in ("idle", "waiting"):
         seen = why(sid) or ("question" if seen == "waiting" else "idle")
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now()))
-    said = status_text(sid, seen, git_facts(path, store.trunk) if path else None, store.trunk, now())
+    trunk = story_trunk(store, store.main_repo, job, tile_text) if store.main_repo else store.trunk
+    said = status_text(sid, seen, git_facts(path, trunk) if path else None, trunk, now())
     said += " " + eta_text(tile_text, job.get("at") or job.get("started"), now())
     showing = screen(sid) if seen not in (None, "unknown") else ""  # a session that is there has a screen to read
     return f"Status {stamp}: {said}" + (f' On its screen (rough): "{showing}".' if showing else "")

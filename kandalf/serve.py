@@ -592,6 +592,18 @@ def _branch_merged(store, branch: str, repo=None) -> bool | None:
     return False
 
 
+def local_branches(store, limit: int = 200) -> list:
+    """The main repo's local branches, most recently committed first, for the Base field of the
+    tile dialog; [] when there is no main repo."""
+    if not store.app or not (store.app / ".git").exists():
+        return []
+    try:
+        got = _app_git(store, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads")
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return got.stdout.split()[:limit] if got.returncode == 0 else []
+
+
 def tidy_archived(store, tiles, told=None) -> list:
     """Clear away the Claude session, worktree and feature branch of each archived tile
     (pickup.tidy), saying on the console what went and what was kept. Returns those lines,
@@ -638,7 +650,7 @@ def tidy_stragglers(store, told: set):
 
 def unmerged_done(store, text: str) -> dict:
     """{"KEY-NN": [branch, ...]} for each tile in the Done column that names a feature
-    branch not yet merged into its repo's trunk: one in backticks with a slash in it
+    branch not yet merged into its story's trunk (pickup.story_trunk): one in backticks with a slash in it
     (`feat/x`), or the branch on its Claude session line. A branch is looked for in the repos
     the tile names (its session line's, else its Repos line's, else the main one), and counts
     as unmerged when it is in any of them. The board outlines those tiles red. {} when the
@@ -659,7 +671,7 @@ def unmerged_done(store, text: str) -> dict:
             key = None
         if key:
             tiles.setdefault(key, []).append(line)
-    out = {}
+    out, jobs = {}, {j["key"]: j for j in pickup.load(store)["jobs"] if j.get("branch") and j.get("worktree")}  # the latest of each
     for key, lines in tiles.items():
         tile = "\n".join(lines)
         found = pickup.tile_cuts(store, tile)
@@ -668,6 +680,7 @@ def unmerged_done(store, text: str) -> dict:
         else:
             names = pickup.repo_names(tile)
             repos = [r for r in map(store.repo, names) if r] if names is not None else [store.main_repo]
+        repos = [pickup.as_story(store, r, jobs.get(key), tile) for r in repos]  # merged into the story's own trunk
         for line in lines:
             noted = pickup.TILE_BRANCH_RE.search(line) or pickup.TILE_REPOS_RE.search(line)  # the branch pickup cut, whatever its name
             for b in BRANCH_TOKEN.findall(line) + ([noted.group(1)] if noted else []):
@@ -794,7 +807,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"dir": str(self.plans), "files": files,
                                  "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(),
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
-                                 "trunk": self.store.trunk,
+                                 "trunk": self.store.trunk, "branches": local_branches(self.store),
                                  "repos": [{"name": r.name, "main": r.main} for r in self.store.repos]})
         elif u.path == "/api/log":  # ?key=PLN-01: the last lines of that tile's session log
             view = log_view(self.store, (qs.get("key") or [""])[0])

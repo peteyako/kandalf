@@ -52,7 +52,7 @@ Pickup needs an agent CLI: [Claude Code](https://claude.com/claude-code) (the de
 
 While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a keyed tile that lands in the In flight column of `plans.md` is picked up, however it got there: dragged on the board, edited in by hand, or moved by an agent. The server:
 
-1. Cuts a git worktree on a branch from the trunk: worktree `myapp/.worktrees/pln-74` in a store made by `kandalf init` (beside the app, as `myapp-pln-74`, when `"worktree"` isn't set), branch `pln-74-colour-tokens`. The store is linked in at `docs/plans` there too. `"branch"` and `"worktree"` in `board.json` change the names. A tile with a `Repos: api, web` line gets a worktree in each of those repos, all on that one branch, each beside its own repo. The store is linked in only where the repo's checkout links it.
+1. Cuts a git worktree on a branch from the trunk (or the branch the tile's `Base:` line names): worktree `myapp/.worktrees/pln-74` in a store made by `kandalf init` (beside the app, as `myapp-pln-74`, when `"worktree"` isn't set), branch `pln-74-colour-tokens`. The store is linked in at `docs/plans` there too. `"branch"` and `"worktree"` in `board.json` change the names. A tile with a `Repos: api, web` line gets a worktree in each of those repos, all on that one branch, each beside its own repo. The store is linked in only where the repo's checkout links it.
 2. Starts a background Claude Code session in it (in the first repo's worktree, when there are several; the others are added to the session with `--add-dir`, and its prompt lists them), given the tile and told to follow the repo's rules, tick sub-tasks as they land with their commits, keep a `Handoff:` line on the tile, and stop before merging or pushing. The board writes the session, branch and worktree onto the tile itself.
 
 When the server starts, a tile already in flight that never had a session (no session line on it, and no sub-stories) is picked up too. Unkeyed tiles and tiles that say `No pickup` never are (take the words out and the tile is picked up on the next look); the server's startup list says when a tile's `No pickup` is why it has no session.
@@ -83,6 +83,8 @@ When the server starts, a tile already in flight that never had a session (no se
 **Stats.** While pickup is on, a strip under the plans board's header counts the builds: **at work**, **need you** (the session asked something, ended on an error, is gone, or couldn't be started), **ready for review** (which a finished story counts as, however its session stopped), **queued**, **paused**, **idle** (the session stopped without asking anything, as a master's does while its sub-stories are built), and **not merged** (in Done with its branch unmerged). Each story is counted once. A count's tooltip lists its stories; click it to show only those tiles, and again to show them all.
 
 **Model.** Sessions run on `opus`. Change the store's default with `"model"`, or one story's with the Model dropdown in its dialog, which writes a `Model: sonnet` line. Change it while the story is in flight and the board stops the session and resumes it on the new model.
+
+**Base.** A story is cut from the trunk (`dev` when the app has a dev branch) and merged back into it. To work off another branch, type or pick it in the Base field of the tile's dialog, which writes a `Base: feature-x` line; the review steps (squash, merge, push) then go against that branch too. Clearing the field, or naming the trunk, takes the line off. A branch the repo hasn't got is ignored: the story is cut from the trunk and its session is told so. The branch a story was cut from stays its base, whatever the line says later.
 
 **Repos.** Tick the repos in a tile's dialog (shown when the store has more than one) and it writes the `Repos:` line, in `board.json` order; ticking only the main repo removes the line, and a different first repo is a hand edit. Change a tile's `Repos:` line while the story is in flight and the board stops the session and resumes it with the new set: new repos get a worktree and are added to the session. Name a different repo first and a new session starts there, taking over from the tile and the branch. A repo you drop keeps its worktree, so tidy still clears it. A line that names an unknown repo is ignored, with a note on the board's console, while a session is at work or idle. A story that is queued, lost or failed is not started: its tile says "no repo named ...". Run `kandalf repo add` and restart `kandalf serve` so it knows a new repo.
 
@@ -118,13 +120,14 @@ Write these in a tile and the board acts on them.
 | `Part of PLN-70` | The tile is a sub-story of master PLN-70 and folds into it. A sub-story picked up on its own is given the master's tile to read, wherever the master sits. The master shows a bar and count of sub-stories done. Moving the master takes its sub-stories along; a sub-story moves alone. The first `Part of` counts. |
 | `No pickup` | Never pick this tile up. Write it on a tile a session of yours is already working. |
 | `Model: sonnet` (own line) | The model for this story's session: an alias or a full model id. |
+| `Base: feature-x` (own line) | The branch this story is cut from and merged into, instead of the trunk, in each repo that has it. The dialog's Base field writes it. A sub-story takes its master's. |
 | `Repos: api, web` (own line) | The repos this story works in. The session starts in the first one. No line: the main repo. The dialog's Repos boxes write it. A sub-story takes its master's. |
 | `Sessions: 3` (own line, on a master) | How many sub-stories have a session at work at once, instead of the store's `"sessions"`. |
 | ``Claude session `ab12cd34`: ...`` | Written by the board when a session starts, and shown as its own block. Leave it as it is. |
 | `Handoff: ...` (own line) | The session's note on what is done, doing and next. Shown in the opened tile's status. |
 | `**Status 2026-11-18 14:58:** ...` | Written by the Status button; each refresh replaces it. |
 | `**Ready for review:** ...` (own line) | The story is finished and waits for you. The tile is outlined green. Anyone's line counts, not only a session's. |
-| A branch in backticks on a Done tile, with a slash in its name (`` `feat/x` ``), or the branch on the session line | The tile is outlined red until that branch is merged into the `trunk` of each repo the tile names (its session line's repos, else its `Repos:` line's, else the main repo). Only in a column named Done. |
+| A branch in backticks on a Done tile, with a slash in its name (`` `feat/x` ``), or the branch on the session line | The tile is outlined red until that branch is merged into the `trunk` (or the story's `Base:` branch) of each repo the tile names (its session line's repos, else its `Repos:` line's, else the main repo). Only in a column named Done. |
 
 Only the board applies links and sub-story moves: a tile moved by hand, in an editor or by an agent, moves alone. The filing rules are in the header of each store's `plans.md`.
 
@@ -139,8 +142,8 @@ A store's `board.json` is optional; every key has a default.
 | `port` | `7788` | Where `kandalf serve` listens. |
 | `link` | `plans` | The folder name app repos link the store in by (`docs/plans`). |
 | `app` | none | The app repo, relative to the store. Needed for pickup and for the red outline on unmerged Done tiles. |
-| `trunk` | `main` (`kandalf init` picks the app's default branch) | The app branch feature branches are cut from and merged into. |
-| `repos` | none | Other repos stories can work in, by name: a path relative to the store, or `{"path", "trunk"}`. A tile's `Repos:` line picks them. |
+| `trunk` | `dev` when the app has a dev branch, else `main` (`kandalf init` picks `dev` when there is one, else the app's default branch) | The app branch feature branches are cut from and merged into. A tile's `Base:` line picks another for its story. |
+| `repos` | none | Other repos stories can work in, by name: a path relative to the store, or `{"path", "trunk"}` (no trunk: the store's `trunk`, else `dev` when that repo has it, else `main`). A tile's `Repos:` line picks them. |
 | `agent` | `claude` | The agent pickup hands stories to: `claude` (Claude Code) or `copilot` (GitHub Copilot CLI). |
 | `pickup` | `false` | Start an agent session (`agent`) for a tile that lands in In flight. Needs `app`. |
 | `pickupColumn` | any column named like In flight: in-flight, in progress (typos too), doing, WIP, working, underway, ongoing, active; not one that says "not" | The one column, by name (any case), whose tiles are picked up. |
