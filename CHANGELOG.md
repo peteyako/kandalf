@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.1.10
+
+- A story ready for review with nothing to merge (a master whose sub-stories did the work) has
+  a Close button in place of Squash, Merge and Push: its session moves the tile to Done without
+  them.
+- A master story whose last sub-story leaves In flight is picked up then, as a tile that just
+  landed is. It used to sit in flight with no session, no status and no buttons until the
+  server restarted.
+- A theme's colour swatch recolours the whole page, not only the buttons: the chosen colour
+  washes the page, the header and the columns (Realm ledger keeps its open columns), so each
+  swatch is a colour scheme. Tiles stay as they are.
+- A story can name the branch it is cut from and merged into: a `Base: feature-x` line on the
+  tile, written by the new Base field in the tile dialog, which suggests the app's branches. The
+  review steps, the full suite after a last sub-story, tidying and the red unmerged outline all
+  go by that branch; a sub-story takes its master's. A branch the repo hasn't got falls back to
+  the trunk, and the session is told.
+- The trunk defaults to `dev` when the app has a dev branch (else `main`, as before), both for
+  `kandalf init` and for a store whose `board.json` names no trunk. A store's own `trunk` still wins.
+- A sub-story runs only the tests for what it changes, not the whole suite. The full suite runs
+  on the trunk once, when the last of its master's sub-stories is merged from the board: that
+  merge reply adds a step, after the merge and before the push, and a **Full suite** sub-task on
+  the master's tile. Merging an earlier sub-story says the suite waits, and which are still to
+  merge. `"subStoryTests": "all"` in `board.json` keeps every tier on each sub-story.
+- A story merged from the board moves to Done. When a review reply with **Merge into** ticked
+  goes through and nothing is outstanding (every sub-task ticked, every step done), the session
+  moves its tile to the top of Done, as the board's header says to close one; before, it was told
+  to leave the tile in In flight. With something outstanding the tile stays and its `Handoff:`
+  line says what. The session isn't paused for moving its own tile out of In flight.
+- A run of tests is a sub-task on the tile while it runs. The default rules already add a last
+  **Gates** sub-task; now a later run (after a rebase, a fix or a reply) unticks it or adds a new
+  unticked one first, and every reply from the board says so, whatever the store's `pickup.md`
+  says. A story no longer reads as all ticked while its tests are still being checked.
+- The stats strip counts a story that is ready for review under **ready for review** even when
+  its session stopped to wait for you or has gone; it was counted under **need you**, so a
+  finished story could show as 0 ready.
+
 ## 1.1.5
 
 - A stats strip runs under the header of the plans board while pickup is on: how many builds are
