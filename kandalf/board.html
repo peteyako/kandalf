@@ -536,6 +536,8 @@ html, body { height: 100%; margin: 0; }
 :root:not([data-theme="classic"]) header select, :root:not([data-theme="classic"]) header input { box-shadow: var(--hdr-ctl-shadow); }
 :root:not([data-theme="classic"]) #status { margin-left: auto; color: var(--hdr-text); font: 12px var(--mono); }
 :root:not([data-theme="classic"]) #status.err { color: var(--danger-fg); background-color: var(--danger); background-image: var(--gloss); border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius); padding: 3px 8px; font-weight: 700; }
+/* Which kandalf this is (versionLabel), small in the bottom-right corner, under the toasts. */
+#version { position: fixed; right: 8px; bottom: 4px; z-index: 40; font-size: 11px; color: var(--muted); opacity: .75; }
 /* What the board tells you (flash): toasts in the bottom-right corner, over the board, not in its way. */
 #toasts { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; max-width: min(440px, calc(100vw - 32px)); padding: 10px 12px 10px 14px;
@@ -922,6 +924,7 @@ applyTheme(themeNow, accentNow);
 <main id="board"></main>
 <section id="docView" hidden></section>
 <footer id="tagline">A wizard for your backlog, straight from middle management.</footer>
+<div id="version"></div>
 <script src="/marked.min.js"></script>
 
 <dialog id="cardDlg">
@@ -1476,6 +1479,17 @@ function withModel(md, model) {
   return lines.join("\n");
 }
 const baseOf = md => md.split("\n").slice(1).map(line => line.match(BASE_RE)).find(Boolean)?.[1] || "";
+// Which kandalf this is, for the page's corner: {text, title}. build: the server's facts
+// (stamp.py): the release's number when it was built from that release's tag with every file
+// committed, else a dev build with when it was built, and its commit in the title.
+function versionLabel(build, when = iso => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })) {
+  const v = build?.version || "";
+  if (!v) return { text: "", title: "" };
+  if (!build.commit) return { text: `kandalf ${v}`, title: `kandalf ${v}` };
+  if (build.tag && build.tag.replace(/^v/, "") === v) return { text: `kandalf ${v}`, title: `kandalf ${v}, release ${build.tag} (commit ${build.commit})` };
+  const changes = build.dirty ? ", with changes not committed" : "", built = when(build.built);
+  return { text: `kandalf ${v}+dev · built ${built}`, title: `A dev build after release ${v}: commit ${build.commit}${changes}, built ${built}` };
+}
 // The tile with its Base line set to base, or taken off for "" or the store's trunk, where
 // withModel puts a Model line.
 function withBase(md, base) {
@@ -2628,6 +2642,9 @@ async function listFiles(select) {
   STORE_SESSIONS = j.sessions || 2;
   STORE_TRUNK = j.trunk || "main";
   STORE_BRANCHES = j.branches || [];
+  const label = versionLabel(j.build);
+  $("#version").textContent = label.text;
+  $("#version").title = label.title;
   STORE_ATTACH = j.attach || "kandalf attach {id}";
   AGENT = j.agent || "Claude";
   if (j.models) MODELS = j.models;

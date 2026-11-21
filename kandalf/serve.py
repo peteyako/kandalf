@@ -53,8 +53,10 @@ from . import pln  # noqa: E402  tile keys
 from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
 from . import store as stores  # noqa: E402  which store, and its settings
+from . import stamp, __version__  # noqa: E402  which kandalf this is, for the page's corner
 
 HERE = Path(__file__).resolve().parent
+BUILD = stamp.info(HERE, __version__)  # once, at the server's start: a checkout's build time is when it started
 NAME_RE = re.compile(r"^((archive|active)/)?[A-Za-z0-9][A-Za-z0-9._-]*\.md$")
 FONT_RE = re.compile(r"^[a-z0-9-]+\.woff2$")  # a bundled font under kandalf/fonts
 DOC_RE = re.compile(r"^(active/)?[A-Za-z0-9][A-Za-z0-9._-]*\.md$")  # a plan doc a board tile can archive
@@ -808,7 +810,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(),
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
                                  "trunk": self.store.trunk, "branches": local_branches(self.store),
-                                 "repos": [{"name": r.name, "main": r.main} for r in self.store.repos]})
+                                 "repos": [{"name": r.name, "main": r.main} for r in self.store.repos], "build": BUILD})
         elif u.path == "/api/log":  # ?key=PLN-01: the last lines of that tile's session log
             view = log_view(self.store, (qs.get("key") or [""])[0])
             self.send_json(200, view) if view else self.send_json(404, {"error": "no session on that tile"})

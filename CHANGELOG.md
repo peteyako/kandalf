@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The page's bottom right corner says which kandalf is serving it: the release's number for a
+  build of its tag, else a dev build with when it was built (and its commit in the tooltip).
+
 ## 1.1.10
 
 - A story ready for review with nothing to merge (a master whose sub-stories did the work) has

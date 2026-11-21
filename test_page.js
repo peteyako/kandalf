@@ -19,7 +19,7 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
@@ -572,6 +572,17 @@ test("the stats strip counts each build once, by what it needs", () => {
   } finally { page.setPickups([]); page.setUnmerged({}); }
 });
 
+test("the corner says the release on its tag, and a dev build with when it was built otherwise", () => {
+  const when = iso => "at " + iso;
+  assert.deepEqual(page.versionLabel({ version: "1.1.10", tag: "v1.1.10", commit: "32aa882", dirty: false, built: "2026-11-21T20:40:00+00:00" }, when),
+                   { text: "kandalf 1.1.10", title: "kandalf 1.1.10, release v1.1.10 (commit 32aa882)" });
+  const dev = page.versionLabel({ version: "1.1.10", tag: null, commit: "abc1234", dirty: true, built: "2026-11-21T20:40:00+00:00" }, when);
+  assert.equal(dev.text, "kandalf 1.1.10+dev · built at 2026-11-21T20:40:00+00:00");
+  assert.match(dev.title, /commit abc1234, with changes not committed/);
+  assert.match(page.versionLabel({ version: "1.1.10", tag: "v1.1.5", commit: "abc1234", built: "x" }, when).text, /\+dev/);  // another release's tag
+  assert.equal(page.versionLabel({ version: "1.1.10" }).text, "kandalf 1.1.10");  // built from no checkout: nothing more known
+  assert.equal(page.versionLabel(undefined).text, "");  // an older server
+});
 test("a Base line names the branch a story is cut from; withBase writes it where withModel puts a Model line", () => {
   page.setTrunk("dev");
   const md = "PLN-01 **One.**\n  The description.\n  - [ ] **A sub-task.**";

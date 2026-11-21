@@ -268,6 +268,7 @@ kandalf/
   gitlog.py               the batched commit queue
   store.py                what a store is, and its board.json
   pln.py                  tile keys
+  stamp.py                where a build came from, for the page's corner (setup.py writes it at build time)
   autocommit.py, checkhook.py   the Claude Code hooks
   check.js                does a board file round-trip through the page's parser?
   templates/              starting files for a new store, and the default pickup.md
@@ -280,6 +281,8 @@ Run the tests:
 python3 -m unittest discover -p "test_*.py"
 node --test test_page.js
 ```
+
+The page's bottom right corner says which kandalf is serving it: `kandalf 1.1.10` for a build of a release's tag with every file committed, else `kandalf 1.1.10+dev` and when it was built, with the commit in its tooltip. `setup.py` stamps an installed copy when it is built; one run from a checkout asks git when the server starts.
 
 To support another agent, `kandalf/claude_code.py` and `kandalf/copilot_cli.py` are the seams: nothing else runs `claude` or `copilot`, and its docstring lists the functions another agent's module would provide.
 
