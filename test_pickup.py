@@ -22,6 +22,7 @@ from kandalf import claude_code as agent
 from kandalf import agent as agents
 from kandalf import copilot_cli
 from kandalf import gitlog
+from kandalf import init
 from kandalf import pickup
 from kandalf import serve
 from kandalf import store as stores
@@ -147,6 +148,10 @@ Keep the tile able to hand the work over. Your session can be closed at any mome
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
 
+SUB_STORY_TESTS = """
+
+Tests: PLN-75 is a sub-story of PLN-70, so run only the tests that cover what it changes (the test files, packages or tiers its code touches), not the whole suite, and say which ran on its Gates sub-task and its Ready for review line. The full suite runs on main once the last of PLN-70's sub-stories has been squashed and merged into it. This stands in for any rule, here or in CLAUDE.md, that asks a story for every test tier."""
+
 
 class Reading(unittest.TestCase):
     def setUp(self):
@@ -226,9 +231,19 @@ class Reading(unittest.TestCase):
         sub = pickup.entered([], serve.in_flight_tiles(st, PLANS))[0]
         for name, job in (("plain", plain), ("sub", sub)):
             for again in (False, True):
-                want = PROMPT_OPENINGS[(name, again)] + PROMPT_TAIL.replace("{key}", job["key"])
+                tail = PROMPT_TAIL if name == "plain" else PROMPT_TAIL.replace("\n\nWhen every sub-task", SUB_STORY_TESTS + "\n\nWhen every sub-task")
+                want = PROMPT_OPENINGS[(name, again)] + tail.replace("{key}", job["key"])
                 self.assertEqual(pickup.prompt(st, job, "b-name", Path("/x/app-wt"), again), want, (name, again))
 
+
+    def test_a_sub_story_runs_only_the_tests_for_what_it_changes_unless_its_store_says_all(self):
+        st = stores.Store(tempfile.mkdtemp())
+        sub = pickup.entered([], serve.in_flight_tiles(st, PLANS))[0]
+        alone = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
+        self.assertIn("run only the tests that cover what it changes", pickup.prompt(st, sub, "b", Path("/x/wt")))
+        self.assertNotIn("Tests:", pickup.prompt(st, alone, "b", Path("/x/wt")))
+        (st.dir / "board.json").write_text(json.dumps({"subStoryTests": "all"}))
+        self.assertNotIn("Tests:", pickup.prompt(stores.Store(st.dir), sub, "b", Path("/x/wt")))
 
     def test_a_store_that_names_its_pickup_column_has_only_that_column_s_tiles_picked_up(self):
         board = "## In flight\n\n- [ ] PLN-01 **One.**\n\n## building \n\n- [ ] PLN-02 **Two.**\n\n## Doing\n\n- [ ] PLN-03 **Three.**\n"
@@ -841,6 +856,17 @@ class Queue(unittest.TestCase):
         for told in self.fake.told:
             self.assertIn("untick its Gates sub-task or add a new unticked one", told)
 
+    def test_a_reply_goes_by_the_tile_index_it_is_given(self):
+        self.tick("## In flight\n")
+        family = "## In flight\n\n- [ ] PLN-02 **Master.**\n- [ ] PLN-01 **One.**\n  Part of PLN-02.\n"
+        self.tick(family)
+        self.fake.idle.add("s1")
+        self.tick(family)
+        tiles = serve.tile_index(self.store, {"plans.md": family})
+        self.assertIsNone(pickup.reply(self.store, "PLN-01", "", ["merge"], resume=self.fake.resume, stop=self.stop,
+                                       now=lambda: self.clock, tiles=tiles))
+        self.assertIn("Run the full suite on main", self.fake.told[-1])
+
     def test_a_session_told_to_merge_that_moves_its_tile_to_done_is_left_to_finish(self):
         self.tick("## In flight\n")
         ready = "## In flight\n\n- [ ] PLN-01 **One.**\n  **Ready for review:** gates green.\n"
@@ -877,6 +903,44 @@ class Queue(unittest.TestCase):
         self.assertLess(both.index("First do what they wrote"), both.index("fast-forward"))
         plain = pickup.reply_text(st, job, "Rename the helper.")
         self.assertIn("Don't squash, merge or push", plain)
+
+    FAMILY_BOARD = ("## In flight\n\n- [ ] PLN-70 **Dark mode.**\n- [ ] PLN-75 **Switch.**\n  Part of PLN-70.\n"
+                    "- [ ] PLN-76 **Tokens.**\n  Part of PLN-70.\n- [ ] PLN-77 **Docs.**\n  Part of PLN-70.\n"
+                    "- [ ] PLN-78 **Inner.**\n  Part of PLN-70.\n- [ ] PLN-79 **Inner part.**\n  Part of PLN-78.\n"
+                    "\n## Done\n\n- [x] PLN-74 **Colours.**\n  Part of PLN-70.\n")
+
+    def test_the_sub_stories_still_to_merge_are_the_unfinished_ones_below_its_master_but_umbrellas(self):
+        st = stores.Store(tempfile.mkdtemp())
+        tiles = serve.tile_index(st, {"plans.md": self.FAMILY_BOARD})
+        job = {"key": "PLN-75", "master": "PLN-70"}
+        self.assertEqual(pickup.still_to_merge(st, job, tiles), ["PLN-76", "PLN-77", "PLN-79"])  # not PLN-74 (done) nor PLN-78 (an umbrella)
+        last = ("## In flight\n\n- [ ] PLN-70 **Dark mode.**\n- [ ] PLN-75 **Switch.**\n  Part of PLN-70.\n- [ ] PLN-78 **Inner.**\n  Part of PLN-70.\n"
+                "\n## Done\n\n- [x] PLN-74 **C.** Part of PLN-70.\n- [x] PLN-76 **T.** Part of PLN-70.\n- [x] PLN-77 **D.** Part of PLN-70.\n"
+                "- [x] PLN-79 **I.** Part of PLN-78.\n")
+        self.assertEqual(pickup.still_to_merge(st, job, serve.tile_index(st, {"plans.md": last})), [])
+        self.assertIsNone(pickup.still_to_merge(st, {"key": "PLN-80"}, tiles))  # not a sub-story
+        self.assertIsNone(pickup.still_to_merge(st, job, None))  # no index to go by
+
+    def test_merging_the_last_sub_story_runs_the_full_suite_on_the_trunk_before_the_push(self):
+        st = stores.Store(tempfile.mkdtemp())
+        job = {"key": "PLN-75", "master": "PLN-70", "branch": "b", "worktree": "/x/app", "ready": True}
+        done = {"PLN-70": {"parent": None, "done": False}, "PLN-75": {"parent": "PLN-70", "done": False},
+                "PLN-74": {"parent": "PLN-70", "done": True}}
+        told = pickup.reply_text(st, job, "", ["squash", "merge", "push"], tiles=done)
+        at = [told.index(w) for w in ("fast-forward main to it", "Run the full suite on main", "Then push main")]
+        self.assertEqual(at, sorted(at))
+        self.assertIn("add `- [ ] **Full suite** on main` there", told)  # a sub-task on PLN-70's tile
+        self.assertIn("stop before any step after it", told)  # a red suite isn't pushed
+        left = {**done, "PLN-76": {"parent": "PLN-70", "done": False}}
+        told = pickup.reply_text(st, job, "", ["merge"], tiles=left)
+        self.assertNotIn("Run the full suite", told)
+        self.assertIn("waits for the last of PLN-70's sub-stories to merge, and PLN-76 is still to", told)
+        told = pickup.reply_text(st, job, "", ["merge"])  # no index: the session checks the board itself
+        self.assertIn("If every other sub-story of PLN-70 is in Done or archived", told)
+        self.assertNotIn("Run the full suite", pickup.reply_text(st, job, "", ["squash"], tiles=done))  # not merged yet
+        self.assertNotIn("Run the full suite", pickup.reply_text(st, {**job, "master": None}, "", ["merge"], tiles=done))  # on its own
+        (st.dir / "board.json").write_text(json.dumps({"subStoryTests": "all"}))
+        self.assertNotIn("full suite", pickup.reply_text(stores.Store(st.dir), job, "", ["merge"], tiles=done))
 
     def test_steps_for_a_story_in_several_repos_name_each_repo_and_its_trunk(self):
         st = stores.Store(tempfile.mkdtemp())
@@ -1754,6 +1818,92 @@ class Transcript(unittest.TestCase):
             view = serve.log_view(store, "PLN-01")
         self.assertEqual((view["id"], view["state"], view["text"]), ("bbbb", "started", "⏺ at it"))
         self.assertIsNone(serve.log_view(store, "PLN-09"))
+
+
+class Base(unittest.TestCase):
+    """A story is cut from and merged into the store's trunk, or the branch its Base line names."""
+
+    def setUp(self):
+        top = Path(tempfile.mkdtemp()).resolve()
+        self.app, self.plans = top / "app", top / "plans"
+        (self.app / "docs").mkdir(parents=True)
+        self.plans.mkdir()
+        (self.plans / "board.json").write_text(json.dumps({"app": "../app"}))  # no trunk: dev, which the app has
+        (self.app / "README").write_text("app\n")
+        git(self.app, "init", "-q", "-b", "dev")
+        self.commit("init")
+        git(self.app, "switch", "-qc", "feature-x")
+        (self.app / "feature").write_text("x\n")
+        self.commit("feature x")
+        git(self.app, "switch", "-q", "dev")
+        self.store = stores.Store(self.plans)
+
+    def commit(self, message, repo=None):
+        git(repo or self.app, "add", "-A")
+        git(repo or self.app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+
+    def job(self, tile):
+        return pickup.entered([], serve.in_flight_tiles(self.store, "## In flight\n\n" + tile))[0]
+
+    def test_a_base_line_names_a_branch_with_or_without_backticks_and_a_full_stop(self):
+        for line, want in (("  Base: feature-x", "feature-x"), ("  base: `release/2.0`.", "release/2.0"), ("\tBase:dev", "dev")):
+            self.assertEqual(pickup.base_named("- [ ] PLN-01 **One.**\n" + line), want, line)
+        for line in ("Base: dev", "  Based on dev", "  Base: two words", "  Base: -x"):  # not indented, no colon, not a branch
+            self.assertIsNone(pickup.base_named("- [ ] PLN-01 **One.**\n" + line), line)
+
+    def test_a_store_s_trunk_is_dev_when_the_app_has_one_unless_board_json_names_another(self):
+        self.assertEqual(self.store.trunk, "dev")
+        self.assertEqual(init.default_trunk(self.app), "dev")
+        git(self.app, "branch", "-qm", "dev", "main")
+        self.assertEqual(stores.Store(self.plans).trunk, "main")  # no dev: main
+        (self.plans / "board.json").write_text(json.dumps({"app": "../app", "trunk": "feature-x"}))
+        self.assertEqual(stores.Store(self.plans).trunk, "feature-x")
+
+    def test_a_story_with_a_base_line_is_cut_from_that_branch_and_merged_into_it(self):
+        job = self.job("- [ ] PLN-07 **Small thing.**\n  Base: feature-x\n")
+        self.assertEqual(job["base"], "feature-x")
+        cuts, name = pickup.prepare_all(self.store, job, [self.store.main_repo])
+        path = Path(cuts[0]["worktree"])
+        self.assertEqual(cuts[0]["trunk"], "feature-x")
+        self.assertEqual(pickup._git(path, "merge-base", "--is-ancestor", "feature-x", "HEAD").returncode, 0)
+        cut = {**job, "repos": cuts, "branch": name, "worktree": str(path)}
+        self.assertIn("cut from feature-x.", pickup.prompt(self.store, cut, name, path))
+        told = pickup.reply_text(self.store, cut, "", ["squash", "merge", "push"])
+        for part in ("Rebase the branch onto feature-x", "fast-forward feature-x to it", "Then push feature-x."):
+            self.assertIn(part, told)
+        self.assertEqual(pickup.story_trunk(self.store, self.store.main_repo, {**cut, "base": "dev"}), "feature-x")  # as it was cut
+
+    def test_a_base_the_repo_has_not_got_falls_back_to_the_trunk_and_the_session_is_told(self):
+        job = self.job("- [ ] PLN-07 **Small thing.**\n  Base: nowhere\n")
+        cuts, name = pickup.prepare_all(self.store, job, [self.store.main_repo])
+        self.assertEqual(cuts[0]["trunk"], "dev")
+        path = Path(cuts[0]["worktree"])
+        text = pickup.prompt(self.store, {**job, "repos": cuts, "worktree": str(path)}, name, path)
+        self.assertIn("cut from dev. Its Base line names nowhere, which isn't a branch there, so it was cut from dev.", text)
+
+    def test_a_sub_story_takes_its_master_s_base_and_its_own_line_wins(self):
+        tiles = serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-70 **Master.**\n  Base: feature-x\n"
+                                      "- [ ] PLN-71 **One.**\n  Part of PLN-70.\n- [ ] PLN-72 **Two.**\n  Part of PLN-70.\n  Base: dev\n")
+        self.assertEqual([(j["key"], j.get("base")) for j in pickup.entered([], tiles)], [("PLN-71", "feature-x"), ("PLN-72", "dev")])
+
+    def test_a_story_merged_into_its_base_is_tidied_and_not_outlined_unmerged(self):
+        job = self.job("- [ ] PLN-07 **Small thing.**\n  Base: feature-x\n")
+        cuts, name = pickup.prepare_all(self.store, job, [self.store.main_repo])
+        path = Path(cuts[0]["worktree"])
+        (path / "more").write_text("more\n")
+        self.commit("the work", path)
+        git(self.app, "switch", "-q", "feature-x")
+        git(self.app, "merge", "-q", "--ff-only", name)
+        git(self.app, "switch", "-q", "dev")
+        tile = (f"- [x] PLN-07 **Small thing.**\n  Base: feature-x\n  Claude session `ab12cd34`: `claude attach ab12cd34`. "
+                f"Branch `{name}`, worktree `{path.name}`. Model `opus`. Started {DAY}.")
+        self.assertEqual(serve.unmerged_done(self.store, "## Done\n\n" + tile + "\n"), {})  # in feature-x, though not in dev
+        self.assertIn(name, serve.unmerged_done(self.store, "## Done\n\n" + tile.replace("  Base: feature-x\n", "") + "\n")["PLN-07"])
+        trunks = []
+        done = pickup.tidy(self.store, tile, merged=lambda r, b: trunks.append(r.trunk) or serve._branch_merged(self.store, b, r),
+                           sessions=lambda: {}, retire=lambda sid: False)
+        self.assertEqual(trunks, ["feature-x"])
+        self.assertIn(f"deleted branch {name}", " ".join(done))
 
 
 if __name__ == "__main__":

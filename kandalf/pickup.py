@@ -52,10 +52,12 @@ import re
 import subprocess
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from . import agent
 from . import gitlog
+from . import store as stores
 
 # The columns that mean under way, however they are spelt: In flight, in-flight, In progress (or a slip
 # of it, "In progrees"), Doing, WIP, Working, Underway, Ongoing, Active; never one that says "not".
@@ -68,6 +70,8 @@ OPT_OUT_RE = re.compile(r"\bno pickup\b", re.I)
 READY_RE = re.compile(r"^\s+(?:\*\*)?Ready for review\b[:.]?(?:\*\*)?[:.]?[ \t]*(.*)$", re.I | re.M)
 REPOS_RE = re.compile(r"^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$", re.I | re.M)  # same in board.html
 MODEL_RE = re.compile(r"^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$", re.I | re.M)
+# A tile picks the branch its story is cut from and merged into with a line of its own, "Base: feature-x".
+BASE_RE = re.compile(r"^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._/-]*?)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
 STATE = "board-pickup.json"
 KEEP = 30  # jobs remembered
 # Seconds a session just started counts as at work, before it has shown itself busy.
@@ -189,6 +193,9 @@ def entered(prev, tiles, sessions: int = 2) -> list:
         if key in masters or OPT_OUT_RE.search(text):
             continue
         job = {"key": key, "title": by_key[key]["title"], "with": [], "text": text}
+        base = base_named(text)
+        if base:
+            job["base"] = base
         if by_key[key].get("context"):  # its master isn't in flight: its tile is given to read, and nothing more
             job.update(of=by_key[key]["of"], context=by_key[key]["context"])
         if above:
@@ -211,6 +218,13 @@ def model_for(store, text: str) -> str:
     "model" (board.json; opus unless set)."""
     own = MODEL_RE.search(text)
     return own.group(1) if own else store.model
+
+
+def base_named(text: str):
+    """The branch the first "Base: x" line in text names (a tile's family_text, so the nearest
+    line counts), or None if there is no such line."""
+    found = BASE_RE.search(text or "")
+    return found.group(1) if found else None
 
 
 def repo_names(text: str):
@@ -373,7 +387,7 @@ def repos_paragraph(store, job, branch_name: str, path: Path) -> str:
     if job.get("want") is None or [r.main for r in repos] == [True]:
         return ""
     cut = {c["name"]: c["worktree"] for c in job.get("repos") or []}
-    lines = [f"- {r.name}: {cut.get(r.name, '(no worktree)')} (cut from {r.trunk})" for r in repos]
+    lines = [f"- {r.name}: {cut.get(r.name, '(no worktree)')} (cut from {story_trunk(store, r, job)})" for r in repos]
     return f"""
 
 Repos: this story works in {len(repos)} repo{'s' if len(repos) > 1 else ''}, each in a git worktree of its own, all on the branch {branch_name}:
@@ -382,15 +396,33 @@ Repos: this story works in {len(repos)} repo{'s' if len(repos) > 1 else ''}, eac
 You are in {path}; the others were added to your session, so read and edit them by their paths. The branch is shared: the same name in every repo, and each repo's commits are its own. Commit in each repo's own worktree, never in a repo's own checkout. "Don't merge, don't squash, don't push" below covers every repo."""
 
 
+def sub_story_tests(store, job, trunk: str) -> str:
+    """What a sub-story's session is told about its tests when the store's "subStoryTests" is
+    relevant: only the tests for what it changes, the full suite waiting for the last of its
+    master's sub-stories to merge into the trunk. "" for a story that isn't a sub-story, or a
+    store whose sub-stories run every tier."""
+    master = job.get("master") or job.get("of")
+    if not master or store.sub_story_tests != "relevant":
+        return ""
+    return (f"\n\nTests: {job['key']} is a sub-story of {master}, so run only the tests that cover what it changes (the test "
+            f"files, packages or tiers its code touches), not the whole suite, and say which ran on its Gates sub-task and its "
+            f"Ready for review line. The full suite runs on {trunk} once the last of {master}'s sub-stories has been squashed "
+            f"and merged into it. This stands in for any rule, here or in CLAUDE.md, that asks a story for every test tier.")
+
+
 def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str:
     """What a new session is told. again: an earlier session on this tile can't be resumed,
     and this one takes over from what it left on the tile and the branch; "paused": that
     session was paused (pause) and left a handoff for this one."""
     repos = wanted(store, job) if job.get("want") is not None else []
     start = repos[0] if repos and not repos[0].main else None  # a session that starts outside the main repo
-    where, trunk = (f"the {start.name} repo", start.trunk) if start else ("the app", store.trunk)
+    where = f"the {start.name} repo" if start else "the app"
+    home = start or store.main_repo
+    trunk = story_trunk(store, home, job) if home else store.trunk
     linked = f" The plans store is linked in at docs/{store.link}." if not start or (
         path / "docs" / store.link).is_symlink() else ""
+    if job.get("base") and job["base"] != trunk:  # named on the tile, but that repo hasn't it
+        linked = f" Its Base line names {job['base']}, which isn't a branch there, so it was cut from {trunk}." + linked
     tiles = "this tile" if not job.get("with") else f"these tiles ({job['key']} and its sub-stories {', '.join(job['with'])})"
     if job.get("master"):
         tiles = (f"this tile, a sub-story of {job['master']}, whose tile follows it for you to read. Do only {job['key']}: "
@@ -425,7 +457,7 @@ Before anything else, check nobody else has this: if the tile already notes a di
 
 Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Read the plan doc the tile links, if it links one.
 
-{handoff(store, job['key'])}
+{handoff(store, job['key'])}{sub_story_tests(store, job, trunk)}
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
 
@@ -451,9 +483,9 @@ def cut_of(store, job, repo):
 def prepare(store, job, repo=None, name: str = None) -> tuple:
     """(worktree path, branch): the job's worktree in a repo (default the main one) beside it
     (the one it has already, when that is still there), made if it isn't there yet on the
-    branch name (default branch(); cut from the repo's trunk), with the store linked in at
+    branch name (default branch(); cut from the story's trunk, story_trunk), with the store linked in at
     docs/<link> as the repo's own checkout has it."""
-    repo = repo or store.main_repo
+    repo = as_story(store, repo or store.main_repo, job)
     own = cut_of(store, job, repo)
     path = own if own and own.is_dir() else worktree(store, job, repo)
     name = name or branch(store, job, repo)
@@ -487,7 +519,7 @@ def prepare_all(store, job, repos) -> tuple:
             name = name or got
         except RuntimeError as e:
             raise RuntimeError(f"{repo.name}: {e}") from None
-        cuts.append({"name": repo.name, "worktree": str(path), "trunk": repo.trunk})
+        cuts.append({"name": repo.name, "worktree": str(path), "trunk": story_trunk(store, repo, job)})
     return cuts, name
 
 
@@ -520,6 +552,22 @@ def _cuts_of(store, job) -> list:
         return job["repos"]
     main = store.main_repo
     return [{"name": main.name, "worktree": job["worktree"], "trunk": main.trunk}] if job.get("worktree") and main else []
+
+
+def story_trunk(store, repo, job=None, tile_text: str = "") -> str:
+    """The branch a story is cut from and merged into in a repo: the one its worktree there was
+    cut from (the job's record), else the branch its Base line names (tile_text's, else the
+    job's) when the repo has it, else the repo's trunk."""
+    for cut in _cuts_of(store, job) if job else []:
+        if cut["name"] == repo.name and cut.get("trunk"):
+            return cut["trunk"]
+    base = base_named(tile_text) or (job or {}).get("base")
+    return base if base and stores.has_branch(repo.path, base) else repo.trunk
+
+
+def as_story(store, repo, job=None, tile_text: str = ""):
+    """The repo with the story's own trunk (story_trunk) as its trunk."""
+    return replace(repo, trunk=story_trunk(store, repo, job, tile_text))
 
 
 def start(store, job, again: bool = False) -> dict:
@@ -702,7 +750,7 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         for job in entered(state["inflight"], tiles, store.sessions):
             mine = next((j for j in reversed(jobs) if j["key"] == job["key"]), None)
             if mine and mine["state"] == "paused":  # back from where it was paused: a new session takes over in turn
-                for k in ("master", "limit", "of", "context"):  # as the tile stands now, a sub-story or not
+                for k in ("master", "limit", "of", "context", "base"):  # as the tile stands now, a sub-story or not
                     mine.pop(k, None)
                 mine.update(job, state="waiting", again="paused", at=int(now()))
                 jobs.remove(mine)
@@ -985,13 +1033,39 @@ RERUN = ("If you run tests or gates for this, that run is a sub-task on the tile
          "or add a new unticked one saying what runs, and tick it only when it has passed.")
 
 
-def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> str:
+def still_to_merge(store, job, tiles):
+    """The other sub-stories of a job's master that aren't done yet, by key, from the tile index
+    (serve.tile_index): [] when the job's is the last of them. A tile with sub-stories of its own
+    is an umbrella, never merged itself, so it isn't counted. None when the job isn't a
+    sub-story, or there is no index to go by."""
+    master = job.get("master") or job.get("of")
+    if not master or tiles is None:
+        return None
+
+    def under(key):
+        seen, up = {key}, tiles[key].get("parent")
+        while up and up not in seen:
+            if up == master:
+                return True
+            seen.add(up)
+            up = (tiles.get(up) or {}).get("parent")
+        return False
+
+    umbrellas = {t.get("parent") for t in tiles.values()}
+    return sorted((k for k, t in tiles.items() if k != job["key"] and k not in umbrellas and not t.get("done") and under(k)),
+                  key=store.num)
+
+
+def reply_text(store, job, text: str, actions=(), interrupted: bool = False, tiles=None) -> str:
     """What a reply from the board tells the session: the words typed, then the review steps
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
     to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them.
     A merge closes the story: with nothing outstanding, the session moves its tile to Done.
     Every reply says a run of tests is an unticked sub-task while it runs (RERUN).
-    interrupted: the session was at work and was stopped mid-step to take the message."""
+    interrupted: the session was at work and was stopped mid-step to take the message.
+    tiles: the tile index (serve.tile_index). A sub-story's merge, when its store's sub-stories
+    test only what they change, runs the full suite on the trunk after it if it is the last of its
+    master's sub-stories (still_to_merge), and says it waits if it isn't."""
     key = job["key"]
     said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
     if interrupted:
@@ -1018,24 +1092,46 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> 
                   f"where {trunk} is checked out, `git merge --ff-only <branch>` there, and if that checkout has uncommitted changes, stop and say so."),
         "push": f"Then push {trunk}." if "merge" in actions else f"Push the branch {job.get('branch') or 'you are on'} to its remote.",
     }
-    listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate((s for s in STEPS if s in actions), 1))
+    order = [s for s in STEPS if s in actions]
+    master = job.get("master") or job.get("of")
+    waits = ""
+    if "merge" in actions and master and store.sub_story_tests == "relevant":
+        left = still_to_merge(store, job, tiles)
+        suite = (f"Run the full suite on {trunk}, every test tier this repo has, in the worktree the merge left at {trunk}'s tip: "
+                 f"{master}'s sub-stories each ran only their own tests, and this run checks them together. It is a sub-task on "
+                 f"{master}'s tile: add `- [ ] **Full suite** on {trunk}` there before you start, and tick it when it has passed. "
+                 f"If it fails, stop before any step after it and say what failed on that line and on this tile's \"Handoff:\" line.")
+        if left is None:  # no index: the session checks the board itself
+            steps["suite"] = (f"If every other sub-story of {master} is in Done or archived (plans.md, backlog.md and archive/archived.md say), "
+                              f"{key} is the last to merge: {suite[0].lower()}{suite[1:]} If some are still to merge, run only the tests for what "
+                              f"{key} changes: the full suite waits for the last of them.")
+        elif not left:  # the last of them
+            steps["suite"] = suite
+        else:
+            waits = (f"\n\nAfter a rebase, run only the tests for what {key} changes: the full suite on {trunk} waits for the last of "
+                     f"{master}'s sub-stories to merge, and {', '.join(left)} {'is' if len(left) == 1 else 'are'} still to.")
+        if "suite" in steps:
+            order.insert(order.index("merge") + 1, "suite")
+    listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate(order, 1))
     first = "First do what they wrote above. Then do these" if text else "They ask you to do these"
     if "merge" in actions:
         done = """When they are done, take the "Ready for review" line off the tile and say what you did on its "Handoff:" line. Then, if nothing on the story is outstanding (every sub-task is ticked and every step above went through), close it: move the tile to the top of Done (the board's column for finished stories), with whatever the header of plans.md asks of a closed story. If anything is outstanding, leave the tile in In flight and say what on its "Handoff:" line. Then stop."""
     else:
         done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
     return (f"{said}\n\n{first}, in this order; your rules leave them to the reviewer, and this is the reviewer saying so, "
-            f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}\n\n"
+            f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}{waits}\n\n"
             f"{RERUN} If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
 
 
-def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time):
+def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time, tiles=None):
     """The message box on a tile's session: send what was typed, and any review steps ticked
     (squash, merge, push), into the same conversation (reply_text), Claude or Copilot alike. A
     session at work is interrupted: stopped mid-step, and told to act on it and carry on. An
     idle one is stopped first, as Continue does, and a gone one is resumed. Not for a paused or
     pausing story, which has Continue. None when it was sent; otherwise why not. The job is as it was, but
-    for a session that was stopped and then couldn't be resumed: that one is gone (lost)."""
+    for a session that was stopped and then couldn't be resumed: that one is gone (lost).
+    tiles: the tile index (serve.tile_index), which says whether a sub-story's merge is its
+    master's last (reply_text)."""
     text, actions = (text or "").strip(), list(actions or [])
     wrong = [a for a in actions if a not in STEPS]
     if wrong:
@@ -1061,7 +1157,7 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
                 stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 return f"its session couldn't be stopped to take the reply: {e}"
-        told = resume(store, job, reply_text(store, job, text, actions, interrupted))
+        told = resume(store, job, reply_text(store, job, text, actions, interrupted, tiles))
         if told["state"] != "started":
             why = told.get("error") or "the conversation couldn't be resumed"
             if job["state"] in ("started", "idle"):  # it was stopped to take the reply: it is gone now
@@ -1203,6 +1299,7 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
     if not got:
         return []
     name, session, cuts = got
+    cuts = [(n, as_story(store, r, job, tile_text) if r else None, p) for n, r, p in cuts]  # merged into the story's own trunk
     if name in {r.trunk for _, r, _ in cuts if r} | {store.trunk} or any(r and p and p.resolve() == r.path for _, r, p in cuts):
         return []
     many = len(cuts) > 1 or bool(cuts and cuts[0][1] != store.main_repo)  # the several-repo form, as with_session writes it
@@ -1230,7 +1327,7 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
         return [f"kept {held}: a worktree's path isn't known"]
     behind = [r for r in have if merged(r, name) is not True]
     if behind:
-        where = " or ".join(f"{r.name}'s {r.trunk}" for r in behind) if many else store.trunk
+        where = " or ".join(f"{r.name}'s {r.trunk}" for r in behind) if many else behind[0].trunk
         return [f"kept {held}: the branch isn't in {where} yet"]
     if session and (sessions() or {}).get(session) == "busy":
         return [f"kept {held}: the session is still at work"]
@@ -1275,7 +1372,8 @@ def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
         save(store, state)
     if not jobs and not TILE_SESSION_RE.search(tile_text):
         return []
-    got = _tidy_cuts(store, tile_text, job_for(store, key))
+    last = job_for(store, key)
+    got = _tidy_cuts(store, tile_text, last)
     sessions = {j["id"] for j in jobs if j.get("id")} | ({got[1]} if got and got[1] else set())
     done = [f"closed session {sid}" for sid in sorted(sessions) if retire(sid)]
     if not got:
@@ -1294,11 +1392,12 @@ def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
             done.append(f"removed worktree {path.name}{at}" if gone.returncode == 0
                         else f"kept worktree {path.name}{at}: {gone.stderr.strip() or 'git worktree remove failed'}")
         _git(repo.path, "worktree", "prune")
-        if name == repo.trunk or _git(repo.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode != 0:
+        trunk = story_trunk(store, repo, last, tile_text)
+        if name in (repo.trunk, trunk) or _git(repo.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode != 0:
             continue
-        ahead = _git(repo.path, "rev-list", "--count", f"{repo.trunk}..{name}").stdout.strip()
+        ahead = _git(repo.path, "rev-list", "--count", f"{trunk}..{name}").stdout.strip()
         if ahead not in ("", "0"):
-            done.append(f"kept branch {name}{at}: {ahead} commit{'s' if ahead != '1' else ''} not in {repo.trunk}")
+            done.append(f"kept branch {name}{at}: {ahead} commit{'s' if ahead != '1' else ''} not in {trunk}")
             continue
         cut = _git(repo.path, "branch", "-D", name)
         done.append(f"deleted branch {name}{at}" if cut.returncode == 0
@@ -1478,9 +1577,11 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
         if seen in ("idle", "waiting"):  # blocked on input counts as a question
             seen = why(sid) or ("question" if seen == "waiting" else "idle")
         stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now()))
-        said = f"session `{sid}` {_doing(seen)}. " + " ".join(
-            repo_status_text(c[0], git_facts(c[2], c[1].trunk) if c[1] and c[2] else None, c[1].trunk if c[1] else "", now())
-            for c in cuts)
+        parts = []
+        for name, repo, path in cuts:
+            trunk = story_trunk(store, repo, job, tile_text) if repo else ""
+            parts.append(repo_status_text(name, git_facts(path, trunk) if repo and path else None, trunk, now()))
+        said = f"session `{sid}` {_doing(seen)}. " + " ".join(parts)
         said += " " + eta_text(tile_text, job.get("at") or job.get("started"), now())
         showing = screen(sid) if seen not in (None, "unknown") else ""
         return f"Status {stamp}: {said}" + (f' On its screen (rough): "{showing}".' if showing else "")
@@ -1490,7 +1591,8 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
     if seen in ("idle", "waiting"):
         seen = why(sid) or ("question" if seen == "waiting" else "idle")
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now()))
-    said = status_text(sid, seen, git_facts(path, store.trunk) if path else None, store.trunk, now())
+    trunk = story_trunk(store, store.main_repo, job, tile_text) if store.main_repo else store.trunk
+    said = status_text(sid, seen, git_facts(path, trunk) if path else None, trunk, now())
     said += " " + eta_text(tile_text, job.get("at") or job.get("started"), now())
     showing = screen(sid) if seen not in (None, "unknown") else ""  # a session that is there has a screen to read
     return f"Status {stamp}: {said}" + (f' On its screen (rough): "{showing}".' if showing else "")

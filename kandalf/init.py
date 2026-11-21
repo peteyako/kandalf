@@ -72,7 +72,10 @@ def git(path, *args) -> subprocess.CompletedProcess:
 
 # ---------- defaults ----------
 def default_trunk(app: Path) -> str:
-    """The app's default branch: origin's HEAD, else its current branch, else main."""
+    """The branch stories are cut from and merged into: dev when the repo has a dev branch,
+    else its default branch (origin's HEAD, else its current branch, else main)."""
+    if stores.has_branch(app, "dev"):
+        return "dev"
     r = git(app, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
     if r.returncode == 0 and r.stdout.strip():
         return r.stdout.strip().removeprefix("origin/")
@@ -482,7 +485,7 @@ def add_repo(st, path: Path, name: str = None, trunk: str = None) -> list:
             f" (the main repo's name)" if main and main.name.lower() == name.lower() else "") + ". Pick another with --name.")
     trunk = trunk or default_trunk(repo)
     rel = os.path.relpath(repo, st.dir)
-    default = cfg.get("trunk", "main")
+    default = cfg.get("trunk") or stores.default_trunk(repo)  # what the store reads when the entry names none
     cfg.setdefault("repos", {})[name] = rel if trunk == default else {"path": rel, "trunk": trunk}
     write_config(st, cfg, f"board: repo {name} added")
     said = [f"board.json: repo {name} {rel} @ {trunk}"]

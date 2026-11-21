@@ -21,10 +21,13 @@ board.json:
                                      "plans/active/x.md" finds docs/plans/active/x.md (default plans)
       "app":   "../myapp",           the app repo, relative to the store, whose feature branches
                                      Done tiles name (default: none)
-      "trunk": "dev",                the app branch those are merged into (default main)
+      "trunk": "dev",                the app branch stories are cut from and merged into (default:
+                                     dev when the app has a dev branch, else main); a tile's own
+                                     "Base: x" line picks another for its story
       "repos": {"api": "../api",     other repos stories can work in, by name: a path relative to
                 "web": {"path": "../web", "trunk": "next"}},
-                                     the store, or {"path", "trunk"} (its trunk defaults to the trunk setting)
+                                     the store, or {"path", "trunk"} (its trunk defaults to the trunk
+                                     setting, and without one to dev when that repo has it, else main)
       "pickup": true,                start a Claude Code session for a tile that lands in
                                      In flight (pickup.py; default false, needs "app")
       "agent": "claude",             the agent those sessions run in: claude (Claude Code) or
@@ -41,6 +44,9 @@ board.json:
                                      (default 1); the rest are queued, each with Start now
       "sessions": 2,                 how many of a master's sub-stories have a session at work
                                      at once (default 2); the master's "Sessions: n" line overrides it
+      "subStoryTests": "relevant",   what a sub-story's session tests: "relevant", only what it
+                                     changes, the full suite running on the trunk once the last of
+                                     its master's sub-stories merges (the default); "all", every tier
       "branch": "{key}-{slug}",      a session's feature branch (the default): {key} is the tile's
                                      key in lower case, {KEY} as written, {slug} its title,
                                      {app} the app folder's name; e.g. "feat/{key}-{slug}"
@@ -93,6 +99,21 @@ class Repo:
     main: bool = False
 
 
+def has_branch(repo: Path, name: str) -> bool:
+    """True when the git repo at repo has a local branch called name."""
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"refs/heads/{name}"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0
+
+
+def default_trunk(repo) -> str:
+    """The trunk of a repo whose board.json names none: dev when it has a dev branch, else main."""
+    return "dev" if repo and Path(repo).is_dir() and has_branch(repo, "dev") else "main"
+
+
 def git_root(path: Path):
     r = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
     return Path(r.stdout.strip()) if r.returncode == 0 else None
@@ -109,8 +130,8 @@ class Store:
         self.link = cfg.get("link", "plans")
         app = os.environ.get("PLANS_APP_REPO") or cfg.get("app")
         self.app = (self.dir / app).resolve() if app else None
-        self.trunk = os.environ.get("PLANS_APP_TRUNK") or cfg.get("trunk", "main")
-        self.repos, self.repo_problem = self._read_repos(cfg.get("repos"), cfg.get("trunk", "main"))
+        self.trunk = os.environ.get("PLANS_APP_TRUNK") or cfg.get("trunk") or default_trunk(self.app)
+        self.repos, self.repo_problem = self._read_repos(cfg.get("repos"), cfg.get("trunk"))
         self.pickup = bool(cfg.get("pickup", False))
         self.agent = cfg.get("agent") or "claude"
         try:
@@ -122,6 +143,7 @@ class Store:
         self.permission = cfg.get("permission") or "auto"
         self.model = cfg.get("model") or agent.default_model()
         self.sessions = max(1, int(cfg.get("sessions") or 2))
+        self.sub_story_tests = "all" if str(cfg.get("subStoryTests") or "").strip().lower() == "all" else "relevant"
         self.parallel = max(1, int(cfg.get("parallel") or 1))  # tiles on their own with a session at work at once
         self.pickup_column = (cfg.get("pickupColumn") or "").strip()  # "": any In flight column
         self.branch_pattern = cfg.get("branch") or "{key}-{slug}"
@@ -138,7 +160,7 @@ class Store:
         self.tile_head_re = re.compile(rf"^- (?:\[[ xX]\] )?({k}-\d+) ")  # the whole key opening a tile line
         self.keyed_re = re.compile(rf"^({k}-\d+) ")  # the key a tile's text (after "- [ ] ") opens with
 
-    def _read_repos(self, entries, default_trunk):
+    def _read_repos(self, entries, store_trunk):
         """The main repo, then the valid "repos" entries in file order, and one sentence
         naming the first configuration error (or None)."""
         repos, problem = [], None
@@ -155,7 +177,8 @@ class Store:
                 why = f'the repo "{name}" has no path'
             else:
                 seen.add(name.lower())
-                repos.append(Repo(name, (self.dir / path).resolve(), trunk or default_trunk))
+                folder = (self.dir / path).resolve()
+                repos.append(Repo(name, folder, trunk or store_trunk or default_trunk(folder)))
                 continue
             problem = problem or why
         return repos, problem

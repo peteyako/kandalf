@@ -19,8 +19,9 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
+            setTrunk: name => { STORE_TRUNK = name; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             setUnmerged: map => { unmerged = map; },
             setPickups: jobs => { pickups = { enabled: true, why: null, jobs }; },
@@ -564,4 +565,19 @@ test("the stats strip counts each build once, by what it needs", () => {
     assert.equal(page.buildState(tile("PLN-19"), page.section("In flight")), "");
     assert.equal(page.buildState(page.section("To do").cards[0], page.section("To do")), "");
   } finally { page.setPickups([]); page.setUnmerged({}); }
+});
+
+test("a Base line names the branch a story is cut from; withBase writes it where withModel puts a Model line", () => {
+  page.setTrunk("dev");
+  const md = "PLN-01 **One.**\n  The description.\n  - [ ] **A sub-task.**";
+  assert.equal(page.baseOf(md), "");
+  const set = page.withBase(md, "feature/x");
+  assert.equal(set, "PLN-01 **One.**\n  The description.\n  Base: feature/x\n  - [ ] **A sub-task.**");
+  assert.equal(page.baseOf(set), "feature/x");
+  assert.equal(page.withBase(set, "release-2"), set.replace("Base: feature/x", "Base: release-2"));  // changed in place
+  assert.equal(page.withBase(set, ""), md);  // back to the store's trunk
+  assert.equal(page.withBase(set, "dev"), md);  // the trunk's own name: no line either
+  assert.equal(page.baseOf("PLN-02 **Two.**\n  base: `release/2.0`."), "release/2.0");
+  assert.equal(page.storyParts({ body: ["  Base: feature/x", "  Some words."] }).base, "feature/x");
+  assert.deepEqual(page.storyParts({ body: ["  Base: feature/x", "  Some words."] }).desc, ["Some words."]);
 });

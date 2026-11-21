@@ -10,7 +10,7 @@ This file is the board that tracks every plan for {name}. Open it with `kandalf 
 - **Columns are statuses:** Bugs, To do, In flight, Done. Rename them if you like (In progress, Shipped), but keep one In flight column and one Done column. Unscheduled work waits on [backlog.md](backlog.md); to schedule a tile, drag it onto that board's Promote column, which moves it to the top of To do. Newest tiles go at the top of their column.
 - **Stories that belong together:** a sub-story says `Part of {key}-NN` and folds under that master tile; `Moves with {key}-NN` makes two tiles move as one.
 - **In flight means an agent starts on it** when pickup is on in `board.json`. A tile that says `No pickup` is left alone until those words are taken out; only a person writes them, never an agent filing or editing a tile. The session ticks the sub-tasks as it goes and ends with a `**Ready for review:**` line.
-- **Closing a plan:** tick its sub-tasks, move the story to Done, and name its feature branch in backticks: a Done tile whose branch isn't merged into `{trunk}` yet is outlined red.
+- **Closing a plan:** tick its sub-tasks, move the story to Done, and name its feature branch in backticks: a Done tile whose branch isn't merged into `{trunk}` (or the branch its `Base:` line names) yet is outlined red.
 - Keep this file free of `###` headings and code blocks, or the board opens it view-only. Cards in a column sit back to back; a blank line between them, or a missing one under a heading, the board puts right when it next saves. `kandalf check plans.md` names the first line the board would reject.
 
 ## Bugs

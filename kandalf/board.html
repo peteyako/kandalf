@@ -177,8 +177,8 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] .tv-family { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 10px; }
 :root[data-theme="classic"] .tv-family .subs { border-top: 0; margin: 0 0 10px; padding: 0; }
 :root[data-theme="classic"] .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
-:root[data-theme="classic"] #cardEst::placeholder { color: var(--muted); font-style: italic; opacity: .7; }
-:root[data-theme="classic"] #cardEst.bad { border-color: var(--warn); outline-color: var(--warn); }
+:root[data-theme="classic"] #cardEst::placeholder, :root[data-theme="classic"] #cardBase::placeholder { color: var(--muted); font-style: italic; opacity: .7; }
+:root[data-theme="classic"] #cardEst.bad, :root[data-theme="classic"] #cardBase.bad { border-color: var(--warn); outline-color: var(--warn); }
 :root[data-theme="classic"] .prio-P1 { --p: var(--warn); } :root[data-theme="classic"] .prio-P2 { --p: var(--p2); } :root[data-theme="classic"] .prio-P3 { --p: var(--p3); } :root[data-theme="classic"] .prio-P4 { --p: var(--accent); }
 :root[data-theme="classic"] .card .kind { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--story); margin-bottom: 2px; }
 :root[data-theme="classic"] .card.story { border-left: 3px solid var(--story); }
@@ -740,8 +740,8 @@ html, body { height: 100%; margin: 0; }
 :root:not([data-theme="classic"]) .dlg .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 :root:not([data-theme="classic"]) .dlg .row label { white-space: nowrap; }
 :root:not([data-theme="classic"]) .dlg .row .spacer { flex: 1; }
-:root:not([data-theme="classic"]) #cardEst::placeholder { color: var(--muted); font-style: italic; }
-:root:not([data-theme="classic"]) #cardEst.bad { border-color: var(--warn-bc); border-width: 2.5px; background: var(--warn-bg); }
+:root:not([data-theme="classic"]) #cardEst::placeholder, :root:not([data-theme="classic"]) #cardBase::placeholder { color: var(--muted); font-style: italic; }
+:root:not([data-theme="classic"]) #cardEst.bad, :root:not([data-theme="classic"]) #cardBase.bad { border-color: var(--warn-bc); border-width: 2.5px; background: var(--warn-bg); }
 :root:not([data-theme="classic"]) #cardDlg[data-mode="view"] .edit-only, :root:not([data-theme="classic"]) #cardDlg[data-mode="edit"] .tile-view { display: none; }
 :root:not([data-theme="classic"]) .tile-view { max-height: 60vh; overflow: auto; font-size: var(--body-size); }
 :root:not([data-theme="classic"]) .tile-view .tv-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
@@ -929,6 +929,7 @@ applyTheme(themeNow, accentNow);
         <option value="P1">⇈ P1 Highest</option><option value="P2">↑ P2 High</option>
         <option value="P3">= P3 Medium</option><option value="P4">↓ P4 Low</option></select></label>
       <label id="cardModelLabel" title="The model the agent's session for this story runs on, when the tile is picked up from In flight">Model <select id="cardModel"></select></label>
+      <label id="cardBaseLabel" title="The branch the agent's session cuts this story from and merges it into (the Base line on the tile); empty is the store's trunk">Base <input type="text" id="cardBase" size="12" list="cardBaseList" autocomplete="off" spellcheck="false"><datalist id="cardBaseList"></datalist></label>
       <span id="cardRepos" class="repos-pick hidden" title="The repos the agent's session for this story works in (the Repos line on the tile)">Repos <span id="cardReposBoxes"></span></span>
       <label>Estimate <input type="text" id="cardEst" size="6" placeholder="none" title="Wall-clock time: hours (4h), days of 24 h (1.5d) or weeks (1w); a range like 12-18h works"></label>
       <label>Column <select id="cardCol"></select></label>
@@ -1062,7 +1063,7 @@ const PRIO_ICON = { P1: "⇈", P2: "↑", P3: "=", P4: "↓" };
 const EST = String.raw`\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw]`;  // 4h, 1.5d, 2-3d, 1w
 const EST_RE = new RegExp(`^${EST}$`);
 // The store's key prefix (PLN, FLY, …) and name; /api/files reports them (listFiles).
-let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_ATTACH = "kandalf attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
+let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_BRANCHES = [], STORE_ATTACH = "kandalf attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
 let HEAD_RE, KEY_NUM_RE, LINK_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
@@ -1242,6 +1243,7 @@ const pickupHintHTML = sec => pickupHintShows(file, sec.name, pickups.why, hidde
   ? `<div class="pickup-why"><span>${inline(pickups.why)}</span><button type="button" data-act="hidewhy" title="Hide this note in this browser">×</button></div>` : "";
 const pickupFor = key => key ? pickups.jobs.findLast(j => j.key === key || (j.with || []).includes(key)) : undefined;
 const reposTag = repos => repos.length ? `<span class="repos" title="Its ${AGENT} session works in ${esc(repos.join(", "))}">⎇ ${esc(repos.join(", "))}</span>` : "";
+const baseTag = base => base ? `<span class="repos base" title="Cut from and merged into ${esc(base)}, not the store's trunk (${esc(STORE_TRUNK)})">⑂ ${esc(base)}</span>` : "";
 const modelTag = model => model ? `<span class="model" title="Its ${AGENT} session runs on ${esc(model)}, not the store's default (${esc(STORE_MODEL)})">◈ ${esc(model)}</span>` : "";
 const STOPPED = { idle: "idle", lost: "gone", paused: "paused" };  // a session that isn't at work, as the tile says it
 const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? `Try starting ${AGENT} on this tile again` : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
@@ -1434,6 +1436,10 @@ const MODEL_RE = /^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$/i;
 // A "Repos: api, web" line names the repos a story works in; without one it is the main repo
 // (pickup.py: REPOS_RE, repo_names). The dialog's Repos boxes write and remove that line.
 const REPOS_RE = /^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$/i;
+// A "Base: feature-x" line names the branch a story is cut from and merged into; without one it
+// is the store's trunk (pickup.py: BASE_RE, story_trunk). The dialog's Base field writes and removes it.
+const BASE_RE = /^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._\/-]*?)`?\.?[ \t]*$/i;
+const BRANCH_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/;
 const reposIn = line => {
   const m = line.match(REPOS_RE), names = [];
   for (const n of m ? m[1].replace(/`/g, "").split(/[,\s]+/) : []) if (n && !names.some(k => k.toLowerCase() === n.toLowerCase())) names.push(n);
@@ -1459,6 +1465,20 @@ function withModel(md, model) {
     // After the description (and the session line), before the first sub-task.
     const sub = lines.findIndex((line, i) => i > 0 && /^  [-*] /.test(line));
     lines.splice(sub >= 0 ? sub : lines.length, 0, "  Model: " + model);
+  }
+  return lines.join("\n");
+}
+const baseOf = md => md.split("\n").slice(1).map(line => line.match(BASE_RE)).find(Boolean)?.[1] || "";
+// The tile with its Base line set to base, or taken off for "" or the store's trunk, where
+// withModel puts a Model line.
+function withBase(md, base) {
+  base = base === STORE_TRUNK ? "" : base;
+  const lines = md.split("\n"), at = lines.findIndex((line, i) => i > 0 && BASE_RE.test(line));
+  if (at >= 0 && base) lines[at] = "  Base: " + base;
+  else if (at >= 0) lines.splice(at, 1);
+  else if (base) {
+    const sub = lines.findIndex((line, i) => i > 0 && /^  [-*] /.test(line));
+    lines.splice(sub >= 0 ? sub : lines.length, 0, "  Base: " + base);
   }
   return lines.join("\n");
 }
@@ -1545,7 +1565,7 @@ function noteParts(text) {
 }
 function storyParts(card) {
   const subs = [], desc = [];
-  let session = null, model = "", repos = [], status = null, ready = null;
+  let session = null, model = "", repos = [], base = "", status = null, ready = null;
   card.body.forEach((line, i) => {
     const m = line.match(SUB_RE);
     if (m) subs.push({ i, done: m[1] !== " ", text: m[2], extra: 0 });
@@ -1555,9 +1575,10 @@ function storyParts(card) {
     else if (sessionLine(line)) session = sessionLine(line);
     else if (MODEL_RE.test(line)) model = line.match(MODEL_RE)[1];
     else if (REPOS_RE.test(line)) repos = reposIn(line);
+    else if (BASE_RE.test(line)) base = line.match(BASE_RE)[1];
     else if (line.trim()) desc.push(line.trim());
   });
-  return { subs, desc, session, model, repos, status, ready };
+  return { subs, desc, session, model, repos, base, status, ready };
 }
 let expanded = new Set();
 try { expanded = new Set(JSON.parse(localStorage.getItem("board.expanded") || "[]")); } catch {}
@@ -1715,7 +1736,7 @@ function renderGhost({ ghost, cards }, sec) {
 // sec: the card's column, whose other cards may be folded into it.
 function renderCard(c, sec) {
   const { key, prio, est, title, desc } = splitCard(c.text);
-  const { subs, desc: storyDesc, session, model, repos, ready } = storyParts(c);
+  const { subs, desc: storyDesc, session, model, repos, base, ready } = storyParts(c);
   const kids = kidsOf(key, renderIndex), isStory = subs.length > 0 || kids.length > 0;
   // Its sub-stories in this column are folded in as tiles; the rest are listed with where they are.
   const folded = foldedKids(c, sec.cards, renderIndex);
@@ -1732,12 +1753,12 @@ function renderCard(c, sec) {
   if (forReview && !lost && !needsYou) el.className += " ready";
   const readyHTML = forReview ? `<div class="ready-note"><span class="ready-label">✔ Ready for review</span>${ready ? inline(ready) : ""}</div>` : "";
   el.draggable = true; el.dataset.id = c.id;
-  if (notMerged) el.title = `Done, but not merged into ${STORE_TRUNK} yet: ` + notMerged.join(", ");
+  if (notMerged) el.title = `Done, but not merged into ${base || STORE_TRUNK} yet: ` + notMerged.join(", ");
   const check = c.check !== null ? `<span class="check${c.check ? " on" : ""}" data-act="toggle">${c.check ? "✓" : ""}</span>` : "";
-  const keyTag = (key ? `<span class="key" title="${fmtFiled(c)}">${key}</span>` : "") + masterTag(kids) + chip + pickupTag(key, sec, session) + modelTag(model) + reposTag(repos) + linkTag(linkedTo(key, renderEdges)) + prioTag(prio) + estTag(est);
+  const keyTag = (key ? `<span class="key" title="${fmtFiled(c)}">${key}</span>` : "") + masterTag(kids) + chip + pickupTag(key, sec, session) + modelTag(model) + reposTag(repos) + baseTag(base) + linkTag(linkedTo(key, renderEdges)) + prioTag(prio) + estTag(est);
   if (!isStory) {
     // A bare title line with the description on the next line reads as one description.
-    const body = trimBlank(c.body).filter(line => !sessionLine(line) && !MODEL_RE.test(line) && !REPOS_RE.test(line) && !statusLine(line) && readyLine(line) === null);
+    const body = trimBlank(c.body).filter(line => !sessionLine(line) && !MODEL_RE.test(line) && !REPOS_RE.test(line) && !BASE_RE.test(line) && !statusLine(line) && readyLine(line) === null);
     let about = desc;
     if (!about && body.length && /^ {2}\S/.test(body[0])) about = body.shift().trim();
     el.innerHTML = `<div class="title">${inline(title)}</div>${about ? `<div class="desc">${inline(about)}</div>` : ""}
@@ -2342,6 +2363,8 @@ function tileViewHTML(md) {
       // the Model dropdown shows it
     } else if (REPOS_RE.test(line)) {
       // the Repos boxes show it
+    } else if (BASE_RE.test(line)) {
+      // the Base field shows it
     } else {
       closeList(); para.push(line.trim());
     }
@@ -2411,6 +2434,7 @@ function openCard(card, sec, kidOf) {
   $("#cardDelete").classList.toggle("hidden", !card);
   $("#cardAddKid").classList.toggle("hidden", !card || !cardKey(card) || file === ARCHIVE_LOG);
   $("#cardModelLabel").classList.toggle("hidden", file === ARCHIVE_LOG);
+  $("#cardBaseLabel").classList.toggle("hidden", file === ARCHIVE_LOG);
   repoPicker.archived = file === ARCHIVE_LOG;
   syncRepos();
   dlg.showModal();
@@ -2440,9 +2464,17 @@ function syncRepos() {
   $("#cardReposBoxes").innerHTML = STORE_REPOS.map(r =>
     `<label><input type="checkbox" value="${esc(r.name)}"${(own.length ? own.includes(r.name.toLowerCase()) : r.main) ? " checked" : ""}> ${esc(r.name)}</label>`).join("");
 }
+// The Base field: the tile's Base line, blank for the store's trunk (its placeholder), with the
+// main repo's branches to pick from. Not rewritten while it is being typed in.
+function syncBase() {
+  $("#cardBase").placeholder = STORE_TRUNK + " (default)";
+  $("#cardBaseList").innerHTML = STORE_BRANCHES.map(b => `<option value="${esc(b)}">`).join("");
+  if (document.activeElement !== $("#cardBase")) { $("#cardBase").value = baseOf($("#cardText").value); $("#cardBase").classList.remove("bad"); }
+}
 function syncPrio() {
   syncModel();
   syncRepos();
+  syncBase();
   const { prio, est } = splitCard($("#cardText").value.split("\n")[0]);
   $("#cardPrio").value = prio;
   if (document.activeElement !== $("#cardEst")) { $("#cardEst").value = est; $("#cardEst").classList.remove("bad"); }
@@ -2459,6 +2491,14 @@ $("#cardModel").addEventListener("change", e => {
   $("#cardText").value = withModel($("#cardText").value, e.target.value);
   if (dlg.dataset.mode === "view") setCardMode("view");
 });
+$("#cardBase").addEventListener("input", e => {
+  const v = e.target.value.trim(), ok = !v || BRANCH_NAME_RE.test(v);
+  e.target.classList.toggle("bad", !ok);
+  if (!ok) return;
+  $("#cardText").value = withBase($("#cardText").value, v);
+  if (dlg.dataset.mode === "view") setCardMode("view");
+});
+$("#cardBase").addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
 $("#cardReposBoxes").addEventListener("change", () => {
   const names = [...$("#cardReposBoxes").querySelectorAll("input:checked")].map(b => b.value);
   $("#cardText").value = withRepos($("#cardText").value, names);
@@ -2577,6 +2617,7 @@ async function listFiles(select) {
   STORE_REPOS = j.repos || [];
   STORE_SESSIONS = j.sessions || 2;
   STORE_TRUNK = j.trunk || "main";
+  STORE_BRANCHES = j.branches || [];
   STORE_ATTACH = j.attach || "kandalf attach {id}";
   AGENT = j.agent || "Claude";
   if (j.models) MODELS = j.models;
