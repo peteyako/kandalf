@@ -394,6 +394,17 @@ class Queue(unittest.TestCase):
         self.tick(family)
         self.assertEqual(self.jobs(), [("PLN-02", "idle"), ("PLN-03", "started"), ("PLN-04", "started")])
 
+    def test_a_master_whose_last_sub_story_leaves_in_flight_is_picked_up(self):
+        master = "- [ ] PLN-01 **Master.**\n  - [ ] **The map**\n"
+        kid = lambda n: f"- [ ] PLN-0{n} **Kid {n}.**\n  Part of PLN-01.\n"
+        self.tick("## In flight\n\n## Done\n")
+        self.tick("## In flight\n\n" + master + kid(2) + kid(3) + "\n## Done\n")
+        self.fake.idle.update({"s1", "s2"})
+        self.tick("## In flight\n\n" + master + kid(3) + "\n## Done\n\n" + kid(2))
+        self.assertEqual(self.fake.started, ["PLN-02", "PLN-03"])  # PLN-03 is still in flight: the master waits
+        self.tick("## In flight\n\n" + master + "\n## Done\n\n" + kid(2) + kid(3))
+        self.assertEqual(self.fake.started, ["PLN-02", "PLN-03", "PLN-01"])
+
     def test_a_sub_story_keeps_the_model_it_took_from_its_master(self):
         family = "## In flight\n\n- [ ] PLN-01 **Master.**\n  Model: sonnet\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n"
         self.tick("## In flight\n")
@@ -992,6 +1003,21 @@ class Queue(unittest.TestCase):
         self.assertIn("paused", self.reply("PLN-01", "hello"))
         self.assertEqual(self.fake.resumed, ["s1-full"])  # only the handoff turn
 
+    def test_a_close_reply_closes_a_story_with_nothing_to_merge_without_squashing_or_merging(self):
+        self.tick("## In flight\n")
+        ready = "## In flight\n\n- [ ] PLN-01 **Master.**\n  **Ready for review:** the sub-stories are merged.\n"
+        self.tick(ready)
+        self.fake.idle.add("s1")
+        self.tick(ready)
+        self.assertIsNone(self.reply("PLN-01", "", actions=["close"]))
+        told = self.fake.told[0]
+        self.assertIn("There is nothing to merge", told)
+        self.assertIn("Don't squash, merge or push", told)
+        self.assertIn('Take the "Ready for review" line off', told)
+        self.assertIn("move the tile to the top of Done", told)
+        self.assertNotIn("Rebase the branch", told)
+        self.assertTrue(self.job().get("closing"))  # it may move its own tile to Done
+
     def test_a_reply_is_refused_when_it_says_nothing(self):
         self.tick("## In flight\n")
         one = "## In flight\n\n- [ ] PLN-01 **One.**\n"
@@ -1341,6 +1367,26 @@ class Status(unittest.TestCase):
         facts = pickup.git_facts(app, "dev")
         self.assertEqual((facts["ahead"], facts["last"], facts["dirty"]), (1, "feat: b (PLN-01)", 1))
         self.assertIsNone(pickup.git_facts(app / "nowhere", "dev"))
+
+    def test_a_ready_story_has_nothing_to_merge_until_its_branch_has_a_commit_or_a_change(self):
+        store = stores.Store(tempfile.mkdtemp())
+        app = Path(tempfile.mkdtemp()).resolve()
+        git(app, "init", "-q", "-b", "dev")
+        (app / "a.txt").write_text("a")
+        git(app, "add", "-A")
+        git(app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
+        git(app, "switch", "-qc", "pln-01-x")
+        job = {"key": "PLN-01", "state": "idle", "ready": True, "repos": [{"name": "app", "worktree": str(app), "trunk": "dev"}]}
+        pickup.save(store, {"inflight": ["PLN-01"], "jobs": [job]})
+        self.assertTrue(pickup.nothing_to_merge(store, job))
+        self.assertTrue(pickup.summary(store)["jobs"][0]["empty"])
+        (app / "b.txt").write_text("b")
+        self.assertFalse(pickup.nothing_to_merge(store, job))  # not committed is still something
+        git(app, "add", "-A")
+        git(app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feat: b (PLN-01)")
+        self.assertFalse(pickup.nothing_to_merge(store, job))
+        self.assertNotIn("empty", pickup.summary(store)["jobs"][0])
+        self.assertFalse(pickup.nothing_to_merge(store, {**job, "repos": [{"name": "app", "worktree": str(app / "gone"), "trunk": "dev"}]}))
 
     def test_the_status_line_sits_under_the_session_line_in_bold_and_is_replaced_each_time(self):
         store = stores.Store(tempfile.mkdtemp())

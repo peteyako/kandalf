@@ -1301,8 +1301,8 @@ function sessionState(job) {
 }
 // The message box on a tile's session (pickup.py: reply). Open when the session waits for you:
 // it asked something, ended on an error, or its story is ready for review; then a review reply
-// can also tick squash, merge and push. While it works, or once it is idle or gone, the box is
-// folded behind a chevron: a message to a session at work interrupts it, and it carries on after.
+// can also tick squash, merge and push, or, with nothing to merge, Close. While it works, or
+// once it is idle or gone, the box is folded behind a chevron: a message to a session at work interrupts it, and it carries on after.
 // replyDrafts keeps what is typed, and replyOpen which folded boxes were opened, while the board
 // is drawn again.
 const replyDrafts = {}, replyOpen = new Set();
@@ -1316,7 +1316,10 @@ function replyHTML(job) {
   const step = (id, label) => `<label><input type="checkbox" data-step="${id}"${draft.steps.includes(id) ? " checked" : ""}> ${label}</label>`;
   const trunks = [...new Set((job.repos || []).map(c => c.trunk).filter(Boolean))];  // the story's own repos' trunks
   const into = trunks.length > 1 ? "each trunk" : esc(trunks[0] || STORE_TRUNK);
-  const steps = job.ready && !atWork ? `<div class="reply-steps">${step("squash", "Squash")}${step("merge", `Merge into ${into}`)}${step("push", "Push")}</div>` : "";
+  // A story with nothing to merge (a master whose sub-stories did the work: pickup.nothing_to_merge) is closed, not merged.
+  const closeButton = `<button type="button" data-act="close-story" data-key="${job.key}" title="${esc(`Its branch has nothing to merge. ${AGENT} takes the Ready for review line off and moves the tile to Done, with anything typed above`)}">✓ Close</button>`;
+  let steps = "";
+  if (job.ready && !atWork) steps = job.empty ? closeButton : `<div class="reply-steps">${step("squash", "Squash")}${step("merge", `Merge into ${into}`)}${step("push", "Push")}</div>`;
   let hint, summary = `Log · message ${AGENT}`, send = "Send";
   if (atWork) {
     hint = `Tell ${AGENT} something now: it stops mid-step, reads it, then carries on`;
@@ -2238,6 +2241,7 @@ boardEl.addEventListener("click", e => {
     e.stopPropagation();
     noteReplyToggle(e);
     if (act === "reply") sendReply(e.target.closest(".session-reply"));
+    if (act === "close-story") sendReply(e.target.closest(".session-reply"), ["close"]);
     return;
   }
   if (act === "open") { e.stopPropagation(); return; }  // a plan link opens in a new tab (target=_blank); don't open the tile
@@ -2411,6 +2415,7 @@ $("#cardView").addEventListener("click", e => {
   const hold = e.target.closest("[data-act=pause]");
   if (hold) return pausePickup(hold.dataset.key);
   if (e.target.closest("[data-act=reply]")) return sendReply(e.target.closest(".session-reply"));
+  if (e.target.closest("[data-act=close-story]")) return sendReply(e.target.closest(".session-reply"), ["close"]);
   if (e.target.closest(".session-reply")) return noteReplyToggle(e);
   const box = e.target.closest("[data-line]");
   if (box) {  // tick a sub-task: rewrite that line of the markdown, saved with Save
@@ -2710,9 +2715,9 @@ async function restartPickup(key) {
 function replyOf(form) {
   return { text: form.querySelector("textarea").value, steps: [...form.querySelectorAll("input[data-step]:checked")].map(b => b.dataset.step) };
 }
-// The reply box's Send: what was typed, and the steps ticked, go into the same conversation.
-async function sendReply(form) {
-  const key = form.dataset.key, reply = replyOf(form), text = reply.text.trim(), steps = reply.steps;
+// The reply box's Send: what was typed, and the steps ticked (or only, as Close gives), go into the same conversation.
+async function sendReply(form, only) {
+  const key = form.dataset.key, reply = replyOf(form), text = reply.text.trim(), steps = only || reply.steps;
   if (!text && !steps.length) return flash(`Type a reply to send to ${AGENT}, or tick what to do.`);
   setStatus(`Sending to ${AGENT} on ${key}…`);
   const j = await postPickup({ key, reply: text, steps }, "Not sent").catch(() => (flash("Not sent: server down?"), null));

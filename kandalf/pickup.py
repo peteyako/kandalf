@@ -128,6 +128,7 @@ def enabled(store) -> bool:
 
 # ---------- the queue's state ----------
 # {"inflight": [keys] or None before the first look,
+#  "umbrellas": [the in-flight masters with sub-stories in flight, as last seen],
 #  "jobs": [{"key", "title", "with": [sub-story keys], "text": the tiles' markdown, "at",
 #            "state": "waiting" | "started" (at work) | "idle" | "lost" | "ended" | "failed",
 #            "behind": the key it waits for, "model", "id", "session": the full session id,
@@ -740,10 +741,17 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
                 log(f"{k} is in flight but says No pickup: left alone until those words go")
         state["held"] = held
         keys = [k for k in by_key if k not in held]
+        # A master with sub-stories in flight is an umbrella and gets no session (entered). Once
+        # the last of them has left, it is picked up as if it had just landed, as at the server's start (adopt).
+        parents = {t.get("parent") for t in tiles}
+        umbrellas = [k for k in keys if k in parents]
+        freed = [k for k in state.get("umbrellas", []) if k in keys and k not in umbrellas]
+        state["umbrellas"] = umbrellas
         if state["inflight"] is None:  # the first look: what is in flight already is someone's
             state["inflight"] = keys
             save(store, state)
             return state
+        state["inflight"] = [k for k in state["inflight"] if k not in freed]
         # One tile, one session: a tile that already has a session (at work, idle or lost) or
         # a place in the queue isn't picked up again, however it came to look newly arrived.
         taken = {j["key"] for j in jobs if j["state"] in KEPT}
@@ -1028,6 +1036,8 @@ def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
 
 # ---------- replying from the board ----------
 STEPS = ("squash", "merge", "push")  # what a review reply may ask for, in the order they are done
+CLOSE = "close"  # a review reply for a story with nothing to merge (nothing_to_merge): it is closed instead, alone
+ACTIONS = (*STEPS, CLOSE)  # what a reply may ask for
 # Told with every reply, whatever the store's own rules say: work after the sub-tasks are ticked still shows on the tile.
 RERUN = ("If you run tests or gates for this, that run is a sub-task on the tile: before you start it, untick its Gates sub-task "
          "or add a new unticked one saying what runs, and tick it only when it has passed.")
@@ -1056,6 +1066,23 @@ def still_to_merge(store, job, tiles):
                   key=store.num)
 
 
+CLOSES = ("""Then, if nothing on the story is outstanding (every sub-task is ticked and every step above went through), close it: """
+          """move the tile to the top of Done (the board's column for finished stories), with whatever the header of plans.md asks of """
+          """a closed story. If anything is outstanding, leave the tile in In flight and say what on its "Handoff:" line. Then stop.""")
+
+
+def nothing_to_merge(store, job) -> bool:
+    """True when a story's branch has no commits beyond its trunk and nothing uncommitted, in every
+    repo it works in: its review has nothing to squash, merge or push (a master whose sub-stories
+    did the work). False when a worktree isn't there to look at."""
+    cuts = _cuts_of(store, job)
+    for cut in cuts:
+        facts = git_facts(cut["worktree"], cut.get("trunk") or store.trunk)
+        if facts is None or facts["ahead"] or facts["dirty"]:
+            return False
+    return bool(cuts)
+
+
 def reply_text(store, job, text: str, actions=(), interrupted: bool = False, tiles=None) -> str:
     """What a reply from the board tells the session: the words typed, then the review steps
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
@@ -1072,6 +1099,10 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, til
         return (f"You were interrupted: the person on the plans board stopped your session with a message about {key}:\n\n{text}\n\n"
                 "Act on it, then carry on with the story from where you were: check `git status` and the tile first, since you were "
                 "stopped mid-step. Keep the tile's \"Handoff:\" line current. " + RERUN + " Don't squash, merge or push: those stay with the reviewer.")
+    if CLOSE in actions:
+        return (f"{said}\n\nThere is nothing to merge: the story's branch has no commits beyond its trunk and nothing uncommitted, "
+                "in every repo it works in. Don't squash, merge or push. Take the \"Ready for review\" line off the tile and say on "
+                "its \"Handoff:\" line that there was nothing to merge. " + CLOSES)
     if not actions:
         back = (" If it sends you back to work on the story, take the tile's \"Ready for review\" line off while you work and put it back when you are done."
                 if job.get("ready") else "")
@@ -1115,7 +1146,7 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, til
     listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate(order, 1))
     first = "First do what they wrote above. Then do these" if text else "They ask you to do these"
     if "merge" in actions:
-        done = """When they are done, take the "Ready for review" line off the tile and say what you did on its "Handoff:" line. Then, if nothing on the story is outstanding (every sub-task is ticked and every step above went through), close it: move the tile to the top of Done (the board's column for finished stories), with whatever the header of plans.md asks of a closed story. If anything is outstanding, leave the tile in In flight and say what on its "Handoff:" line. Then stop."""
+        done = """When they are done, take the "Ready for review" line off the tile and say what you did on its "Handoff:" line. """ + CLOSES
     else:
         done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
     return (f"{said}\n\n{first}, in this order; your rules leave them to the reviewer, and this is the reviewer saying so, "
@@ -1133,9 +1164,9 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
     tiles: the tile index (serve.tile_index), which says whether a sub-story's merge is its
     master's last (reply_text)."""
     text, actions = (text or "").strip(), list(actions or [])
-    wrong = [a for a in actions if a not in STEPS]
+    wrong = [a for a in actions if a not in ACTIONS]
     if wrong:
-        return f"{', '.join(wrong)} is not an action: squash, merge or push"
+        return f"{', '.join(wrong)} is not an action: squash, merge, push or close"
     if not text and not actions:
         return "the message is empty"
     with _lock:
@@ -1169,9 +1200,9 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
         job.update(told)
         job.pop("waiting", None)
         job.pop("closing", None)
-        if "merge" in actions and not interrupted:  # it may move its own tile to Done: tick leaves it to finish
+        if ("merge" in actions or CLOSE in actions) and not interrupted:  # it may move its own tile to Done: tick leaves it to finish
             job["closing"] = True
-        _report(store, job, now(), on_start, "given your reply" + (f" ({', '.join(s for s in STEPS if s in actions)})" if actions else ""))
+        _report(store, job, now(), on_start, "given your reply" + (f" ({', '.join(s for s in ACTIONS if s in actions)})" if actions else ""))
         save(store, state)
         return None
 
@@ -1600,7 +1631,11 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
 
 def summary(store) -> dict:
     """What the page shows: the jobs, without the tiles' text, and whether pickup is on (why:
-    why_off's sentence when it is off)."""
+    why_off's sentence when it is off). A story ready for review whose session isn't at work
+    carries "empty" when it has nothing to merge (nothing_to_merge): its review is Close."""
     jobs = [{k: v for k, v in j.items() if k != "text"} for j in load(store)["jobs"]]
+    for j in jobs:
+        if j.get("ready") and j["state"] in ("idle", "lost") and nothing_to_merge(store, j):
+            j["empty"] = True
     why = why_off(store)
     return {"enabled": why is None, "why": why, "jobs": jobs}
