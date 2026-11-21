@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A theme's colour swatch recolours the whole page, not only the buttons: the chosen colour
+  washes the page, the header and the columns (Realm ledger keeps its open columns), so each
+  swatch is a colour scheme. Tiles stay as they are.
 - A story can name the branch it is cut from and merged into: a `Base: feature-x` line on the
   tile, written by the new Base field in the tile dialog, which suggests the app's branches. The
   review steps, the full suite after a last sub-story, tidying and the red unmerged outline all

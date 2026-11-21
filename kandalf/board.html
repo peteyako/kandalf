@@ -294,7 +294,8 @@ html, body { height: 100%; margin: 0; }
 /* ---------- the other themes ---------- */
 /* The themes. Every look other than Classic is one set of the tokens below, picked by <html data-theme> (the header's Theme
    menu; see BOARD_THEMES). The defaults below are a sticker look
-   (ink outlines, hard shadows, a glossy top half on every control and chip) that each theme reshapes. A theme's accent can be swapped by an inline --accent. */
+   (ink outlines, hard shadows, a glossy top half on every control and chip) that each theme reshapes. A theme's accent can be swapped by an inline --accent.
+   The accent also washes the page, the header and the columns (--wash, --col-wash: how much of it), so each accent is a colour scheme; tiles stay as they are. */
 :root:not([data-theme="classic"]) {
   /* type */
   --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -345,6 +346,9 @@ html, body { height: 100%; margin: 0; }
   --store-font: var(--head); --store-size: 22px; --store-weight: 700; --store-case: none; --store-track: normal;
   --h1-font: var(--sans); --h1-size: 18px; --h1-weight: 600; --h1-style: normal;
   --tab-bg: var(--neutral); --tab-fg: var(--text);
+  --wash: 14%; --col-wash: 10%;
+  --wash-c: color-mix(in srgb, var(--accent) var(--wash), transparent); --col-wash-c: color-mix(in srgb, var(--accent) var(--col-wash), transparent);
+  --wash-layer: linear-gradient(var(--wash-c), var(--wash-c)); --col-wash-layer: linear-gradient(var(--col-wash-c), var(--col-wash-c));
   /* the logo: the bare mark, or (Realm) a medallion */
   --logo-size: 42px; --logo-svg: 42px; --logo-bg: transparent; --logo-gloss: none;
   --logo-bd: 0 solid transparent; --logo-radius: 10px; --logo-shadow: none;
@@ -434,7 +438,7 @@ html, body { height: 100%; margin: 0; }
   --edge: #5d5340; --shadow-c: transparent; --dash: #c9b98f; --check-bc: #5d5340; --bw: 1px; --ctl-radius: 3px;
   --ctl-shadow: 0 0 0 transparent; --ctl-shadow-hover: 0 1px 3px rgba(42,36,24,.25); --input-bc: #dcbb62;
   --gloss: none; --gloss-hi: inset 0 0 0 transparent;
-  --col-radius: 0; --col-gap: 16px;
+  --col-radius: 0; --col-gap: 16px; --col-wash: 0%;  /* its open, ruled columns stay open */
   --card-bw: 1px; --card-bc: #c9b98f; --card-radius: 3px;
   --card-shadow: inset 0 0 0 3px var(--card), inset 0 0 0 4px #c9b98f, 0 1px 2px rgba(42,36,24,.18);
   --card-shadow-hover: inset 0 0 0 3px var(--card), inset 0 0 0 4px #c9b98f, 0 3px 8px rgba(42,36,24,.25);
@@ -475,7 +479,7 @@ html, body { height: 100%; margin: 0; }
   --logo-hat: #25221d; --logo-brim: #fbf7ef; --logo-star: #dcbb62;
 }
 
-:root:not([data-theme="classic"]) body { background: var(--ground); color: var(--text); font: var(--body-size)/1.42 var(--sans); display: flex; flex-direction: column; }
+:root:not([data-theme="classic"]) body { background: var(--wash-layer), var(--ground); color: var(--text); font: var(--body-size)/1.42 var(--sans); display: flex; flex-direction: column; }
 :root:not([data-theme="classic"]) a { color: var(--link); }
 :root:not([data-theme="classic"]) :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 :root:not([data-theme="classic"]) code { background: var(--code); padding: 0 4px; border-radius: 4px; font: 0.86em var(--mono); }
@@ -514,7 +518,7 @@ html, body { height: 100%; margin: 0; }
 :root:not([data-theme="classic"]) textarea { background: var(--card); color: var(--text); border: var(--bw) solid var(--input-bc); border-radius: var(--ctl-radius); }
 
 /* ---------- header ---------- */
-:root:not([data-theme="classic"]) header { display: flex; align-items: center; gap: 12px; padding: 18px 24px; background: var(--hdr-bg); color: var(--hdr-text); border-bottom: var(--hdr-bd); flex-wrap: wrap; }
+:root:not([data-theme="classic"]) header { display: flex; align-items: center; gap: 12px; padding: 18px 24px; background: var(--wash-layer), var(--hdr-bg); color: var(--hdr-text); border-bottom: var(--hdr-bd); flex-wrap: wrap; }
 :root:not([data-theme="classic"]) .logo { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--logo-size); height: var(--logo-size); border-radius: var(--logo-radius);
   background-color: var(--logo-bg); background-image: var(--logo-gloss); border: var(--logo-bd); box-shadow: var(--logo-shadow); }
 :root:not([data-theme="classic"]) .logo svg { display: block; width: var(--logo-svg); height: var(--logo-svg); }
@@ -556,7 +560,7 @@ html, body { height: 100%; margin: 0; }
 
 /* ---------- board and columns ---------- */
 :root:not([data-theme="classic"]) #board { flex: 1; display: flex; gap: var(--col-gap); padding: 28px 24px 20px; overflow-x: auto; align-items: flex-start; }
-:root:not([data-theme="classic"]) .column { flex: 1 1 280px; min-width: 280px; background: color-mix(in srgb, var(--colc, var(--col)) var(--col-tint), var(--col));
+:root:not([data-theme="classic"]) .column { flex: 1 1 280px; min-width: 280px; background: var(--col-wash-layer), color-mix(in srgb, var(--colc, var(--col)) var(--col-tint), var(--col));
   border: var(--col-bd); border-radius: var(--col-radius); box-shadow: var(--col-shadow); padding: 12px; display: flex; flex-direction: column; max-height: 100%; }
 :root:not([data-theme="classic"]) .column.dragging { opacity: .4; }
 /* Column colours, by name (columns and the move zones beside Archive): any other column keeps a neutral chip. */
@@ -866,7 +870,7 @@ html, body { height: 100%; margin: 0; }
 <script>
 // The board's looks: Clean and light (the default: the first one here), Classic (the original),
 // then the rest of the style block's [data-theme] blocks, each with the accents it offers, its
-// default first. The pick is kept in this browser and applied here, before the first paint.
+// default first. An accent colours the whole page, not only the controls (--wash in the style block). The pick is kept in this browser and applied here, before the first paint.
 const BOARD_THEMES = {
   light: { name: "Clean and light", accents: [["#2f4bd8", "Blue"], ["#6b3fd0", "Violet"], ["#0f6a73", "Teal"], ["#a3306e", "Berry"]] },
   classic: { name: "Classic", accents: [["#0c66e4", "Blue"]] },
