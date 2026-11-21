@@ -536,6 +536,10 @@ const BUILDS = `# Plans
 - [ ] PLN-18 **Ready, but back at work on a review reply.**
   **Ready for review:** all green.
 - [ ] PLN-19 **Carried along with PLN-10.**
+- [ ] PLN-22 **Finished, and its session stopped to wait for the review.**
+  **Ready for review:** all green.
+- [ ] PLN-23 **Finished, and its session has gone since.**
+  **Ready for review:** all green.
 
 ## Done
 
@@ -548,6 +552,7 @@ const BUILD_JOBS = [
   { key: "PLN-12", state: "lost" }, { key: "PLN-13", state: "failed", error: "no worktree" },
   { key: "PLN-14", state: "idle", ready: true }, { key: "PLN-15", state: "waiting" }, { key: "PLN-16", state: "paused" },
   { key: "PLN-17", state: "idle" }, { key: "PLN-18", state: "started" }, { key: "PLN-21", state: "ended" },
+  { key: "PLN-22", state: "idle", waiting: "question", ready: true }, { key: "PLN-23", state: "lost", ready: true },
 ];
 test("the stats strip counts each build once, by what it needs", () => {
   page.open("plans.md", BUILDS);
@@ -556,7 +561,7 @@ test("the stats strip counts each build once, by what it needs", () => {
     assert.deepEqual(page.buildStats(), {
       work: ["PLN-10", "PLN-18"],            // a session is on it; the tile it carries along isn't a build of its own
       need: ["PLN-11", "PLN-12", "PLN-13"],  // asked, gone or not started: the tiles the board marks
-      ready: ["PLN-02", "PLN-14"],           // waits for review, in any column but Done
+      ready: ["PLN-02", "PLN-14", "PLN-22", "PLN-23"],  // waits for review, in any column but Done, however its session stopped
       queued: ["PLN-15"], paused: ["PLN-16"],
       idle: ["PLN-17"],                      // stopped without asking: a master waiting on its sub-stories, say
       unmerged: ["PLN-20"],
