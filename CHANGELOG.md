@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A sub-story runs only the tests for what it changes, not the whole suite. The full suite runs
+  on the trunk once, when the last of its master's sub-stories is merged from the board: that
+  merge reply adds a step, after the merge and before the push, and a **Full suite** sub-task on
+  the master's tile. Merging an earlier sub-story says the suite waits, and which are still to
+  merge. `"subStoryTests": "all"` in `board.json` keeps every tier on each sub-story.
 - A story merged from the board moves to Done. When a review reply with **Merge into** ticked
   goes through and nothing is outstanding (every sub-task ticked, every step done), the session
   moves its tile to the top of Done, as the board's header says to close one; before, it was told

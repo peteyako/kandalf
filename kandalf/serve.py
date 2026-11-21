@@ -1035,7 +1035,8 @@ class Handler(BaseHTTPRequestHandler):
             if why:
                 return self.send_json(409, {"error": why})
             if "reply" in data:  # {key, reply: text, steps: [squash, merge, push]}: the reply box
-                why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], on_start=note_session)
+                why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], on_start=note_session,
+                                   tiles=self.tiles(self.plans / "plans.md"))
                 if why:
                     return self.send_json(409, {"error": why, **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))

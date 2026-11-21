@@ -41,6 +41,9 @@ board.json:
                                      (default 1); the rest are queued, each with Start now
       "sessions": 2,                 how many of a master's sub-stories have a session at work
                                      at once (default 2); the master's "Sessions: n" line overrides it
+      "subStoryTests": "relevant",   what a sub-story's session tests: "relevant", only what it
+                                     changes, the full suite running on the trunk once the last of
+                                     its master's sub-stories merges (the default); "all", every tier
       "branch": "{key}-{slug}",      a session's feature branch (the default): {key} is the tile's
                                      key in lower case, {KEY} as written, {slug} its title,
                                      {app} the app folder's name; e.g. "feat/{key}-{slug}"
@@ -122,6 +125,7 @@ class Store:
         self.permission = cfg.get("permission") or "auto"
         self.model = cfg.get("model") or agent.default_model()
         self.sessions = max(1, int(cfg.get("sessions") or 2))
+        self.sub_story_tests = "all" if str(cfg.get("subStoryTests") or "").strip().lower() == "all" else "relevant"
         self.parallel = max(1, int(cfg.get("parallel") or 1))  # tiles on their own with a session at work at once
         self.pickup_column = (cfg.get("pickupColumn") or "").strip()  # "": any In flight column
         self.branch_pattern = cfg.get("branch") or "{key}-{slug}"

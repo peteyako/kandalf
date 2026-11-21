@@ -382,6 +382,20 @@ Repos: this story works in {len(repos)} repo{'s' if len(repos) > 1 else ''}, eac
 You are in {path}; the others were added to your session, so read and edit them by their paths. The branch is shared: the same name in every repo, and each repo's commits are its own. Commit in each repo's own worktree, never in a repo's own checkout. "Don't merge, don't squash, don't push" below covers every repo."""
 
 
+def sub_story_tests(store, job, trunk: str) -> str:
+    """What a sub-story's session is told about its tests when the store's "subStoryTests" is
+    relevant: only the tests for what it changes, the full suite waiting for the last of its
+    master's sub-stories to merge into the trunk. "" for a story that isn't a sub-story, or a
+    store whose sub-stories run every tier."""
+    master = job.get("master") or job.get("of")
+    if not master or store.sub_story_tests != "relevant":
+        return ""
+    return (f"\n\nTests: {job['key']} is a sub-story of {master}, so run only the tests that cover what it changes (the test "
+            f"files, packages or tiers its code touches), not the whole suite, and say which ran on its Gates sub-task and its "
+            f"Ready for review line. The full suite runs on {trunk} once the last of {master}'s sub-stories has been squashed "
+            f"and merged into it. This stands in for any rule, here or in CLAUDE.md, that asks a story for every test tier.")
+
+
 def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str:
     """What a new session is told. again: an earlier session on this tile can't be resumed,
     and this one takes over from what it left on the tile and the branch; "paused": that
@@ -425,7 +439,7 @@ Before anything else, check nobody else has this: if the tile already notes a di
 
 Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Read the plan doc the tile links, if it links one.
 
-{handoff(store, job['key'])}
+{handoff(store, job['key'])}{sub_story_tests(store, job, trunk)}
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
 
@@ -985,13 +999,39 @@ RERUN = ("If you run tests or gates for this, that run is a sub-task on the tile
          "or add a new unticked one saying what runs, and tick it only when it has passed.")
 
 
-def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> str:
+def still_to_merge(store, job, tiles):
+    """The other sub-stories of a job's master that aren't done yet, by key, from the tile index
+    (serve.tile_index): [] when the job's is the last of them. A tile with sub-stories of its own
+    is an umbrella, never merged itself, so it isn't counted. None when the job isn't a
+    sub-story, or there is no index to go by."""
+    master = job.get("master") or job.get("of")
+    if not master or tiles is None:
+        return None
+
+    def under(key):
+        seen, up = {key}, tiles[key].get("parent")
+        while up and up not in seen:
+            if up == master:
+                return True
+            seen.add(up)
+            up = (tiles.get(up) or {}).get("parent")
+        return False
+
+    umbrellas = {t.get("parent") for t in tiles.values()}
+    return sorted((k for k, t in tiles.items() if k != job["key"] and k not in umbrellas and not t.get("done") and under(k)),
+                  key=store.num)
+
+
+def reply_text(store, job, text: str, actions=(), interrupted: bool = False, tiles=None) -> str:
     """What a reply from the board tells the session: the words typed, then the review steps
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
     to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them.
     A merge closes the story: with nothing outstanding, the session moves its tile to Done.
     Every reply says a run of tests is an unticked sub-task while it runs (RERUN).
-    interrupted: the session was at work and was stopped mid-step to take the message."""
+    interrupted: the session was at work and was stopped mid-step to take the message.
+    tiles: the tile index (serve.tile_index). A sub-story's merge, when its store's sub-stories
+    test only what they change, runs the full suite on the trunk after it if it is the last of its
+    master's sub-stories (still_to_merge), and says it waits if it isn't."""
     key = job["key"]
     said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
     if interrupted:
@@ -1018,24 +1058,46 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False) -> 
                   f"where {trunk} is checked out, `git merge --ff-only <branch>` there, and if that checkout has uncommitted changes, stop and say so."),
         "push": f"Then push {trunk}." if "merge" in actions else f"Push the branch {job.get('branch') or 'you are on'} to its remote.",
     }
-    listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate((s for s in STEPS if s in actions), 1))
+    order = [s for s in STEPS if s in actions]
+    master = job.get("master") or job.get("of")
+    waits = ""
+    if "merge" in actions and master and store.sub_story_tests == "relevant":
+        left = still_to_merge(store, job, tiles)
+        suite = (f"Run the full suite on {trunk}, every test tier this repo has, in the worktree the merge left at {trunk}'s tip: "
+                 f"{master}'s sub-stories each ran only their own tests, and this run checks them together. It is a sub-task on "
+                 f"{master}'s tile: add `- [ ] **Full suite** on {trunk}` there before you start, and tick it when it has passed. "
+                 f"If it fails, stop before any step after it and say what failed on that line and on this tile's \"Handoff:\" line.")
+        if left is None:  # no index: the session checks the board itself
+            steps["suite"] = (f"If every other sub-story of {master} is in Done or archived (plans.md, backlog.md and archive/archived.md say), "
+                              f"{key} is the last to merge: {suite[0].lower()}{suite[1:]} If some are still to merge, run only the tests for what "
+                              f"{key} changes: the full suite waits for the last of them.")
+        elif not left:  # the last of them
+            steps["suite"] = suite
+        else:
+            waits = (f"\n\nAfter a rebase, run only the tests for what {key} changes: the full suite on {trunk} waits for the last of "
+                     f"{master}'s sub-stories to merge, and {', '.join(left)} {'is' if len(left) == 1 else 'are'} still to.")
+        if "suite" in steps:
+            order.insert(order.index("merge") + 1, "suite")
+    listed = "\n".join(f"{n}. {steps[s]}" for n, s in enumerate(order, 1))
     first = "First do what they wrote above. Then do these" if text else "They ask you to do these"
     if "merge" in actions:
         done = """When they are done, take the "Ready for review" line off the tile and say what you did on its "Handoff:" line. Then, if nothing on the story is outstanding (every sub-task is ticked and every step above went through), close it: move the tile to the top of Done (the board's column for finished stories), with whatever the header of plans.md asks of a closed story. If anything is outstanding, leave the tile in In flight and say what on its "Handoff:" line. Then stop."""
     else:
         done = """When they are done, keep the "Ready for review" line on the tile, since the story still waits to be merged, say what you did on its "Handoff:" line, and stop. Don't move the tile to Done."""
     return (f"{said}\n\n{first}, in this order; your rules leave them to the reviewer, and this is the reviewer saying so, "
-            f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}\n\n"
+            f"for these steps, now: afterwards squashing, merging and pushing are the reviewer's again.\n\n{where}{listed}{waits}\n\n"
             f"{RERUN} If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
 
 
-def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time):
+def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time, tiles=None):
     """The message box on a tile's session: send what was typed, and any review steps ticked
     (squash, merge, push), into the same conversation (reply_text), Claude or Copilot alike. A
     session at work is interrupted: stopped mid-step, and told to act on it and carry on. An
     idle one is stopped first, as Continue does, and a gone one is resumed. Not for a paused or
     pausing story, which has Continue. None when it was sent; otherwise why not. The job is as it was, but
-    for a session that was stopped and then couldn't be resumed: that one is gone (lost)."""
+    for a session that was stopped and then couldn't be resumed: that one is gone (lost).
+    tiles: the tile index (serve.tile_index), which says whether a sub-story's merge is its
+    master's last (reply_text)."""
     text, actions = (text or "").strip(), list(actions or [])
     wrong = [a for a in actions if a not in STEPS]
     if wrong:
@@ -1061,7 +1123,7 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
                 stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 return f"its session couldn't be stopped to take the reply: {e}"
-        told = resume(store, job, reply_text(store, job, text, actions, interrupted))
+        told = resume(store, job, reply_text(store, job, text, actions, interrupted, tiles))
         if told["state"] != "started":
             why = told.get("error") or "the conversation couldn't be resumed"
             if job["state"] in ("started", "idle"):  # it was stopped to take the reply: it is gone now
