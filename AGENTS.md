@@ -11,11 +11,14 @@ This file is for any coding agent working on kandalf; `CLAUDE.md` imports it for
   in the code path. The page is one self-contained file, `kandalf/board.html`; the only bundled
   library is `kandalf/marked.min.js` (never edit it).
 - **Two readers of one format.** The server (Python) and the page (`board.html`) both parse board
-  markdown, and several rules are written twice: `pickup.IN_FLIGHT_RE` / `READY_RE` / `REPOS_RE`
-  / `MODEL_RE` and their twins in `board.html`, `pickup.is_pickup_column` and `isPickupColumn`.
-  Change one and change the other in the same commit; the comments name the twin ("same in
-  board.html"). Cover both sides: `test_pickup.py` and friends for Python, `test_page.js` for the
-  page.
+  markdown, and `kandalf/tiles.py` is the one Python module that
+  knows the grammar, and each of its rules (the attribute lines, the session line, the pickup
+  column, a tile's key and family) is written again in `board.html`. Change one and change the
+  other in the same commit; the comments name the twin ("same in board.html"). Both readers run
+  the same cases: `tile_cases.json` (what the grammar reads) and `view_cases.json` (what the
+  ledger's view allows and what the page shows without it). A new twin rule gets a case in one of
+  them, not a test on one side only. `test_tiles.py` and `test_jobs.py` run them in Python,
+  `test_page.js` in the page.
 - **`claude_code.py` is the only module that runs `claude`, `copilot_cli.py` the only one that runs `copilot`.** Keep every CLI call behind them; `agent.py` picks one by board.json's `agent`.
 - **Store vs app.** A store (`<repo>-plans`) is its own git repo holding `plans.md`,
   `backlog.md`, plan docs and `board.json`; the app is the code repo it links into at

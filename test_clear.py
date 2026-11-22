@@ -20,6 +20,7 @@ from unittest import mock
 from kandalf import gitlog
 from kandalf import serve
 from kandalf import store as stores
+from kandalf import tiles as reader
 
 HERE = Path(__file__).resolve().parent
 
@@ -66,7 +67,7 @@ class Clear(unittest.TestCase):
         return new, record
 
     def keys(self, text, column):
-        return [t["key"] or t["text"][:16] for t in serve.board_tiles(self.store, text) if t["column"] == column]
+        return [t.key or t.text[:16] for t in reader.parse(self.store, text) if t.column == column]
 
     def test_clear_archives_every_tile_in_the_column_with_its_docs(self):
         new, record = self.clear()

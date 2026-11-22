@@ -265,7 +265,10 @@ bin/kandalf               the command (a script; symlink it onto your PATH)
 kandalf/
   cli.py                  the commands
   serve.py, board.html    the server and its page
+  tiles.py                reads and edits board markdown: tiles, their attribute lines, the session line, and a
+                          snapshot of plans, backlog and the archive log (index, lineage, In flight tiles)
   pickup.py               hands a tile in In flight to an agent
+  jobs.py                 the job ledger: board-pickup.json, locked across processes, and its queries
   agent.py                the agent in use (board.json "agent")
   settings.py             the settings panel's editable board.json keys, checked and written
   claude_code.py          every call to the claude CLI
@@ -278,6 +281,8 @@ kandalf/
   autocommit.py, checkhook.py   the Claude Code hooks
   check.js                does a board file round-trip through the page's parser?
   templates/              starting files for a new store, and the default pickup.md
+tile_cases.json         cases for the board grammar: kandalf/tiles.py and board.html each read every one
+view_cases.json         cases for the ledger's view of a job and the page's fallback to the same table
 test_*.py, test_page.js   the tests
 ```
 
@@ -287,6 +292,8 @@ Run the tests:
 python3 -m unittest discover -p "test_*.py"
 node --test test_page.js
 ```
+
+The two `*_cases.json` files are run by both readers: `test_tiles.py` and `test_jobs.py` on the Python side, `test_page.js` on the page's. A rule that board.html and the server both read gets a case in one of them.
 
 The page's bottom right corner says which kandalf is serving it: `kandalf 1.1.10` for a build of a release's tag with every file committed, else `kandalf 1.1.10+dev` and when it was built, with the commit in its tooltip. `setup.py` stamps an installed copy when it is built; one run from a checkout asks git when the server starts.
 

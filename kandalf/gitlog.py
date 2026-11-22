@@ -29,6 +29,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from . import store as stores
+from . import tiles as reader
 
 BOARDS = ("plans.md", "backlog.md", "archive/archived.md")  # relative to the store
 SUBJECT_MAX = 72
@@ -41,20 +42,8 @@ def git_dir(root: Path) -> Path:
 
 def tiles(store, text: str) -> dict:
     """{key: [column, block]} for each keyed top-level tile; block is its line plus indented lines."""
-    out, col, key = {}, None, None
-    for line in text.split("\n"):
-        if line.startswith("## "):
-            col, key = line[3:].strip(), None
-        elif m := store.tile_head_re.match(line):
-            key = m.group(1)
-            out[key] = [col, line]
-        elif line.startswith("- "):
-            key = None
-        elif key and line.startswith((" ", "\t")):
-            out[key][1] += "\n" + line
-        elif line.strip():
-            key = None
-    return out
+    return {t.key: [t.column, "\n".join(line for line in t.text.split("\n") if line.strip())]
+            for t in reader.parse(store, text) if t.key}
 
 
 def tile_changes(store, name: str, old: str, new: str) -> list:

@@ -31,7 +31,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import agent, pickup
+from . import agent, jobs, pickup
 from . import store as stores
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -548,31 +548,31 @@ def set_agent(st, name: str, force: bool = False, stop=None) -> list:
     if name == old:
         return [f"the agent is {name} already"]
     stop = stop or (lambda which, sid: agent.MODULES[which].stop(sid))
-    state = pickup.load(st)
-    tracked = [j for j in state["jobs"] if j["state"] in pickup.TRACKED]
-    live = [j for j in tracked if j["state"] in ("started", "idle")]
-    if live and not force:
-        keys = ", ".join(j["key"] for j in live)
-        raise SystemExit(f"kandalf agent: {keys} {'has' if len(live) == 1 else 'have'} a {old} session. Let "
-                         f"{'it' if len(live) == 1 else 'them'} finish, or pass --force to stop {'it' if len(live) == 1 else 'them'}: "
-                         f"each story keeps its worktree, and Continue on its tile hands it to {name}.")
-    said = []
-    for j in tracked:
-        if j["state"] in ("started", "idle") and j.get("id"):
-            try:
-                stop(old, j["id"])
-            except (OSError, subprocess.SubprocessError):
-                pass
-            said.append(f"{j['key']}: {old} session {j['id']} stopped")
-        j["state"] = "lost"
-        j.pop("session", None)
+    with jobs.Ledger(st).change() as state:  # a running server's look waits, and keeps what is changed here
+        tracked = [j for j in state["jobs"] if j["state"] in jobs.TRACKED]
+        live = [j for j in tracked if j["state"] in ("started", "idle")]
+        if live and not force:
+            keys = ", ".join(j["key"] for j in live)
+            raise SystemExit(f"kandalf agent: {keys} {'has' if len(live) == 1 else 'have'} a {old} session. Let "
+                             f"{'it' if len(live) == 1 else 'them'} finish, or pass --force to stop {'it' if len(live) == 1 else 'them'}: "
+                             f"each story keeps its worktree, and Continue on its tile hands it to {name}.")
+        said = []
+        for j in tracked:
+            if j["state"] in ("started", "idle") and j.get("id"):
+                try:
+                    stop(old, j["id"])
+                except (OSError, subprocess.SubprocessError):
+                    pass
+                said.append(f"{j['key']}: {old} session {j['id']} stopped")
+            jobs.lose(j)
+            j.pop("session", None)
+            j.pop("pausing", None)
+        cfg = read_config(st)  # written while the ledger is held, so no look starts a waiting job on the old agent
+        cfg["agent"] = name
+        model = cfg.pop("model", None)
+        write_config(st, cfg, f"board: agent {name}")
     if tracked:
-        pickup.save(st, state)
         said.append(f"{', '.join(j['key'] for j in tracked)}: Continue on the tile starts {name} in the story's worktree")
-    cfg = read_config(st)
-    cfg["agent"] = name
-    model = cfg.pop("model", None)
-    write_config(st, cfg, f"board: agent {name}")
     agent.use(name)
     said.insert(0, f"board.json: agent {name}" + (f"; model {model} (for {old}) dropped, so sessions run on {agent.default_model()}" if model else ""))
     said += ["tiles' own Model: lines are left as they are, so check they name a model " + name + " has",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pickup (pickup.py): a tile that lands in In flight is handed to a background Claude
-session, one at a time. No session is started here: start and the list of live sessions
-are passed in.
+session, one at a time. No session is started here: a sessions adapter (Fake, or a
+pickup.Sessions given the effects a test needs) is passed in.
 
     python3 -m unittest test_pickup
 """
@@ -26,6 +26,7 @@ from kandalf import init
 from kandalf import pickup
 from kandalf import serve
 from kandalf import store as stores
+from kandalf import tiles as reader
 
 PLANS = """# Plans
 
@@ -53,14 +54,24 @@ def git(path, *args):
     subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True)
 
 
-class Fake:
-    """Stands in for the claude CLI: records what was started, and says which are live."""
+def in_flight(store, text):
+    """The In flight tiles of a plans board's text, as pickup is given them: the store's backlog
+    and archive log, if it has them, are read from disk."""
+    files = {"plans.md": text}
+    files.update({n: (store.dir / n).read_text(encoding="utf-8") for n in (reader.BACKLOG, reader.ARCHIVE_LOG) if (store.dir / n).is_file()})
+    return reader.Snapshot(store, files).in_flight()
 
-    def __init__(self):
+
+class Fake(pickup.Sessions):
+    """The second sessions adapter: stands in for the claude CLI, records what was started and
+    stopped, and says which are live. Any other effect is given as to pickup.Sessions."""
+
+    def __init__(self, **effects):
         self.started, self.resumed, self.switched, self.live, self.idle, self.n = [], [], [], set(), set(), 0
         self.stopped, self.told = [], []  # sessions stopped, and what each resumed one was told
         self.asking = {}  # {id: "interrupted" or "question"} for an idle session that waits for input
         self.blocked = set()  # sessions the CLI lists as waiting for input mid-turn
+        super().__init__(**effects)
 
     def why(self, sid):
         return self.asking.get(sid)
@@ -87,6 +98,10 @@ class Fake:
     def sessions(self):
         """{id: "busy" or "idle"} for the sessions that are still there."""
         return {sid: "waiting" if sid in self.blocked else "idle" if sid in self.idle else "busy" for sid in self.live}
+
+    def stop(self, sid):
+        self.stopped.append(sid)
+        self.live.discard(sid)
 
 
 # What a session is told today, for a store with no pickup.md: the prompt for a plain job and a
@@ -162,37 +177,37 @@ class Reading(unittest.TestCase):
         self.store = stores.Store(tempfile.mkdtemp())
 
     def test_the_in_flight_tiles_are_the_keyed_ones_in_that_column(self):
-        tiles = serve.in_flight_tiles(self.store, PLANS)
+        tiles = in_flight(self.store, PLANS)
         self.assertEqual([(t["key"], t["title"], t["parent"]) for t in tiles],
                          [("PLN-70", "Dark mode", None), ("PLN-75", "Theme switch: the System option!", "PLN-70"),
                           ("PLN-80", "On its own", None), ("PLN-81", "Hands off", None)])
         self.assertIn("**Agree the scope.**", tiles[0]["text"])
 
     def test_a_master_that_arrives_with_sub_stories_gives_each_of_them_a_job_and_takes_none(self):
-        jobs = pickup.entered(["PLN-80"], serve.in_flight_tiles(self.store, PLANS))
+        jobs = pickup.entered(["PLN-80"], in_flight(self.store, PLANS))
         self.assertEqual([(j["key"], j["master"], j["limit"]) for j in jobs], [("PLN-75", "PLN-70", 2)])
         self.assertIn("PLN-75 **Theme", jobs[0]["text"])
         self.assertIn("**Agree the scope.**", jobs[0]["text"])  # the master's tile, to read
 
     def test_a_sub_story_that_joins_its_master_in_flight_is_one_of_its_family(self):
-        jobs = pickup.entered(["PLN-70", "PLN-80"], serve.in_flight_tiles(self.store, PLANS))
+        jobs = pickup.entered(["PLN-70", "PLN-80"], in_flight(self.store, PLANS))
         self.assertEqual([(j["key"], j["master"], j["limit"]) for j in jobs], [("PLN-75", "PLN-70", 2)])
 
     def test_the_master_s_sessions_line_or_the_store_sets_how_many_work_at_once(self):
         family = "## In flight\n\n- [ ] PLN-01 **Master.**\n  Sessions: 3\n" + "".join(f"- [ ] PLN-0{n} **Kid.**\n  Part of PLN-01.\n" for n in (2, 3))
-        tiles = serve.in_flight_tiles(self.store, family)
+        tiles = in_flight(self.store, family)
         self.assertEqual([(j["key"], j["limit"]) for j in pickup.entered([], tiles)], [("PLN-02", 3), ("PLN-03", 3)])
-        plain = serve.in_flight_tiles(self.store, family.replace("  Sessions: 3\n", ""))
+        plain = in_flight(self.store, family.replace("  Sessions: 3\n", ""))
         self.assertEqual([j["limit"] for j in pickup.entered([], plain, 4)], [4, 4])
-        alone = pickup.entered([], serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-01 **Master.**\n"))
+        alone = pickup.entered([], in_flight(self.store, "## In flight\n\n- [ ] PLN-01 **Master.**\n"))
         self.assertEqual([(j["key"], j.get("limit")) for j in alone], [("PLN-01", None)])  # no sub-stories: its own job
 
     def test_no_pickup_on_a_master_covers_its_sub_stories(self):
         family = "## In flight\n\n- [ ] PLN-01 **Master.** No pickup.\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n"
-        self.assertEqual(pickup.entered([], serve.in_flight_tiles(self.store, family)), [])
+        self.assertEqual(pickup.entered([], in_flight(self.store, family)), [])
 
     def test_a_tile_that_says_no_pickup_is_left_alone(self):
-        self.assertEqual(pickup.entered(["PLN-70", "PLN-75", "PLN-80"], serve.in_flight_tiles(self.store, PLANS)), [])
+        self.assertEqual(pickup.entered(["PLN-70", "PLN-75", "PLN-80"], in_flight(self.store, PLANS)), [])
 
     def test_the_branch_and_worktree_are_named_after_the_tile(self):
         self.store.app = Path("/x/myapp")
@@ -211,11 +226,11 @@ class Reading(unittest.TestCase):
         self.assertEqual(pickup.model_for(cheaper, "- [ ] PLN-01 **One.**\n  Model: opus"), "opus")
 
     def test_a_job_carries_its_model_to_the_session(self):
-        tiles = serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-01 **One.**\n  Model: sonnet\n- [ ] PLN-02 **Two.**\n")
+        tiles = in_flight(self.store, "## In flight\n\n- [ ] PLN-01 **One.**\n  Model: sonnet\n- [ ] PLN-02 **Two.**\n")
         fake = Fake()
         with contextlib.redirect_stdout(io.StringIO()):
-            pickup.tick(self.store, [], start=fake.start, sessions=fake.sessions)
-            pickup.tick(self.store, tiles, start=fake.start, sessions=fake.sessions)
+            pickup.tick(self.store, [], sessions=fake)
+            pickup.tick(self.store, tiles, sessions=fake)
         self.assertEqual([(j["key"], j["model"]) for j in pickup.load(self.store)["jobs"]], [("PLN-01", "sonnet"), ("PLN-02", "opus")])
         self.assertEqual(pickup.session_args({"key": "PLN-01", "title": "One", "model": "sonnet"}),
                          ["--model", "sonnet", "-n", "PLN-01 One"])
@@ -223,7 +238,7 @@ class Reading(unittest.TestCase):
 
     def test_the_prompt_carries_the_tile_and_the_rules(self):
         self.store.app = Path("/x/myapp")
-        job = pickup.entered([], serve.in_flight_tiles(self.store, PLANS))[0]
+        job = pickup.entered([], in_flight(self.store, PLANS))[0]
         text = pickup.prompt(self.store, job, "pln-70-dark-mode", Path("/x/myapp-pln-70"))
         self.assertEqual(job["key"], "PLN-75")
         for part in ("PLN-70", "PLN-75", "**Agree the scope.**", "pln-70-dark-mode", "Don't merge", "**Ready for review:**", "Do only PLN-75"):
@@ -232,7 +247,7 @@ class Reading(unittest.TestCase):
     def test_a_store_without_pickup_md_tells_its_sessions_exactly_what_it_did_before(self):
         st = stores.Store("/x/plans")  # no pickup.md there
         plain = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
-        sub = pickup.entered([], serve.in_flight_tiles(st, PLANS))[0]
+        sub = pickup.entered([], in_flight(st, PLANS))[0]
         for name, job in (("plain", plain), ("sub", sub)):
             for again in (False, True):
                 tail = PROMPT_TAIL.replace("\n\nWhen every sub-task", (TESTS_ALONE if name == "plain" else TESTS_SUB) + "\n\nWhen every sub-task")
@@ -252,7 +267,7 @@ class Reading(unittest.TestCase):
 
     def test_a_sub_story_is_told_the_same_and_named_as_its_master_s(self):
         st = stores.Store(tempfile.mkdtemp())
-        sub = pickup.entered([], serve.in_flight_tiles(st, PLANS))[0]
+        sub = pickup.entered([], in_flight(st, PLANS))[0]
         text = pickup.prompt(st, sub, "b", Path("/x/wt"))
         for part in ("run only the tests that cover what it changes",
                      "stands in for any rule, in pickup.md or CLAUDE.md, that asks for every test tier",
@@ -267,24 +282,24 @@ class Reading(unittest.TestCase):
 
     def test_a_store_that_names_its_pickup_column_has_only_that_column_s_tiles_picked_up(self):
         board = "## In flight\n\n- [ ] PLN-01 **One.**\n\n## building \n\n- [ ] PLN-02 **Two.**\n\n## Doing\n\n- [ ] PLN-03 **Three.**\n"
-        self.assertEqual([t["key"] for t in serve.in_flight_tiles(self.store, board)], ["PLN-01", "PLN-03"])  # unset: any In flight column
+        self.assertEqual([t["key"] for t in in_flight(self.store, board)], ["PLN-01", "PLN-03"])  # unset: any In flight column
         (self.store.dir / "board.json").write_text(json.dumps({"pickupColumn": " Building"}))
         named = stores.Store(self.store.dir)
-        self.assertEqual([t["key"] for t in serve.in_flight_tiles(named, board)], ["PLN-02"])
-        self.assertFalse(pickup.is_pickup_column(named, "In flight"))
+        self.assertEqual([t["key"] for t in in_flight(named, board)], ["PLN-02"])
+        self.assertFalse(reader.is_pickup_column(named, "In flight"))
 
     def test_an_in_flight_column_under_another_name_is_still_picked_up(self):
         for name in ("In flight", "in-flight", "Inflight", "In progress", "In Progrees", "In-Progress",
                      "Progress", "Doing", "WIP", "Working", "Underway", "Under way", "Ongoing", "Active", "🚀 In progress"):
-            self.assertTrue(pickup.is_pickup_column(self.store, name), name)
+            self.assertTrue(reader.is_pickup_column(self.store, name), name)
         for name in ("To do", "Done", "Bugs", "Backlog", "Building", "Not doing", "Inactive", "Ready for review"):
-            self.assertFalse(pickup.is_pickup_column(self.store, name), name)
+            self.assertFalse(reader.is_pickup_column(self.store, name), name)
 
     def test_a_done_column_under_another_name_counts_as_done(self):
         for name in ("Done", "Shipped", "Completed", "Finished", "Merged", "Released", "Closed"):
-            self.assertTrue(serve.DONE_COL_RE.search(name), name)
+            self.assertTrue(reader.DONE_COL_RE.search(name), name)
         for name in ("Not done", "Undone", "Shipping", "In flight", "To do"):
-            self.assertFalse(serve.DONE_COL_RE.search(name), name)
+            self.assertFalse(reader.DONE_COL_RE.search(name), name)
 
     def test_the_store_s_pickup_md_takes_the_place_of_the_default_rules(self):
         st = stores.Store(tempfile.mkdtemp())
@@ -337,19 +352,16 @@ class Reading(unittest.TestCase):
 class Queue(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())
-        self.fake = Fake()
         self.clock = 1000
         self.noted = []  # what the server was told to write into a tile: (key, model)
+        self.fake = Fake(now=lambda: self.clock, announce=lambda store, job: self.noted.append((job["key"], job["model"])))
         quiet = contextlib.redirect_stdout(io.StringIO())  # pickup logs to the console
         quiet.__enter__()
         self.addCleanup(quiet.__exit__, None, None, None)
 
     def tick(self, text, later=600):
         self.clock += later  # by default, long enough that a session just started has shown itself busy
-        return pickup.tick(self.store, serve.in_flight_tiles(self.store, text), start=self.fake.start,
-                           sessions=self.fake.sessions, switch=self.fake.switch, why=self.fake.why, now=lambda: self.clock,
-                           resume=self.fake.resume, stop=self.stop,
-                           on_start=lambda store, job: self.noted.append((job["key"], job["model"])))
+        return pickup.tick(self.store, in_flight(self.store, text), sessions=self.fake)
 
     def jobs(self):
         return [(j["key"], j["state"]) for j in pickup.load(self.store)["jobs"]]
@@ -363,12 +375,21 @@ class Queue(unittest.TestCase):
         board = ("## In flight\n\n- [ ] PLN-01 **Fresh.**\n\n- [ ] PLN-02 **Mine.**\n  No pickup.\n\n"
                  "- [ ] PLN-03 **Had one.**\n  Claude session `ab12cd34`: `claude attach ab12cd34`.\n\n## Done\n")
         self.tick(board)  # the first look: all three are someone's
-        tiles = serve.in_flight_tiles(self.store, board)
+        tiles = in_flight(self.store, board)
         self.assertEqual(pickup.adopt(self.store, tiles), ["PLN-01"])
         self.tick(board)
         self.assertEqual(self.fake.started, ["PLN-01"])
         self.assertEqual(pickup.adopt(self.store, tiles), [])  # it has a job now
-        self.assertIn('  PLN-02 "Mine": no session: its tile says No pickup', pickup.startup_report(self.store, tiles, sessions=lambda: {}))
+        self.assertIn('  PLN-02 "Mine": no session: its tile says No pickup', pickup.startup_report(self.store, tiles, sessions=pickup.Sessions(sessions=lambda: {})))
+
+    def test_a_starred_tile_in_flight_is_picked_up_like_a_dashed_one(self):
+        self.tick("## In flight\n")
+        self.tick("## In flight\n\n* [ ] PLN-06 **Starred.**\n")
+        self.assertEqual(self.fake.started, ["PLN-06"])
+
+    def test_a_description_quoting_a_session_line_is_not_a_session_on_the_tile(self):
+        board = "## In flight\n\n- [ ] PLN-01 **Quotes.**\n  The old Claude session `ab12cd34` is what this replaces.\n"
+        self.assertEqual(pickup.adopt(self.store, in_flight(self.store, board)), ["PLN-01"])
 
     def test_a_tile_in_flight_that_loses_its_no_pickup_is_picked_up(self):
         held = "## In flight\n\n- [ ] PLN-05 **Mine.**\n  No pickup. Rename things.\n\n## Done\n"
@@ -559,7 +580,7 @@ class Queue(unittest.TestCase):
         self.assertEqual((job["state"], job["model"], job["id"]), ("started", "sonnet", "s1"))
 
     def restart(self, key):
-        return pickup.restart(self.store, key, start=self.fake.start, resume=self.fake.resume)
+        return pickup.restart(self.store, key, sessions=self.fake)
 
     def test_restart_resumes_the_same_session(self):
         self.tick("## In flight\n")
@@ -591,11 +612,7 @@ class Queue(unittest.TestCase):
         self.assertFalse(self.restart("PLN-09"))  # never picked up
 
     def nudge(self, key):
-        return pickup.restart(self.store, key, start=self.fake.start, resume=self.fake.resume, stop=self.stop, nudge=True)
-
-    def stop(self, sid):
-        self.fake.stopped.append(sid)
-        self.fake.live.discard(sid)
+        return pickup.restart(self.store, key, sessions=self.fake, nudge=True)
 
     def test_continue_stops_a_session_at_work_and_resumes_it_told_to_carry_on(self):
         self.tick("## In flight\n")
@@ -639,7 +656,8 @@ class Queue(unittest.TestCase):
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
         def stuck(sid):
             raise OSError("claude stop hung")
-        self.assertFalse(pickup.restart(self.store, "PLN-01", start=self.fake.start, resume=self.fake.resume, stop=stuck, nudge=True))
+        self.fake.stop = stuck
+        self.assertFalse(pickup.restart(self.store, "PLN-01", sessions=self.fake, nudge=True))
         self.assertEqual((self.fake.resumed, self.jobs()), ([], [("PLN-01", "started")]))
 
     def test_continue_is_only_for_a_tile_the_board_started_a_session_for(self):
@@ -649,7 +667,8 @@ class Queue(unittest.TestCase):
         self.assertEqual(self.fake.stopped, [])
 
     def pause(self, key, resume=None):
-        return pickup.pause(self.store, key, resume=resume or self.fake.resume, stop=self.stop, now=lambda: self.clock)
+        with mock.patch.object(self.fake, "resume", resume or self.fake.resume):  # for this call only
+            return pickup.pause(self.store, key, sessions=self.fake)
 
     def job(self, key="PLN-01"):
         return next(j for j in reversed(pickup.load(self.store)["jobs"]) if j["key"] == key)
@@ -711,7 +730,8 @@ class Queue(unittest.TestCase):
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
         def stuck(sid):
             raise OSError("claude stop hung")
-        self.assertFalse(pickup.pause(self.store, "PLN-01", resume=self.fake.resume, stop=stuck, now=lambda: self.clock))
+        self.fake.stop = stuck
+        self.assertFalse(pickup.pause(self.store, "PLN-01", sessions=self.fake))
         self.assertEqual((self.fake.resumed, self.jobs()), ([], [("PLN-01", "started")]))
 
     def test_pause_on_a_session_still_writing_its_handoff_stops_it_now(self):
@@ -825,14 +845,16 @@ class Queue(unittest.TestCase):
         job = {"key": "PLN-01", "branch": "b", "worktree": "/x/app", "ready": True}
         told = pickup.reply_text(self.store, job, "", ["merge", "push"])
         self.assertNotIn("Full suite", told)
-        told = pickup.reply_text(self.store, job, "", ["merge", "push"], texts={"PLN-01": "- [ ] PLN-01 **One.**\n  Tests: full\n"})
+        told = pickup.reply_text(self.store, job, "", ["merge", "push"],
+                                 snap=reader.Snapshot(self.store, {"plans.md": "## In flight\n\n- [ ] PLN-01 **One.**\n  Tests: full\n"}))
         self.assertIn("Run the full suite on main, every test tier this repo has", told)
         self.assertIn("- [ ] **Full suite** on main", told)
         at = [told.index(w) for w in ("fast-forward main to it", "Run the full suite on main", "Then push main")]
         self.assertEqual(at, sorted(at))
 
     def reply(self, key, text, resume=None, actions=()):
-        return pickup.reply(self.store, key, text, actions, resume=resume or self.fake.resume, stop=self.stop, now=lambda: self.clock)
+        with mock.patch.object(self.fake, "resume", resume or self.fake.resume):  # for this call only
+            return pickup.reply(self.store, key, text, actions, sessions=self.fake)
 
     def test_a_reply_goes_into_the_session_that_waits_for_input(self):
         self.tick("## In flight\n")
@@ -903,10 +925,8 @@ class Queue(unittest.TestCase):
         self.tick(family)
         self.fake.idle.add("s1")
         self.tick(family)
-        tiles = serve.tile_index(self.store, {"plans.md": family})
-        self.assertIsNone(pickup.reply(self.store, "PLN-01", "", ["merge"], resume=self.fake.resume, stop=self.stop,
-                                       now=lambda: self.clock, tiles=tiles,
-                                       texts={"PLN-02": "- [ ] PLN-02 **Master.**\n  Tests: full\n"}))
+        snap = reader.Snapshot(self.store, {"plans.md": family.replace("**Master.**\n", "**Master.**\n  Tests: full\n")})
+        self.assertIsNone(pickup.reply(self.store, "PLN-01", "", ["merge"], sessions=self.fake, snap=snap))
         self.assertIn("Run the full suite on main", self.fake.told[-1])
 
     def test_a_session_told_to_merge_that_moves_its_tile_to_done_is_left_to_finish(self):
@@ -953,70 +973,82 @@ class Queue(unittest.TestCase):
 
     def test_the_sub_stories_still_to_merge_are_the_unfinished_ones_below_its_master_but_umbrellas(self):
         st = stores.Store(tempfile.mkdtemp())
-        tiles = serve.tile_index(st, {"plans.md": self.FAMILY_BOARD})
+        snap = reader.Snapshot(st, {"plans.md": self.FAMILY_BOARD})
         job = {"key": "PLN-75", "master": "PLN-70"}
-        self.assertEqual(pickup.still_to_merge(st, job, tiles), ["PLN-76", "PLN-77", "PLN-79"])  # not PLN-74 (done) nor PLN-78 (an umbrella)
+        self.assertEqual(pickup.still_to_merge(st, job, snap), ["PLN-76", "PLN-77", "PLN-79"])  # not PLN-74 (done) nor PLN-78 (an umbrella)
         last = ("## In flight\n\n- [ ] PLN-70 **Dark mode.**\n- [ ] PLN-75 **Switch.**\n  Part of PLN-70.\n- [ ] PLN-78 **Inner.**\n  Part of PLN-70.\n"
                 "\n## Done\n\n- [x] PLN-74 **C.** Part of PLN-70.\n- [x] PLN-76 **T.** Part of PLN-70.\n- [x] PLN-77 **D.** Part of PLN-70.\n"
                 "- [x] PLN-79 **I.** Part of PLN-78.\n")
-        self.assertEqual(pickup.still_to_merge(st, job, serve.tile_index(st, {"plans.md": last})), [])
-        self.assertIsNone(pickup.still_to_merge(st, {"key": "PLN-80"}, tiles))  # not a sub-story
+        self.assertEqual(pickup.still_to_merge(st, job, reader.Snapshot(st, {"plans.md": last})), [])
+        self.assertIsNone(pickup.still_to_merge(st, {"key": "PLN-80"}, snap))  # not a sub-story
         self.assertIsNone(pickup.still_to_merge(st, job, None))  # no index to go by
+
+    def test_a_sub_story_whose_master_is_archived_runs_the_full_suite_on_its_own_tile(self):
+        st = stores.Store(tempfile.mkdtemp())
+        job = {"key": "PLN-80", "of": "PLN-41", "branch": "b", "worktree": "/x/app", "ready": True}
+        snap = reader.Snapshot(st, {
+            "plans.md": "## In flight\n\n- [ ] PLN-80 **S.**\n  Part of PLN-41.\n  Tests: full\n",
+            "archive/archived.md": "# Archived plans\n\n## Archived\n\n- [x] PLN-41 **M.**\n  Tests: full\n"})
+        told = pickup.reply_text(st, job, "", ["merge"], snap=snap)
+        self.assertIn("It is a sub-task on PLN-80's tile", told)
+        self.assertNotIn("PLN-41", told)
+
+    def test_a_master_in_a_done_column_still_owns_the_full_suite(self):
+        st = stores.Store(tempfile.mkdtemp())
+        job = {"key": "PLN-80", "of": "PLN-41", "branch": "b", "worktree": "/x/app", "ready": True}
+        board = ("## In flight\n\n- [ ] PLN-80 **S.**\n  Part of PLN-41.\n{more}\n## Done\n\n- [x] PLN-41 **M.**\n  Tests: full\n")
+        last = reader.Snapshot(st, {"plans.md": board.format(more="")})
+        self.assertIn("It is a sub-task on PLN-41's tile", pickup.reply_text(st, job, "", ["merge"], snap=last))
+        early = reader.Snapshot(st, {"plans.md": board.format(more="- [ ] PLN-81 **T.**\n  Part of PLN-41.\n")})
+        self.assertIn("waits for the last of PLN-41's sub-stories to merge, and PLN-81 is still to",
+                      pickup.reply_text(st, job, "", ["merge"], snap=early))
 
     def test_a_sub_story_s_merge_runs_the_full_suite_only_when_it_is_the_last_and_asked(self):
         st = stores.Store(tempfile.mkdtemp())
         (st.dir / "board.json").write_text(json.dumps({"fullSuiteOnMerge": True}))
         st = stores.Store(st.dir)
         job = {"key": "PLN-75", "master": "PLN-70", "branch": "b", "worktree": "/x/app", "ready": True}
-        done = {"PLN-70": {"parent": None, "done": False}, "PLN-75": {"parent": "PLN-70", "done": False},
-                "PLN-74": {"parent": "PLN-70", "done": True}}
-        told = pickup.reply_text(st, job, "", ["squash", "merge", "push"], tiles=done)
+        board = "## In flight\n\n- [ ] PLN-70 **M.**\n- [ ] PLN-75 **S.**\n  Part of PLN-70.\n{more}\n## Done\n\n- [x] PLN-74 **C.**\n  Part of PLN-70.\n"
+        done = reader.Snapshot(st, {"plans.md": board.format(more="")})
+        told = pickup.reply_text(st, job, "", ["squash", "merge", "push"], snap=done)
         at = [told.index(w) for w in ("fast-forward main to it", "Run the full suite on main", "Then push main")]
         self.assertEqual(at, sorted(at))
         self.assertIn("add `- [ ] **Full suite** on main` there", told)  # a sub-task on PLN-70's tile
         self.assertIn("stop before any step after it", told)  # a red suite isn't pushed
-        left = {**done, "PLN-76": {"parent": "PLN-70", "done": False}}
-        told = pickup.reply_text(st, job, "", ["merge"], tiles=left)
+        left = reader.Snapshot(st, {"plans.md": board.format(more="- [ ] PLN-76 **T.**\n  Part of PLN-70.\n")})
+        told = pickup.reply_text(st, job, "", ["merge"], snap=left)
         self.assertNotIn("Run the full suite", told)
         self.assertIn("waits for the last of PLN-70's sub-stories to merge, and PLN-76 is still to", told)
-        told = pickup.reply_text(st, job, "", ["merge"])  # no index: the session checks the board itself
+        told = pickup.reply_text(st, job, "", ["merge"])  # no snapshot: the session checks the board itself
         self.assertIn("If every other sub-story of PLN-70 is in Done or archived", told)
-        self.assertNotIn("Run the full suite", pickup.reply_text(st, job, "", ["squash"], tiles=done))  # not merged yet
-        texts = {"PLN-70": "- [ ] PLN-70 **M.**\n  Tests: full\n"}
+        self.assertNotIn("Run the full suite", pickup.reply_text(st, job, "", ["squash"], snap=done))  # not merged yet
         off = stores.Store(tempfile.mkdtemp())  # neither the store nor the master's tile asks
-        self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], tiles=done, texts={"PLN-70": "- [ ] PLN-70 **M.**\n"}))
-        self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], tiles=left, texts={"PLN-70": "- [ ] PLN-70 **M.**\n"}))
-        self.assertIn("Run the full suite on main", pickup.reply_text(off, job, "", ["merge"], tiles=done, texts=texts))  # the tile asks
-        self.assertIn("waits for the last", pickup.reply_text(off, job, "", ["merge"], tiles=left, texts=texts))
-
-    def test_a_tests_line_says_full_or_affected_in_any_case(self):
-        self.assertEqual(pickup.tests_named("X\n  tests: FULL."), "full")
-        self.assertEqual(pickup.tests_named("  Tests: `affected`"), "affected")
-        self.assertIsNone(pickup.tests_named("  Tests: some"))
-        self.assertIsNone(pickup.tests_named("a story with no line"))
+        self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], snap=done))
+        self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], snap=left))
+        asks = lambda more: reader.Snapshot(off, {"plans.md": board.format(more=more).replace("**M.**\n", "**M.**\n  Tests: full\n")})
+        self.assertIn("Run the full suite on main", pickup.reply_text(off, job, "", ["merge"], snap=asks("")))  # the tile asks
+        self.assertIn("waits for the last", pickup.reply_text(off, job, "", ["merge"], snap=asks("- [ ] PLN-76 **T.**\n  Part of PLN-70.\n")))
 
     def test_the_nearest_tests_line_decides_and_the_store_s_setting_is_the_fallback(self):
         st = stores.Store(tempfile.mkdtemp())
-        tiles = {"PLN-70": {"parent": None}, "PLN-75": {"parent": "PLN-70"}}
-        texts = {"PLN-70": "- [ ] PLN-70 **M.**\n  Tests: full\n", "PLN-75": "- [ ] PLN-75 **S.**\n"}
-        self.assertTrue(pickup.full_suite_on_merge(st, "PLN-75", texts, tiles))
-        texts["PLN-75"] += "  Tests: affected\n"
-        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", texts, tiles))
-        plain = {"PLN-70": "- [ ] PLN-70 **M.**\n", "PLN-75": "- [ ] PLN-75 **S.**\n"}
-        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", plain, tiles))
-        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", None, tiles))
+        board = lambda master, sub: f"## In flight\n\n- [ ] PLN-70 **M.**\n{master}- [ ] PLN-75 **S.**\n  Part of PLN-70.\n{sub}"
+        snap = lambda store, master="", sub="": reader.Snapshot(store, {"plans.md": board(master, sub)})
+        full, affected = "  Tests: full\n", "  Tests: affected\n"
+        self.assertTrue(pickup.full_suite_on_merge(st, "PLN-75", snap(st, master=full)))
+        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", snap(st, master=full, sub=affected)))
+        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", snap(st)))
+        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", None))
         (st.dir / "board.json").write_text(json.dumps({"fullSuiteOnMerge": True}))
         on = stores.Store(st.dir)
-        self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", plain, tiles))
-        self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", None, None))
-        own = {"PLN-70": "- [ ] PLN-70 **M.**\n", "PLN-75": "- [ ] PLN-75 **S.**\n  Tests: affected\n"}
-        self.assertFalse(pickup.full_suite_on_merge(on, "PLN-75", own, tiles))
+        self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", snap(on)))
+        self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", None))
+        self.assertFalse(pickup.full_suite_on_merge(on, "PLN-75", snap(on, sub=affected)))
 
     def test_a_story_in_two_repos_runs_the_full_suite_in_each(self):
         st = stores.Store(tempfile.mkdtemp())
         job = {"key": "PLN-01", "branch": "b", "ready": True,
                "repos": [{"name": "api", "worktree": "/x/api-wt", "trunk": "dev"}, {"name": "web", "worktree": "/x/web-wt", "trunk": "main"}]}
-        told = pickup.reply_text(st, job, "", ["merge"], texts={"PLN-01": "- [ ] PLN-01 **A.**\n  Tests: full\n"})
+        told = pickup.reply_text(st, job, "", ["merge"], snap=reader.Snapshot(st, {"plans.md": "## In flight\n\n- [ ] PLN-01 **A.**\n  Tests: full\n"}))
         self.assertIn("- [ ] **Full suite** on api dev", told)
         self.assertIn("- [ ] **Full suite** on web main", told)
 
@@ -1111,10 +1143,10 @@ class Queue(unittest.TestCase):
         self.pause("PLN-01", resume=lambda store, job, text=None: {"state": "failed"})
         both = "## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n"
         self.tick(both)  # PLN-02 takes the slot
-        self.assertTrue(pickup.requeue(self.store, "PLN-01", now=lambda: self.clock))
+        self.assertTrue(pickup.requeue(self.store, "PLN-01", sessions=self.fake))
         self.assertEqual(self.jobs(), [("PLN-02", "started"), ("PLN-01", "waiting")])
-        self.assertFalse(pickup.requeue(self.store, "PLN-01"))  # queued already
-        self.assertFalse(pickup.requeue(self.store, "PLN-02"))  # at work, not paused
+        self.assertFalse(pickup.requeue(self.store, "PLN-01", sessions=self.fake))  # queued already
+        self.assertFalse(pickup.requeue(self.store, "PLN-02", sessions=self.fake))  # at work, not paused
         self.tick(both)
         self.assertEqual(self.fake.started, ["PLN-01", "PLN-02"])  # still waits its turn
         self.fake.idle.add("s2")
@@ -1167,7 +1199,7 @@ class Queue(unittest.TestCase):
         (st.dir / "backlog.md").write_text("## Feature\n\n- [ ] PLN-01 **Grand plan.**\n  The [charter](https://example.com/charter).\n")
         board = ("## To do\n\n- [ ] PLN-02 **Ladder look.**\n  Part of PLN-01. From the [design canvas](https://example.com/canvas).\n  No pickup. Model: haiku\n"
                  "\n## In flight\n\n- [ ] PLN-03 **Session page.**\n  Part of PLN-02.\n- [ ] PLN-04 **On its own.**\n")
-        tiles = serve.in_flight_tiles(st, board)
+        tiles = in_flight(st, board)
         sub_story, alone = tiles
         self.assertEqual(sub_story["of"], "PLN-02")
         self.assertIn("design canvas", sub_story["context"])
@@ -1203,9 +1235,9 @@ class Queue(unittest.TestCase):
         self.tick("## In flight\n")
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n")
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n")
-        self.assertTrue(pickup.start_now(self.store, "PLN-02", start=self.fake.start))
+        self.assertTrue(pickup.start_now(self.store, "PLN-02", sessions=self.fake))
         self.assertEqual(self.jobs(), [("PLN-01", "started"), ("PLN-02", "started")])
-        self.assertFalse(pickup.start_now(self.store, "PLN-02", start=self.fake.start))  # nothing waiting
+        self.assertFalse(pickup.start_now(self.store, "PLN-02", sessions=self.fake))  # nothing waiting
 
     def test_the_console_says_what_was_picked_up_queued_and_ended(self):
         out = io.StringIO()
@@ -1227,8 +1259,8 @@ class Queue(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.tick("## In flight\n")
-            pickup.tick(self.store, serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-01 **One.**\n"),
-                        start=lambda store, job: {"state": "failed", "error": "no claude"}, sessions=self.fake.sessions)
+            pickup.tick(self.store, in_flight(self.store, "## In flight\n\n- [ ] PLN-01 **One.**\n"),
+                        sessions=pickup.Sessions(start=lambda store, job: {"state": "failed", "error": "no claude"}, sessions=self.fake.sessions))
         self.assertIn('pickup: PLN-01 "One" could not be started: no claude', out.getvalue())
 
     def test_a_waiting_tile_moved_out_of_in_flight_is_dropped(self):
@@ -1249,8 +1281,8 @@ class Queue(unittest.TestCase):
         def broken(store, job):
             return {"state": "failed", "error": "no claude"}
         self.tick("## In flight\n")
-        pickup.tick(self.store, serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-01 **One.**\n"),
-                    start=broken, sessions=self.fake.sessions)
+        pickup.tick(self.store, in_flight(self.store, "## In flight\n\n- [ ] PLN-01 **One.**\n"),
+                    sessions=pickup.Sessions(start=broken, sessions=self.fake.sessions))
         self.assertEqual(pickup.load(self.store)["jobs"][0]["error"], "no claude")
         self.tick("## In flight\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n")
         self.assertEqual(self.jobs(), [("PLN-01", "failed"), ("PLN-02", "started")])
@@ -1273,14 +1305,14 @@ class Startup(unittest.TestCase):
 
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())
-        self.tiles = serve.in_flight_tiles(self.store, self.BOARD)
+        self.tiles = in_flight(self.store, self.BOARD)
         pickup.save(self.store, {"inflight": ["PLN-01"], "jobs": [
             {"key": "PLN-04", "title": "Queued one", "state": "waiting", "behind": "PLN-01"},
             {"key": "PLN-09", "title": "Moved to Done", "state": "started", "id": "dddd4444"}]})
 
     def test_each_in_flight_tile_is_listed_with_its_session(self):
         there = {"aaaa1111": "busy", "bbbb2222": "idle", "dddd4444": "busy"}
-        self.assertEqual(pickup.startup_report(self.store, self.tiles, sessions=lambda: there), [
+        self.assertEqual(pickup.startup_report(self.store, self.tiles, sessions=pickup.Sessions(sessions=lambda: there)), [
             "5 in flight:",
             '  PLN-01 "At work": session aaaa1111 at work',
             '  PLN-02 "Idle one": session bbbb2222 idle',
@@ -1291,10 +1323,10 @@ class Startup(unittest.TestCase):
             '  PLN-09 "Moved to Done": session dddd4444 at work'])
 
     def test_it_says_so_when_the_sessions_cannot_be_listed_or_nothing_is_in_flight(self):
-        lines = pickup.startup_report(self.store, self.tiles[:1], sessions=lambda: None)
+        lines = pickup.startup_report(self.store, self.tiles[:1], sessions=pickup.Sessions(sessions=lambda: None))
         self.assertEqual(lines, ["1 in flight:", '  PLN-01 "At work": session aaaa1111 (the Claude sessions could not be listed)'])
         pickup.save(self.store, {"inflight": [], "jobs": []})
-        self.assertEqual(pickup.startup_report(self.store, [], sessions=lambda: {}), ["Nothing in flight."])
+        self.assertEqual(pickup.startup_report(self.store, [], sessions=pickup.Sessions(sessions=lambda: {})), ["Nothing in flight."])
 
 
 DAY = time.strftime("%Y-%m-%d", time.localtime(1795000000))
@@ -1340,13 +1372,22 @@ class Note(unittest.TestCase):
         self.assertEqual(serve.with_session(self.store, PLANS, {**self.job, "key": "PLN-99"}), PLANS)
 
     def test_tick_hands_a_started_job_to_be_noted(self):
-        fake, noted = Fake(), []
-        look = lambda text: pickup.tick(self.store, serve.in_flight_tiles(self.store, text), start=fake.start,
-                                        sessions=fake.sessions, on_start=lambda store, job: noted.append((job["key"], job["id"])))
+        noted = []
+        fake = Fake(announce=lambda store, job: noted.append((job["key"], job["id"])))
+        look = lambda text: pickup.tick(self.store, in_flight(self.store, text), sessions=fake)
         with contextlib.redirect_stdout(io.StringIO()):
             look("## In flight\n")
             look("## In flight\n\n- [ ] PLN-01 **One.**\n")
         self.assertEqual(noted, [("PLN-01", "s1")])
+
+    def test_the_server_s_sessions_write_each_one_started_into_its_tile(self):
+        self.assertIs(serve.SESSIONS.announce, serve.note_session)
+        self.assertIsNone(pickup.SESSIONS.announce(self.store, self.job))  # the CLI's writes nothing
+
+    def test_a_sessions_adapter_takes_only_the_effects_it_has(self):
+        with self.assertRaises(TypeError):
+            pickup.Sessions(on_start=lambda store, job: None)
+        self.assertEqual(pickup.Sessions(now=lambda: 5).now(), 5)
 
 
 class Waiting(unittest.TestCase):
@@ -1413,11 +1454,11 @@ class Status(unittest.TestCase):
     def test_the_status_ends_with_what_is_on_the_session_s_screen(self):
         store = stores.Store(tempfile.mkdtemp())
         tile = "- [ ] PLN-01 **One.**\n  Claude session `ab12cd34`: `claude attach ab12cd34`."
-        line = pickup.status(store, "PLN-01", tile, sessions=lambda: {"ab12cd34": "busy"}, why=lambda sid: None,
-                             screen=lambda sid: "running the e2e tier", now=lambda: 1795000000)
+        line = pickup.status(store, "PLN-01", tile, sessions=pickup.Sessions(sessions=lambda: {"ab12cd34": "busy"}, why=lambda sid: None,
+                                                                         screen=lambda sid: "running the e2e tier", now=lambda: 1795000000))
         self.assertTrue(line.endswith('On its screen (rough): "running the e2e tier".'), line)
-        gone = pickup.status(store, "PLN-01", tile, sessions=lambda: {}, why=lambda sid: None,
-                             screen=lambda sid: "should not be asked", now=lambda: 1795000000)
+        gone = pickup.status(store, "PLN-01", tile, sessions=pickup.Sessions(sessions=lambda: {}, why=lambda sid: None,
+                                                                         screen=lambda sid: "should not be asked", now=lambda: 1795000000))
         self.assertNotIn("On its screen", gone)
 
     def test_the_branch_facts_come_from_the_worktree(self):
@@ -1459,16 +1500,16 @@ class Status(unittest.TestCase):
         store = stores.Store(tempfile.mkdtemp())
         session = "  Claude session `ab12cd34`: `claude attach ab12cd34`.\n"
         board = PLANS.replace("- [ ] PLN-70 **Dark mode.** The master.\n", "- [ ] PLN-70 **Dark mode.** The master.\n" + session)
-        once = serve.with_status(store, board, "PLN-70", "Status 2026-11-18 14:58: session `ab12cd34` at work.")
+        once = reader.with_status(store, board, "PLN-70", "Status 2026-11-18 14:58: session `ab12cd34` at work.")
         self.assertIn(session + "  **Status 2026-11-18 14:58:** session `ab12cd34` at work.\n  - [ ] **Agree the scope.**\n- [ ] PLN-75", once)
         old = once.replace("  **Status 2026-11-18 14:58:** session `ab12cd34` at work.\n", "").replace(
             "  - [ ] **Agree the scope.**\n", "  - [ ] **Agree the scope.**\n  **Status 2026-11-18 14:00:** as an earlier board left it, last.\n")
-        twice = serve.with_status(store, old, "PLN-70", "Status 2026-11-18 15:10: session `ab12cd34` idle.")
+        twice = reader.with_status(store, old, "PLN-70", "Status 2026-11-18 15:10: session `ab12cd34` idle.")
         self.assertEqual(twice.count("**Status "), 1)
         self.assertIn(session + "  **Status 2026-11-18 15:10:** session `ab12cd34` idle.\n  - [ ] **Agree", twice)
-        bare = serve.with_status(store, PLANS, "PLN-70", "Status 2026-11-18 14:58: x.")  # no session line: the tile's last line
+        bare = reader.with_status(store, PLANS, "PLN-70", "Status 2026-11-18 14:58: x.")  # no session line: the tile's last line
         self.assertIn("  - [ ] **Agree the scope.**\n  **Status 2026-11-18 14:58:** x.\n- [ ] PLN-75", bare)
-        self.assertEqual(serve.with_status(store, PLANS, "PLN-99", "Status 2026-11-18 14:58: x."), PLANS)
+        self.assertEqual(reader.with_status(store, PLANS, "PLN-99", "Status 2026-11-18 14:58: x."), PLANS)
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
             f.write(twice)
         self.assertEqual(subprocess.run(["node", str(Path(__file__).resolve().parent / "kandalf" / "check.js"), f.name], capture_output=True).returncode, 0)
@@ -1527,8 +1568,8 @@ class Tidy(unittest.TestCase):
 
     def tidy(self, merged=True, sessions=lambda: {}, there=False):
         self.retired = []
-        return pickup.tidy(self.store, self.tile, merged=lambda r, b: merged, sessions=sessions,
-                           retire=lambda sid: self.retired.append(sid) or there)
+        return pickup.tidy(self.store, self.tile, merged=lambda r, b: merged,
+                           sessions=pickup.Sessions(sessions=sessions, retire=lambda sid: self.retired.append(sid) or there))
 
     def test_a_landed_story_loses_its_worktree_and_its_branch(self):
         said = self.tidy()
@@ -1569,7 +1610,7 @@ class Tidy(unittest.TestCase):
     def test_a_tile_that_lost_its_session_line_goes_by_the_board_s_record_of_the_pickup(self):
         job = {"key": "PLN-07", "id": "ab12cd34", "branch": self.branch, "worktree": str(self.path)}
         said = pickup.tidy(self.store, "- [x] PLN-07 **Small thing.**\n  Merged.", merged=lambda r, b: True, job=job,
-                           sessions=lambda: {}, retire=lambda sid: True)
+                           sessions=pickup.Sessions(sessions=lambda: {}, retire=lambda sid: True))
         self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree app-pln-07"])
         self.assertFalse(self.path.exists() or self.has_branch())
 
@@ -1577,7 +1618,7 @@ class Tidy(unittest.TestCase):
         (self.path / "scratch").write_text("not committed\n")
         pickup.save(self.store, {"inflight": ["PLN-07"], "jobs": [{"key": "PLN-07", "id": "ab12cd34", "state": "started"}]})
         retired = []
-        said = pickup.discard(self.store, "PLN-07", self.tile, retire=lambda sid: retired.append(sid) or True)
+        said = pickup.discard(self.store, "PLN-07", self.tile, sessions=pickup.Sessions(retire=lambda sid: retired.append(sid) or True))
         self.assertEqual(said, ["closed session ab12cd34", "removed worktree app-pln-07",
                                 "kept branch pln-07-small-thing: 1 commit not in dev"])
         self.assertEqual(retired, ["ab12cd34"])
@@ -1587,7 +1628,7 @@ class Tidy(unittest.TestCase):
 
     def test_a_deleted_story_with_no_commits_loses_its_branch_too(self):
         git(self.path, "reset", "-q", "--hard", "HEAD~1")
-        said = pickup.discard(self.store, "PLN-07", self.tile, retire=lambda sid: False)
+        said = pickup.discard(self.store, "PLN-07", self.tile, sessions=pickup.Sessions(retire=lambda sid: False))
         self.assertEqual(said, ["removed worktree app-pln-07", "deleted branch pln-07-small-thing"])
         self.assertFalse(self.has_branch())
 
@@ -1674,19 +1715,19 @@ class Naming(unittest.TestCase):
         tile = board.split("\n\n", 1)[1]
         self.assertEqual(pickup.tile_worktree(st, tile), path)
         self.assertEqual(serve.unmerged_done(st, board), {"PLN-07": ["feat/pln-07-small-thing"]})  # Done, not merged: outlined
-        line = pickup.status(st, "PLN-07", tile, sessions=lambda: {}, why=lambda sid: None, screen=lambda sid: "", now=time.time)
+        line = pickup.status(st, "PLN-07", tile, sessions=pickup.Sessions(sessions=lambda: {}, why=lambda sid: None, screen=lambda sid: ""))
         self.assertIn("Branch 1 commit ahead of dev", line)  # found the worktree from the tile alone
         agents.use("copilot")
         self.addCleanup(agents.use, "claude")
         tile = serve.with_session(st, "## Done\n\n- [x] PLN-07 **Small thing.**\n", started).split("\n\n", 1)[1]
         self.assertIn("Copilot session `ab12cd34`: `kandalf attach ab12cd34`.", tile)
         self.assertEqual(pickup.tile_worktree(st, tile), path)
-        line = pickup.status(st, "PLN-07", tile, sessions=lambda: {"ab12cd34": "idle"}, why=lambda sid: "error", screen=lambda sid: "", now=time.time)
+        line = pickup.status(st, "PLN-07", tile, sessions=pickup.Sessions(sessions=lambda: {"ab12cd34": "idle"}, why=lambda sid: "error", screen=lambda sid: ""))
         self.assertIn("session `ab12cd34` waiting for your input (it ended on an error).", line)
         self.assertEqual(pickup.prepare(st, {**job, "worktree": str(path)}), (path, name))  # a restart carries on in it
         git(app, "merge", "-q", "--ff-only", name)
         self.assertEqual(serve.unmerged_done(st, board), {})
-        said = pickup.tidy(st, tile, merged=lambda r, b: b == name, sessions=lambda: {}, retire=lambda sid: True)
+        said = pickup.tidy(st, tile, merged=lambda r, b: b == name, sessions=pickup.Sessions(sessions=lambda: {}, retire=lambda sid: True))
         self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree app-pln-07"])
         self.assertRegex(said[2], r"^deleted branch feat/pln-07-small-thing \(was [0-9a-f]{7,}\)$")
         self.assertFalse(path.exists())
@@ -1956,13 +1997,13 @@ class Base(unittest.TestCase):
         git(repo or self.app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
 
     def job(self, tile):
-        return pickup.entered([], serve.in_flight_tiles(self.store, "## In flight\n\n" + tile))[0]
+        return pickup.entered([], in_flight(self.store, "## In flight\n\n" + tile))[0]
 
     def test_a_base_line_names_a_branch_with_or_without_backticks_and_a_full_stop(self):
         for line, want in (("  Base: feature-x", "feature-x"), ("  base: `release/2.0`.", "release/2.0"), ("\tBase:dev", "dev")):
-            self.assertEqual(pickup.base_named("- [ ] PLN-01 **One.**\n" + line), want, line)
+            self.assertEqual(reader.base("- [ ] PLN-01 **One.**\n" + line), want, line)
         for line in ("Base: dev", "  Based on dev", "  Base: two words", "  Base: -x"):  # not indented, no colon, not a branch
-            self.assertIsNone(pickup.base_named("- [ ] PLN-01 **One.**\n" + line), line)
+            self.assertIsNone(reader.base("- [ ] PLN-01 **One.**\n" + line), line)
 
     def test_a_store_s_trunk_is_dev_when_the_app_has_one_unless_board_json_names_another(self):
         self.assertEqual(self.store.trunk, "dev")
@@ -1995,7 +2036,7 @@ class Base(unittest.TestCase):
         self.assertIn("cut from dev. Its Base line names nowhere, which isn't a branch there, so it was cut from dev.", text)
 
     def test_a_sub_story_takes_its_master_s_base_and_its_own_line_wins(self):
-        tiles = serve.in_flight_tiles(self.store, "## In flight\n\n- [ ] PLN-70 **Master.**\n  Base: feature-x\n"
+        tiles = in_flight(self.store, "## In flight\n\n- [ ] PLN-70 **Master.**\n  Base: feature-x\n"
                                       "- [ ] PLN-71 **One.**\n  Part of PLN-70.\n- [ ] PLN-72 **Two.**\n  Part of PLN-70.\n  Base: dev\n")
         self.assertEqual([(j["key"], j.get("base")) for j in pickup.entered([], tiles)], [("PLN-71", "feature-x"), ("PLN-72", "dev")])
 
@@ -2014,7 +2055,7 @@ class Base(unittest.TestCase):
         self.assertIn(name, serve.unmerged_done(self.store, "## Done\n\n" + tile.replace("  Base: feature-x\n", "") + "\n")["PLN-07"])
         trunks = []
         done = pickup.tidy(self.store, tile, merged=lambda r, b: trunks.append(r.trunk) or serve._branch_merged(self.store, b, r),
-                           sessions=lambda: {}, retire=lambda sid: False)
+                           sessions=pickup.Sessions(sessions=lambda: {}, retire=lambda sid: False))
         self.assertEqual(trunks, ["feature-x"])
         self.assertIn(f"deleted branch {name}", " ".join(done))
 

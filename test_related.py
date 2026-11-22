@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Master tiles and related tiles (serve.py): the index of every keyed tile the page gets,
+"""Master tiles and related tiles (tiles.py): the index of every keyed tile the page gets,
 with each tile's master ("Part of KEY-NN") and the keys it mentions.
 
     python3 -m unittest test_related
@@ -8,8 +8,8 @@ with each tile's master ("Part of KEY-NN") and the keys it mentions.
 import tempfile
 import unittest
 
-from kandalf import serve
 from kandalf import store as stores
+from kandalf import tiles as reader
 
 PLANS = """# Plans
 
@@ -54,7 +54,7 @@ FILES = {"plans.md": PLANS, "backlog.md": BACKLOG, "archive/archived.md": ARCHIV
 class Index(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())  # no board.json: keys are PLN-NN
-        self.tiles = serve.tile_index(self.store, FILES)
+        self.tiles = reader.Snapshot(self.store, FILES).index()
 
     def test_every_keyed_tile_is_listed_with_where_it_is(self):
         self.assertEqual(sorted(self.tiles), ["PLN-41", "PLN-70", "PLN-74", "PLN-75", "PLN-81", "PLN-82"])

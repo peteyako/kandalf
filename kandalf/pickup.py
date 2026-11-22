@@ -10,8 +10,8 @@ in a git worktree of the store's app repo, beside it (myapp-pln-74), on a branch
 from the trunk (pln-74-title); "worktree" and "branch" in board.json name them otherwise
 (branch, worktree). A tile with a "Repos: api, web" line gets a worktree in each of those
 repos on that one branch; the session starts in the first and is given the rest (--add-dir).
-The In flight column is any named like one (in flight, in progress, doing, WIP...: IN_FLIGHT_RE), or
-the one "pickupColumn" names (is_pickup_column). The session is told the tile, what the
+The In flight column is any named like one (in flight, in progress, doing, WIP...: tiles.IN_FLIGHT_RE), or
+the one "pickupColumn" names (tiles.is_pickup_column). The session is told the tile, what the
 board reads back from it, and the store's working rules (its pickup.md, else the default in
 templates/). Every call to the claude CLI goes through claude_code.py (the agent seam).
 `claude agents` lists the session; `kandalf attach <id>` (or the tile key)
@@ -46,47 +46,18 @@ On only with "pickup": true in board.json, for a store with an "app", and with a
 that has what pickup needs (why_off says what is in the way).
 """
 
-import json
 import os
 import re
 import subprocess
-import threading
 import time
 from dataclasses import replace
 from pathlib import Path
 
 from . import agent
-from . import gitlog
+from . import jobs as ledger
 from . import store as stores
-
-# The columns that mean under way, however they are spelt: In flight, in-flight, In progress (or a slip
-# of it, "In progrees"), Doing, WIP, Working, Underway, Ongoing, Active; never one that says "not".
-IN_FLIGHT_RE = re.compile(r"^(?!.*\bnot\b).*\b(?:in[\s_-]*flight|progre\w*|doing|wip|working|under[\s_-]*way|ongoing|active)\b", re.I)  # same in board.html
-OPT_OUT_RE = re.compile(r"\bno pickup\b", re.I)
-# A tile picks its own model with a line of its own, "Model: sonnet" (an alias or a full model id).
-# A tile says its story is finished and waiting for review with a line of its own that
-# starts "Ready for review" (the session writes "**Ready for review:** <gate results>").
-# board.html reads the same wording (READY_RE there) and outlines the tile.
-READY_RE = re.compile(r"^\s+(?:\*\*)?Ready for review\b[:.]?(?:\*\*)?[:.]?[ \t]*(.*)$", re.I | re.M)
-REPOS_RE = re.compile(r"^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$", re.I | re.M)  # same in board.html
-MODEL_RE = re.compile(r"^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$", re.I | re.M)
-# A tile picks the branch its story is cut from and merged into with a line of its own, "Base: feature-x".
-BASE_RE = re.compile(r"^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._/-]*?)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
-# A tile says how much of the suite its merge runs with a line of its own, "Tests: full" or "Tests: affected".
-TESTS_RE = re.compile(r"^[ \t]+tests:[ \t]*`?(full|affected)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
-STATE = "board-pickup.json"
-KEEP = 30  # jobs remembered
-# Seconds a session just started counts as at work, before it has shown itself busy.
-SETTLE = int(os.environ.get("BOARD_PICKUP_SETTLE", "90"))
-_lock = threading.Lock()
-
-
-def is_pickup_column(store, name: str) -> bool:
-    """Whether a column's tiles are picked up: the one the store's "pickupColumn" names (any
-    case), else any In flight column (IN_FLIGHT_RE). board.html asks the same (isPickupColumn)."""
-    if store.pickup_column:
-        return name.strip().lower() == store.pickup_column.lower()
-    return bool(IN_FLIGHT_RE.search(name))
+from . import tiles as reader
+from .jobs import KEEP, KEPT, SETTLE, STOPPED, TRACKED, WAITING, load, save  # noqa: F401  (load, save, KEEP: what the tests set up and look at)
 
 
 # ---------- whether pickup can run ----------
@@ -128,51 +99,10 @@ def enabled(store) -> bool:
     return why_off(store) is None
 
 
-# ---------- the queue's state ----------
-# {"inflight": [keys] or None before the first look,
-#  "umbrellas": [the in-flight masters with sub-stories in flight, as last seen],
-#  "jobs": [{"key", "title", "with": [sub-story keys], "text": the tiles' markdown, "at",
-#            "state": "waiting" | "started" (at work) | "idle" | "lost" | "ended" | "failed",
-#            "behind": the key it waits for, "model", "id", "session": the full session id,
-#            "branch", "worktree", "started", "error",
-#            "closing": told to merge, so it may move its own tile to Done,
-#            "master", "limit": a master's sub-story, and how many of them work at once}]}
-def state_path(store) -> Path:
-    """In the store's .git, beside the commit queue; a store that isn't a repo keeps it as a dotfile."""
-    if store.root:
-        return gitlog.git_dir(store.root) / STATE
-    return store.dir / ("." + STATE)
-
-
-def load(store) -> dict:
-    p = state_path(store)
-    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {"inflight": None, "jobs": []}
-
-
-def save(store, state: dict):
-    """Write the state, remembering the last KEEP jobs that are done with, and every job a tile
-    still holds (KEPT: queued, paused or with a session), however old."""
-    jobs = state["jobs"]
-    done = [i for i, j in enumerate(jobs) if j["state"] not in KEPT]
-    forgot = set(done[:-KEEP]) if len(done) > KEEP else set()
-    state["jobs"] = [j for i, j in enumerate(jobs) if i not in forgot]
-    p = state_path(store)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-    os.replace(tmp, p)
-
-
-SESSIONS_RE = re.compile(r"^\s+sessions:\s*`?(\d+)`?\.?\s*$", re.I | re.M)  # a master's "Sessions: 3" line
-
-
+# ---------- the queue's state (jobs.Ledger: board-pickup.json) ----------
 def lineage(by_key: dict, key: str) -> list:
     """The in-flight tiles a tile is part of, nearest first: its master, its master's master."""
-    out, seen, up = [], {key}, by_key[key]["parent"]
-    while up in by_key and up not in seen:
-        out.append(by_key[up])
-        seen.add(up)
-        up = by_key[up]["parent"]
-    return out
+    return [by_key[k] for k in reader.climb(lambda k: by_key[k]["parent"] if k in by_key else None, key) if k in by_key]
 
 
 def family_text(by_key: dict, key: str) -> str:
@@ -183,7 +113,7 @@ def family_text(by_key: dict, key: str) -> str:
 
 def entered(prev, tiles, sessions: int = 2) -> list:
     """The jobs for the tiles that are in flight now and weren't before. tiles: the In flight
-    tiles, [{"key", "title", "text", "parent"}] (serve.in_flight_tiles). A master that arrives
+    tiles, [{"key", "title", "text", "parent"}] (tiles.Snapshot.in_flight). A master that arrives
     with sub-stories gets no session of its own: each sub-story gets one, given the master's
     tile to read, and "limit" of them are at work at once (the master's "Sessions: n" line,
     else sessions). A sub-story that joins a master already in flight is one of them too."""
@@ -193,77 +123,34 @@ def entered(prev, tiles, sessions: int = 2) -> list:
     jobs = []
     for key in (t["key"] for t in tiles if t["key"] in new):
         above, text = lineage(by_key, key), family_text(by_key, key)
-        if key in masters or OPT_OUT_RE.search(text):
+        if key in masters or reader.opted_out(text):
             continue
         job = {"key": key, "title": by_key[key]["title"], "with": [], "text": text}
-        base = base_named(text)
+        base = reader.base(text)
         if base:
             job["base"] = base
         if by_key[key].get("context"):  # its master isn't in flight: its tile is given to read, and nothing more
             job.update(of=by_key[key]["of"], context=by_key[key]["context"])
         if above:
-            limit = SESSIONS_RE.search(text)
-            job.update(master=above[-1]["key"], limit=max(1, int(limit.group(1))) if limit else sessions)
+            limit = reader.sessions(text)
+            job.update(master=above[-1]["key"], limit=max(1, limit) if limit is not None else sessions)
         jobs.append(job)
     return jobs
 
 
 # ---------- starting a session ----------
-def ready_note(text: str):
-    """What a tile's "Ready for review" line says, "" if it says nothing more, None if the
-    tile has no such line."""
-    found = READY_RE.search(text)
-    return found.group(1).strip() if found else None
-
-
 def model_for(store, text: str) -> str:
     """The model a tile's session runs on: the tile's own "Model: x" line, else the store's
     "model" (board.json; opus unless set)."""
-    own = MODEL_RE.search(text)
-    return own.group(1) if own else store.model
+    return reader.model(text) or store.model
 
 
-def base_named(text: str):
-    """The branch the first "Base: x" line in text names (a tile's family_text, so the nearest
-    line counts), or None if there is no such line."""
-    found = BASE_RE.search(text or "")
-    return found.group(1) if found else None
-
-
-def tests_named(text: str):
-    """What the first "Tests: full" or "Tests: affected" line in text says, in lower case, or
-    None if there is no such line."""
-    found = TESTS_RE.search(text or "")
-    return found.group(1).lower() if found else None
-
-
-def full_suite_on_merge(store, key: str, texts, tiles) -> bool:
+def full_suite_on_merge(store, key: str, snap) -> bool:
     """Whether merging a story from the board runs the full suite on the trunk. The nearest
-    "Tests:" line wins, the story's own, then its master's, and so up (texts: {key: tile
-    markdown}, tiles: the tile index, for the masters); with none, the store's
-    "fullSuiteOnMerge". With no texts, the store's."""
-    if texts is not None:
-        seen, at = set(), key
-        while at and at not in seen:
-            seen.add(at)
-            named = tests_named(texts.get(at))
-            if named:
-                return named == "full"
-            at = ((tiles or {}).get(at) or {}).get("parent")
-    return store.full_suite_on_merge
-
-
-def repo_names(text: str):
-    """The repos named on the first "Repos: a, b" line in text (a tile's family_text, so the
-    nearest line counts), in order, any case, no duplicates. None if there is no such line."""
-    found = REPOS_RE.search(text)
-    if not found:
-        return None
-    names = []
-    for name in re.split(r"[,\s]+", found.group(1).replace("`", "")):
-        if name and name.lower() not in [n.lower() for n in names]:
-            names.append(name)
-    return names
+    "Tests:" line wins, the story's own, then its master's, and so up (snap: the tiles.Snapshot
+    of the board's files); with none, the store's "fullSuiteOnMerge". With no snapshot, the store's."""
+    named = snap.nearest(key, reader.tests) if snap is not None else None
+    return store.full_suite_on_merge if named is None else named == "full"
 
 
 def resolve_repos(store, names):
@@ -347,20 +234,22 @@ def worktree_label(store, path, repo=None) -> str:
 def tile_cuts(store, tile_text: str):
     """(branch, [(repo name, Repo or None, worktree path or None)]) from a tile's session line:
     one cut for the old form (the main repo's), one per repo for the worktrees form. A repo
-    board.json no longer has reads as (name, None, None). None when the tile has no session line."""
-    found = TILE_REPOS_RE.search(tile_text)
-    if found:
-        cuts = []
-        for name, label in re.findall(r"([^`,]+?) `([^`]+)`", found.group(2)):
-            name = name.strip()
-            repo = store.repo(name)
-            cuts.append((name, repo, Path(os.path.normpath(repo.path.parent / label))) if repo else (name, None, None))
-        return found.group(1), cuts
-    found = TILE_BRANCH_RE.search(tile_text)
-    if not found or not store.app:
+    board.json no longer has reads as (name, None, None). None when the tile has no session line
+    that names its worktrees (or, in the old form, the store has no app)."""
+    found = reader.session(tile_text)
+    if not found or not found.cuts:
         return None
-    main = store.main_repo
-    return found.group(1), [(main.name, main, Path(os.path.normpath(store.app.parent / found.group(2))))]
+    cuts = []
+    for name, label in found.cuts:
+        if name is None:  # the old form names no repo: it is the main repo's
+            if not store.app:
+                return None
+            main = store.main_repo
+            cuts.append((main.name, main, Path(os.path.normpath(store.app.parent / label))))
+            continue
+        repo = store.repo(name)
+        cuts.append((name, repo, Path(os.path.normpath(repo.path.parent / label))) if repo else (name, None, None))
+    return found.branch, cuts
 
 
 def tile_worktree(store, tile_text: str):
@@ -585,7 +474,7 @@ def story_trunk(store, repo, job=None, tile_text: str = "") -> str:
     for cut in _cuts_of(store, job) if job else []:
         if cut["name"] == repo.name and cut.get("trunk"):
             return cut["trunk"]
-    base = base_named(tile_text) or (job or {}).get("base")
+    base = reader.base(tile_text) or (job or {}).get("base")
     return base if base and stores.has_branch(repo.path, base) else repo.trunk
 
 
@@ -690,9 +579,6 @@ def _add_repos(store, job, repos, session) -> dict:
     return {**resume(store, {**job, "session": session, "repos": every}, text), "repos": every, "branch": name}
 
 
-WAITING = {"interrupted": "it was interrupted", "question": "it asked a question", "error": "it ended on an error"}
-
-
 def session_screen(sid: str) -> str:
     """The last words on a session's screen (agent.screen_tail), by id; "" when its output
     can't be read."""
@@ -707,58 +593,112 @@ def idle_reason(sid: str):
     return None if output is None else agent.waiting_for(output)
 
 
+# ---------- the sessions adapter ----------
+class Sessions:
+    """What pickup does outside the ledger, as one object: start a session for a job (cutting
+    its worktrees), resume it, switch it to another model, reroute it onto other repos, stop
+    it, list the sessions there are (sessions: {id: "busy", "idle" or "waiting"}, None when
+    they can't be listed), ask why an idle one waits (why), its full id (full_id), the last
+    words on its screen (screen), retire it, announce a started one on its tile, and the time
+    (now). This one runs the agent (agent.py); the tests' Fake is the other. Any effect can be
+    given in its place: serve's is Sessions(announce=note_session), which writes each session
+    started into its tile. This one alone announces nothing."""
+
+    EFFECTS = ("start", "resume", "switch", "reroute", "stop", "sessions", "why", "full_id", "screen", "retire", "announce", "now")
+
+    def __init__(self, **effects):
+        for name, effect in effects.items():
+            if name not in self.EFFECTS:
+                raise TypeError(f"a sessions adapter has no {name!r}: it has {', '.join(self.EFFECTS)}")
+            setattr(self, name, effect)
+
+    def start(self, store, job, again=False) -> dict:
+        return start(store, job, again)
+
+    def resume(self, store, job, text: str = None) -> dict:
+        return resume(store, job, text)
+
+    def switch(self, store, job, model: str) -> dict:
+        return switch(store, job, model)
+
+    def reroute(self, store, job, names) -> dict:
+        return switch_repos(store, job, names)
+
+    def stop(self, sid: str):
+        return agent.stop(sid)
+
+    def sessions(self):
+        return agent.sessions()
+
+    def why(self, sid: str):
+        return idle_reason(sid)
+
+    def full_id(self, short: str):
+        return full_id(short)
+
+    def screen(self, sid: str) -> str:
+        return session_screen(sid)
+
+    def retire(self, sid: str) -> bool:
+        return retire(sid)
+
+    def announce(self, store, job):
+        """Nothing: the server's adapter writes the session into its tile (serve.note_session)."""
+
+    def now(self) -> float:
+        return time.time()
+
+
+SESSIONS = Sessions()  # the real one, announcing nothing: what the CLI and the tests' defaults use
+
+
 # ---------- the queue ----------
 def log(message: str):
     """A line on the board server's console."""
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} pickup: {message}", flush=True)
 
 
-def _report(store, job, at, on_start=None, how="picked up"):
-    """Stamp a job a session was just launched for, and say on the console how it went.
-    on_start(store, job) is told of a session that did start (the server writes it into the tile)."""
-    job.pop("behind", None)
-    job["started"] = int(at)
-    name = f"{job['key']} \"{job['title']}\""
+def _say(line):
+    """A transition's line on the console, when it has one (jobs: None is nothing to say)."""
+    if line:
+        log(line)
+
+
+def _report(store, job, line, sessions):
+    """Say on the console how a launch went (line: jobs.begin's), and announce a session that
+    did start (sessions.announce: the server writes it into the tile)."""
+    log(line)
     if job["state"] != "started":
-        log(f"{name} could not be started: {job.get('error')}")
         return
-    where = f", branch {job['branch']} in {job['worktree']}" if job.get("worktree") else ""
-    log(f"{name} {how}: session {job['id']} ({agent.attach(job['id'])}){where}")
-    if on_start:
-        try:
-            on_start(store, job)
-        except Exception as e:  # the session is running either way
+    try:
+        sessions.announce(store, job)
+    except Exception as e:  # the session is running either way
             log(f"{job['key']}: its session could not be written to the tile: {e}")
 
 
-def _begin(store, job, start, at, on_start=None):
+def _begin(store, job, sessions, at):
     """Start a waiting job. One that was paused and came back to In flight (again: "paused")
     is taken over by a new session from its handoff."""
     again = job.pop("again", None)
-    job.update(start(store, job, again) if again else start(store, job))
-    _report(store, job, at, on_start, "taken over from its handoff by a new session" if again else "picked up")
+    launched = sessions.start(store, job, again) if again else sessions.start(store, job)
+    _report(store, job, ledger.begin(job, launched, at, "taken over from its handoff by a new session" if again else "picked up"), sessions)
 
 
-TRACKED = ("started", "idle", "lost")  # a session was started and its tile is still in flight
-STOPPED = ("idle", "lost", "failed")  # a job Restart can get going again
-KEPT = ("waiting", "paused", *TRACKED)  # a tile with one of these keeps it: it isn't picked up again
-
-
-def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, reroute=switch_repos, why=idle_reason, now=time.time, on_start=None,
-         resume=resume, stop=agent.stop) -> dict:
+def tick(store, tiles, *, sessions: Sessions = SESSIONS) -> dict:
     """One look at the board. tiles: the In flight tiles now. Queues the ones that arrived (a
     paused one, to be taken over from its handoff), drops a waiting one that left again (a
     paused one goes back to paused), pauses a session at work whose tile left In flight, as
-    the Pause button does (resume and stop; not one told to merge, which moves its own tile to Done), notes each session as at work, idle or lost, moves a
+    the Pause button does (not one told to merge, which moves its own tile to Done), notes each session as at work, idle or lost, moves a
     session whose tile changed model onto that model or repos onto those repos, and starts the oldest waiting job if
-    no session is at work. Returns the state."""
-    with _lock:
-        state = load(store)
+    no session is at work. sessions: what it does to them (Sessions; the server's announces each start on its tile).
+    Returns the state."""
+    now = sessions.now
+    with ledger.Ledger(store).change() as state:
         jobs = state["jobs"]
         by_key = {t["key"]: t for t in tiles}
         # A tile that says No pickup isn't counted as seen, so it is picked up once the words go.
         live = {j["key"] for j in jobs if j["state"] in KEPT}
-        held = [k for k in by_key if k not in live and OPT_OUT_RE.search(family_text(by_key, k))]
+        held = [k for k in by_key if k not in live and reader.opted_out(family_text(by_key, k))]
         for k in held:
             if k not in state.get("held", []):
                 log(f"{k} is in flight but says No pickup: left alone until those words go")
@@ -772,42 +712,26 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         state["umbrellas"] = umbrellas
         if state["inflight"] is None:  # the first look: what is in flight already is someone's
             state["inflight"] = keys
-            save(store, state)
             return state
         state["inflight"] = [k for k in state["inflight"] if k not in freed]
         # One tile, one session: a tile that already has a session (at work, idle or lost) or
-        # a place in the queue isn't picked up again, however it came to look newly arrived.
-        taken = {j["key"] for j in jobs if j["state"] in KEPT}
+        # a place in the queue isn't picked up again (jobs.queue), however it came to look newly arrived.
         for job in entered(state["inflight"], tiles, store.sessions):
             mine = next((j for j in reversed(jobs) if j["key"] == job["key"]), None)
             if mine and mine["state"] == "paused":  # back from where it was paused: a new session takes over in turn
-                for k in ("master", "limit", "of", "context", "base"):  # as the tile stands now, a sub-story or not
-                    mine.pop(k, None)
-                mine.update(job, state="waiting", again="paused", at=int(now()))
-                jobs.remove(mine)
-                jobs.append(mine)  # at the back of the queue
-                log(f"{job['key']} is in flight again: a new session takes it over from its handoff in turn")
-            elif job["key"] in taken:
-                log(f"{job['key']} is in flight again and keeps the session it has")
+                _say(ledger.requeue(state, mine, now(), tile=job))
             else:
-                want = repo_names(job["text"])
-                jobs.append({**job, "model": model_for(store, job["text"]), "state": "waiting", "at": int(now()),
-                             **({"want": want} if want is not None else {})})
-        for j in jobs:
-            if j["state"] == "waiting" and j["key"] not in by_key:
-                if j.pop("again", None):
-                    j["state"] = "paused"
-                    log(f"{j['key']} left In flight before its turn: paused again")
-                else:
-                    log(f"{j['key']} left In flight before its turn: dropped from the queue")
-        jobs[:] = [j for j in jobs if j["state"] != "waiting" or j["key"] in by_key]
+                want = reader.repos(job["text"])
+                _say(ledger.queue(state, {**job, "model": model_for(store, job["text"]), **({"want": want} if want is not None else {})}, now()))
+        for j in [j for j in jobs if j["state"] == "waiting" and j["key"] not in by_key]:
+            _say(ledger.unqueue(state, j))
         state["inflight"] = keys
         waiting = [j for j in jobs if j["state"] == "waiting"]
         latest = {j["key"]: j for j in jobs}
         texts = {t["key"]: t["text"] for t in tiles}
         for j in jobs:  # a tile whose session wrote "Ready for review" on it
             if j["state"] in TRACKED and j["key"] in texts:
-                _mark_ready(j, ready_note(texts[j["key"]]))
+                _say(ledger.mark_ready(j, reader.ready(texts[j["key"]])))
 
         def closed_early(j):
             """ "ended" on a tile still in flight: how the first version of pickup left a stopped session."""
@@ -817,29 +741,29 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         by_key = {t["key"]: t for t in tiles}
         for j in jobs:  # a failed start takes the tile's repos as they are now, so Retry tries those
             if j["state"] == "failed" and j["key"] in by_key and latest[j["key"]] is j:
-                _rerepo(store, j, repo_names(family_text(by_key, j["key"])), reroute, now(), on_start)
+                _rerepo(store, j, reader.repos(family_text(by_key, j["key"])), sessions, now())
         if waiting or tracked:
-            there = sessions()
+            there = sessions.sessions()
             if there is not None:
                 for j in tracked:
-                    gone = j["key"] not in by_key and j["state"] == "started" and not j.get("pausing") and not j.get("closing")
-                    if gone and (there.get(j.get("id")) == "busy" or now() - j.get("started", 0) < SETTLE):
-                        _pause(store, j, resume, stop, now(), on_start, "its tile left In flight")  # as the Pause button does
+                    seen, here = there.get(j.get("id")), j["key"] in by_key
+                    if ledger.pauses_on_leaving(j, seen, here, now()):
+                        _pause(store, j, sessions, now(), "its tile left In flight")  # as the Pause button does
                         continue
-                    _look(j, there.get(j.get("id")), j["key"] in by_key, now(), why)
+                    _say(ledger.saw(j, seen, here, now(), sessions.why))
                 for j in [*tracked, *waiting]:
                     if j["key"] in by_key and j["state"] in ("waiting", *TRACKED) and not j.get("pausing"):
                         text, was = family_text(by_key, j["key"]), j.get("model")
-                        names = repo_names(text)
+                        names = reader.repos(text)
                         # a session that is moved onto other repos is restarted once, on the new model too
-                        _remodel(store, j, model_for(store, text), switch, now(), on_start, defer=_moves(store, j, names))
-                        _rerepo(store, j, names, reroute, now(), on_start, was)
+                        _remodel(store, j, model_for(store, text), sessions, now(), defer=_moves(store, j, names))
+                        _rerepo(store, j, names, sessions, now(), was)
                 live = [j for j in tracked if j["state"] == "started"]
                 # In turn: a tile on its own starts while fewer sessions than the store's "parallel"
                 # (default 1) are at work, a master's sub-story while fewer than its limit are. A start that fails lets the next one go.
                 while waiting and len(live) < waiting[0].get("limit", store.parallel):
                     job = waiting.pop(0)
-                    _begin(store, job, start, now(), on_start)
+                    _begin(store, job, sessions, now())
                     live += [job] if job["state"] == "started" else []
                 for j in waiting:
                     if j.get("behind") != live[0]["key"]:
@@ -848,16 +772,15 @@ def tick(store, tiles, *, start=start, sessions=agent.sessions, switch=switch, r
         for j in jobs:  # a paused story is taken over on the model and repos its tile says now
             if j["state"] == "paused" and j["key"] in by_key and latest[j["key"]] is j:
                 text = family_text(by_key, j["key"])
-                j["model"], names = model_for(store, text), repo_names(text)
+                j["model"], names = model_for(store, text), reader.repos(text)
                 if names is None:
                     j.pop("want", None)
                 else:
                     j["want"] = names
-        save(store, state)
         return state
 
 
-def _remodel(store, job, model: str, switch, at, on_start=None, defer=False):
+def _remodel(store, job, model: str, sessions, at, defer=False):
     """Bring a job in line with the model its tile asks for now. A session at work or idle is
     stopped and resumed on it; a queued or lost one just starts on it when it next starts."""
     was = job.get("model")
@@ -871,10 +794,9 @@ def _remodel(store, job, model: str, switch, at, on_start=None, defer=False):
         return
     if defer:  # the repos change too: that restart resumes on the new model
         return
-    moved = switch(store, job, model)
+    moved = sessions.switch(store, job, model)
     if moved["state"] == "started":
-        job.update(moved)
-        _report(store, job, at, on_start, f"switched from {was} to {model}")
+        _report(store, job, ledger.begin(job, moved, at, f"switched from {was} to {model}"), sessions)
     else:
         log(f"{job['key']} session {job.get('id')} could not be switched to {model}: {moved.get('error')}. Continue it from its tile")
 
@@ -892,9 +814,9 @@ def _moves(store, job, names) -> bool:
             and _folded(store, names) != _folded(store, job.get("want")) and not resolve_repos(store, names)[1])
 
 
-def _rerepo(store, job, names, reroute, at, on_start=None, model_was=None):
-    """Bring a job in line with the repos its tile names now (names: repo_names). A session at
-    work or idle is moved onto them (reroute); a queued, lost or failed one just takes them
+def _rerepo(store, job, names, sessions, at, model_was=None):
+    """Bring a job in line with the repos its tile names now (names: reader.repos). A session at
+    work or idle is moved onto them (sessions.reroute); a queued, lost or failed one just takes them
     and starts with them. A line that doesn't resolve moves no session: it is said once."""
     if names == job.get("want") or _folded(store, names) == _folded(store, job.get("want")):
         job.pop("repos_error", None)
@@ -915,145 +837,80 @@ def _rerepo(store, job, names, reroute, at, on_start=None, model_was=None):
     if not moving:
         log(f"{job['key']} will work in {', '.join(names or ['the main repo'])} when its session starts")
         return
-    moved = reroute(store, {**job, "want": old, "model_was": model_was}, names)
+    moved = sessions.reroute(store, {**job, "want": old, "model_was": model_was}, names)
     if moved["state"] == "started":
-        job.update(moved)
-        _report(store, job, at, on_start, f"repos changed to {', '.join(r.name for r in repos)}")
+        _report(store, job, ledger.begin(job, moved, at, f"repos changed to {', '.join(r.name for r in repos)}"), sessions)
     else:
         log(f"{job['key']} session {job.get('id')} could not be moved to {', '.join(names or ['the main repo'])}: {moved.get('error')}. Continue it from its tile")
 
 
-def _mark_ready(job, note):
-    """Keep job["ready"] in step with its tile's "Ready for review" line, and say when it appears."""
-    if note is None:
-        job.pop("ready", None)
-    elif not job.get("ready"):
-        job["ready"] = True
-        log(f"{job['key']} is ready for review" + (f": {note}" if note else ""))
-
-
-def _look(job, seen, in_flight: bool, at, why=idle_reason):
-    """Set a tracked job's state from what its session is doing now: seen is "busy", "idle",
-    "waiting" (blocked mid-turn on your input: idle, waiting on a question), or None when the
-    session isn't there any more. An idle one is asked (why) whether it
-    waits for input: job["waiting"] is then "interrupted" or "question"."""
-    if at - job.get("started", 0) < SETTLE:  # just launched: it may not show as busy yet
-        return
-    was, waited = job["state"], job.get("waiting")
-    if job.get("pausing"):  # writing its handoff; once it stops it is paused, in or out of In flight
-        if seen == "busy":
-            job["state"] = "started"
-            return
-        job.pop("pausing")
-        job.pop("waiting", None)
-        job["state"] = "paused"
-        log(f"{job['key']} session {job.get('id')} is paused: Continue on its tile, or moving it back to In flight, has a new session take over from its handoff")
-        return
-    if seen == "busy":
-        job["state"] = "started"
-    elif not in_flight:  # its tile moved on, and so has the session
-        job["state"] = "ended"
-    else:
-        job["state"] = "idle" if seen in ("idle", "waiting") else "lost"
-        job.pop("closing", None)  # it stopped with its tile still in flight: the merge is behind it
-    waiting = why(job.get("id")) if job["state"] == "idle" else None
-    if seen == "waiting" and job["state"] == "idle" and not waiting:
-        waiting = "question"  # the CLI says it is blocked on input, whatever its screen shows
-    if waiting:
-        job["waiting"] = waiting
-    else:
-        job.pop("waiting", None)
-    name = f"{job['key']} session {job.get('id')}"
-    if waiting and waiting != waited:
-        log(f"{name} is waiting for your input ({WAITING[waiting]})")
-    elif job["state"] != was:
-        said = {"started": "is at work again", "ended": "is finished with: its tile left In flight",
-                "idle": "is idle: it finished its turn",
-                "lost": "is gone (stopped, closed or removed): Continue is on its tile"}[job["state"]]
-        log(f"{name} {said}")
-
-
-def start_now(store, key: str, *, start=start, on_start=None) -> bool:
+def start_now(store, key: str, *, sessions: Sessions = SESSIONS) -> bool:
     """Start a waiting job although a session is at work: the page asked, and was told yes."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         job = next((j for j in state["jobs"] if j["key"] == key and j["state"] == "waiting"), None)
         if job is None:
             return False
-        _begin(store, job, start, time.time(), on_start)
-        save(store, state)
+        _begin(store, job, sessions, sessions.now())
         return True
 
 
-def pause(store, key: str, *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time) -> bool:
+def pause(store, key: str, *, sessions: Sessions = SESSIONS) -> bool:
     """The Pause button: put a story aside. Its session, at work, is stopped and resumed once,
     told to write a full handoff on the tile and stop (PAUSE); it is "pausing" until it stops,
-    then paused (_look): its tile stays in In flight but gives up its place, and Continue
+    then paused (jobs.saw): its tile stays in In flight but gives up its place, and Continue
     (restart, nudge) has a new session take over from the tile. One that can't be resumed for
     the handoff is paused at once, with the Handoff line the tile has; Pause again while it
     writes the handoff (Pause now) stops it there. False when the tile has no session at work,
     or it couldn't be stopped."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
         if job is None or job["state"] != "started" or not job.get("id"):
             return False
         if job.get("pausing"):  # it hangs on its handoff: Pause now stops it, with the Handoff line the tile has
             try:
-                stop(job["id"])
+                sessions.stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 log(f"{key} session {job['id']} could not be stopped: {e}")
                 return False
-            job.pop("pausing")
-            job["state"] = "paused"
-            log(f"{key} session {job['id']} is paused: stopped before it finished its handoff")
-            save(store, state)
+            log(ledger.paused(job, ": stopped before it finished its handoff"))
             return True
         if not job.get("session"):  # started before the board kept the full id
-            job["session"] = lookup(job["id"])
-        if not _pause(store, job, resume, stop, now(), on_start, "Pause on its tile"):
+            job["session"] = sessions.full_id(job["id"])
+        if not _pause(store, job, sessions, sessions.now(), "Pause on its tile"):
             return False
-        save(store, state)
         return True
 
 
-def requeue(store, key: str, *, now=time.time) -> bool:
+def requeue(store, key: str, *, sessions: Sessions = SESSIONS) -> bool:
     """The Queue button on a paused story: back of the queue, to be taken over from its handoff
     by a new session when its turn comes (as moving it out of In flight and back does), where
     Continue starts that session at once. False when the tile has no paused job."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         jobs = state["jobs"]
         job = next((j for j in reversed(jobs) if j["key"] == key), None)
         if job is None or job["state"] != "paused":
             return False
-        job.update(state="waiting", again="paused", at=int(now()))
-        jobs.remove(job)
-        jobs.append(job)
-        log(f"{key} is queued again: a new session takes it over from its handoff in turn")
-        save(store, state)
+        log(ledger.requeue(state, job, sessions.now()))
         return True
 
 
-def _pause(store, job, resume, stop, at, on_start, why: str) -> bool:
+def _pause(store, job, sessions, at, why: str) -> bool:
     """Stop the job's session, at work, and resume it once told to write its handoff and stop
-    (PAUSE): it is "pausing" until _look sees it stop. Paused at once when it can't be
+    (PAUSE): it is "pausing" until jobs.saw sees it stop. Paused at once when it can't be
     resumed. False when it couldn't be stopped. why: what paused it, for the console."""
     key = job["key"]
     try:
-        stop(job["id"])
+        sessions.stop(job["id"])
     except (OSError, subprocess.SubprocessError) as e:
         log(f"{key} session {job['id']} could not be stopped to pause it ({why}): {e}")
         return False
     job.pop("waiting", None)
-    told = resume(store, job, PAUSE.format(key=key)) if job.get("session") else {"state": "failed"}
+    told = sessions.resume(store, job, PAUSE.format(key=key)) if job.get("session") else {"state": "failed"}
     if told["state"] == "started":
-        job.update(told)
-        _report(store, job, at, on_start, f"paused ({why}): told to write its handoff and stop")
-        job["pausing"] = True
+        _report(store, job, ledger.begin(job, told, at, f"paused ({why}): told to write its handoff and stop"), sessions)
+        ledger.pausing(job)
     else:
-        job["state"] = "paused"
-        log(f"{key} session {job['id']} is paused ({why}); it couldn't be told to write a handoff: {told.get('error') or 'not resumed'}")
+        log(ledger.paused(job, f" ({why}); it couldn't be told to write a handoff: {told.get('error') or 'not resumed'}"))
     return True
 
 
@@ -1066,26 +923,18 @@ RERUN = ("If you run tests or gates for this, that run is a sub-task on the tile
          "or add a new unticked one saying what runs, and tick it only when it has passed.")
 
 
-def still_to_merge(store, job, tiles):
-    """The other sub-stories of a job's master that aren't done yet, by key, from the tile index
-    (serve.tile_index): [] when the job's is the last of them. A tile with sub-stories of its own
-    is an umbrella, never merged itself, so it isn't counted. None when the job isn't a
-    sub-story, or there is no index to go by."""
+def still_to_merge(store, job, snap):
+    """The other sub-stories of a job's master that aren't done yet, by key, from the
+    snapshot of the board's files (tiles.Snapshot): [] when the job's is the last of them. A
+    tile with sub-stories of its own is an umbrella, never merged itself, so it isn't counted.
+    None when the job isn't a sub-story, or there is no snapshot to go by."""
     master = job.get("master") or job.get("of")
-    if not master or tiles is None:
+    if not master or snap is None:
         return None
-
-    def under(key):
-        seen, up = {key}, tiles[key].get("parent")
-        while up and up not in seen:
-            if up == master:
-                return True
-            seen.add(up)
-            up = (tiles.get(up) or {}).get("parent")
-        return False
-
-    umbrellas = {t.get("parent") for t in tiles.values()}
-    return sorted((k for k, t in tiles.items() if k != job["key"] and k not in umbrellas and not t.get("done") and under(k)),
+    index = snap.index()
+    umbrellas = {t.get("parent") for t in index.values()}
+    return sorted((k for k, t in index.items() if k != job["key"] and k not in umbrellas and not t["done"]
+                   and master in reader.climb(snap.parent, k)),
                   key=store.num)
 
 
@@ -1106,18 +955,19 @@ def nothing_to_merge(store, job) -> bool:
     return bool(cuts)
 
 
-def reply_text(store, job, text: str, actions=(), interrupted: bool = False, tiles=None, texts=None) -> str:
+def reply_text(store, job, text: str, actions=(), interrupted: bool = False, snap=None) -> str:
     """What a reply from the board tells the session: the words typed, then the review steps
     ticked (STEPS, done in that order, in every repo the story works in), which its rules leave
     to the reviewer. The go-ahead is for those steps only; a reply without steps withholds them.
     A merge closes the story: with nothing outstanding, the session moves its tile to Done.
     Every reply says a run of tests is an unticked sub-task while it runs (RERUN).
     interrupted: the session was at work and was stopped mid-step to take the message.
-    tiles: the tile index (serve.tile_index). texts: {key: tile markdown}, for the "Tests:" lines.
+    snap: the tiles.Snapshot of the board's files, for the "Tests:" lines and the sub-stories still to merge.
     A merge runs the full suite on the trunk after it (in each repo, on its own trunk) when the
     store's "fullSuiteOnMerge" or the nearest "Tests: full" line asks (full_suite_on_merge). A
     sub-story's merge does so only if it is the last of its master's sub-stories
-    (still_to_merge), and says the suite waits if it isn't."""
+    (still_to_merge), and says the suite waits if it isn't. A master only in the archive counts as
+    none: the story's own tile owns the suite."""
     key = job["key"]
     said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
     if interrupted:
@@ -1150,8 +1000,10 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, til
     }
     order = [s for s in STEPS if s in actions]
     master = job.get("master") or job.get("of")
+    if master and snap is not None and snap.index().get(master, {}).get("file") == reader.ARCHIVE_LOG:
+        master = None  # an archived master has no tile on the board to put the suite on
     waits = ""
-    if "merge" in actions and full_suite_on_merge(store, key, texts, tiles):
+    if "merge" in actions and full_suite_on_merge(store, key, snap):
         owner = master or key  # the tile the suite sub-task goes on
         if len(cuts) > 1:
             where_run = "in each repo this story works in, on its own trunk (" + ", ".join(f"{c['name']} {c.get('trunk') or store.trunk}" for c in cuts) + ")"
@@ -1165,7 +1017,7 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, til
         suite = (f"Run the full suite {where_run}, {tier}, {tip}: {why}. It is a sub-task on "
                  f"{owner}'s tile: add {subtasks} there before you start, and tick {'each' if len(cuts) > 1 else 'it'} when it has passed. "
                  f"If it fails, stop before any step after it and say what failed on that line and on this tile's \"Handoff:\" line.")
-        left = still_to_merge(store, job, tiles) if master else []
+        left = still_to_merge(store, job, snap) if master else []
         if left is None:  # no index: the session checks the board itself
             steps["suite"] = (f"If every other sub-story of {master} is in Done or archived (plans.md, backlog.md and archive/archived.md say), "
                               f"{key} is the last to merge: {suite[0].lower()}{suite[1:]} If some are still to merge, run only the tests for what "
@@ -1188,23 +1040,22 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, til
             f"{RERUN} If a step can't be done cleanly (a conflict, a failing gate), stop there and say why on the tile's \"Handoff:\" line. {done}")
 
 
-def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_id, on_start=None, stop=agent.stop, now=time.time, tiles=None, texts=None):
+def reply(store, key: str, text: str, actions=(), *, sessions: Sessions = SESSIONS, snap=None):
     """The message box on a tile's session: send what was typed, and any review steps ticked
     (squash, merge, push), into the same conversation (reply_text), Claude or Copilot alike. A
     session at work is interrupted: stopped mid-step, and told to act on it and carry on. An
     idle one is stopped first, as Continue does, and a gone one is resumed. Not for a paused or
     pausing story, which has Continue. None when it was sent; otherwise why not. The job is as it was, but
     for a session that was stopped and then couldn't be resumed: that one is gone (lost).
-    tiles: the tile index (serve.tile_index), which says whether a sub-story's merge is its
-    master's last (reply_text). texts: {key: tile markdown}, for the "Tests:" lines."""
+    snap: the tiles.Snapshot of the board's files, which says whether a sub-story's merge is its
+    master's last, and what the "Tests:" lines say (reply_text)."""
     text, actions = (text or "").strip(), list(actions or [])
     wrong = [a for a in actions if a not in ACTIONS]
     if wrong:
         return f"{', '.join(wrong)} is not an action: squash, merge, push or close"
     if not text and not actions:
         return "the message is empty"
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
         if job is None or not job.get("id"):
             return f"{key} has no session to reply to"
@@ -1214,30 +1065,25 @@ def reply(store, key: str, text: str, actions=(), *, resume=resume, lookup=full_
             return f"{key}'s session is {job['state']}: there is no conversation waiting for a reply"
         interrupted = job["state"] == "started"  # at work: stopped mid-step to take the message
         if not job.get("session"):  # started before the board kept the full id
-            job["session"] = lookup(job["id"])
+            job["session"] = sessions.full_id(job["id"])
         if not job.get("session"):
             return f"{key}'s conversation can't be found"
         if job["state"] in ("started", "idle"):
             try:
-                stop(job["id"])
+                sessions.stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 return f"its session couldn't be stopped to take the reply: {e}"
-        told = resume(store, job, reply_text(store, job, text, actions, interrupted, tiles, texts))
+        told = sessions.resume(store, job, reply_text(store, job, text, actions, interrupted, snap))
         if told["state"] != "started":
             why = told.get("error") or "the conversation couldn't be resumed"
             if job["state"] in ("started", "idle"):  # it was stopped to take the reply: it is gone now
-                job["state"] = "lost"
-                job.pop("waiting", None)
-                save(store, state)
+                ledger.lose(job)
                 return f"not sent: {why}. Its session was stopped to take the reply; Continue on its tile resumes it"
             return f"not sent: {why}"
-        job.update(told)
+        line = ledger.begin(job, told, sessions.now(), "given your reply" + (f" ({', '.join(s for s in ACTIONS if s in actions)})" if actions else ""))
         job.pop("waiting", None)
-        job.pop("closing", None)
-        if ("merge" in actions or CLOSE in actions) and not interrupted:  # it may move its own tile to Done: tick leaves it to finish
-            job["closing"] = True
-        _report(store, job, now(), on_start, "given your reply" + (f" ({', '.join(s for s in ACTIONS if s in actions)})" if actions else ""))
-        save(store, state)
+        ledger.close(job, ("merge" in actions or CLOSE in actions) and not interrupted)  # it may move its own tile to Done: tick leaves it to finish
+        _report(store, job, line, sessions)
         return None
 
 
@@ -1249,7 +1095,7 @@ def _start_moved(store, job) -> bool:
     return bool(here and repos and repos[0].name.lower() != here.lower())
 
 
-def restart(store, key: str, *, start=start, resume=resume, lookup=full_id, on_start=None, nudge=False, stop=agent.stop) -> bool:
+def restart(store, key: str, *, sessions: Sessions = SESSIONS, nudge=False) -> bool:
     """Get a tile's session going again after it went idle, was lost, or never started: the
     Restart button. Resumes the same conversation; when that can't be done, starts a new
     session in the same worktree to take over. False if the tile has no stopped session.
@@ -1257,18 +1103,17 @@ def restart(store, key: str, *, start=start, resume=resume, lookup=full_id, on_s
     or idle, is stopped first, and the resumed one is told to carry on (NUDGE); False when
     the tile has no session the board started, or it couldn't be stopped. On a paused story
     (pause) a new session takes over from its handoff."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
         if job is None or job["state"] not in (("started", "paused", *STOPPED) if nudge else STOPPED) or job.get("pausing"):
             return False
         paused = job["state"] == "paused"  # it left a handoff: a new session takes over, the old conversation isn't resumed
         stuck = nudge and job["state"] in ("started", "idle")  # stopped here to wake it: told it looked stuck
         if job.get("id") and not job.get("session"):  # started before the board kept the full id
-            job["session"] = lookup(job["id"])
+            job["session"] = sessions.full_id(job["id"])
         if nudge and job["state"] in ("started", "idle"):
             try:
-                stop(job["id"])
+                sessions.stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 log(f"{key} session {job['id']} could not be stopped to continue it: {e}")
                 return False
@@ -1281,30 +1126,24 @@ def restart(store, key: str, *, start=start, resume=resume, lookup=full_id, on_s
             again = _add_repos(store, {**job, "repos": _cuts_of(store, job)}, repos, job["session"])  # repos added to a stopped story's line
         else:
             text = NUDGE.format(key=key) if stuck else None
-            again = resume(store, job, text) if job.get("session") and not moved else {"state": "failed"}
+            again = sessions.resume(store, job, text) if job.get("session") and not moved else {"state": "failed"}
         if again["state"] == "started":
-            job.update(again)
-            _report(store, job, time.time(), on_start, "nudged to continue" if stuck else "resumed")
+            _report(store, job, ledger.begin(job, again, sessions.now(), "nudged to continue" if stuck else "resumed"), sessions)
         else:
             took_over = bool(job.get("id"))  # there was a session before: the new one takes over from it
             job.pop("error", None)
-            job.update(start(store, job, "paused" if paused else took_over))
+            launched = sessions.start(store, job, "paused" if paused else took_over)
             if paused:
                 how = "taken over from its handoff by a new session"
             elif took_over:
                 how = "restarted with a new session"
             else:
                 how = "picked up"
-            _report(store, job, time.time(), on_start, how)
-        save(store, state)
+            _report(store, job, ledger.begin(job, launched, sessions.now(), how), sessions)
         return True
 
 
 # ---------- tidying up after an archived story ----------
-TILE_BRANCH_RE = re.compile(r"(?:Claude|Copilot) session `[0-9a-f]+`.*?Branch `([^`]+)`, worktree `([^`]+)`")
-TILE_REPOS_RE = re.compile(r"(?:Claude|Copilot) session `[0-9a-f]+`.*?Branch `([^`]+)`, worktrees ([^`,]+? `[^`]+`(?:, [^`,]+? `[^`]+`)*)\.")
-
-
 def retire(session: str) -> bool:
     """Stop a background session and take it off the list (`claude stop`, `claude rm`).
     True when it was there and is gone now."""
@@ -1320,17 +1159,15 @@ def retire(session: str) -> bool:
 def archived(store, key: str):
     """A story was archived: a paused job on it is done with ("ended"), so it doesn't stay
     paused in the state file for good, as nothing else would move it on."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         job = next((j for j in reversed(state["jobs"]) if j["key"] == key), None)
         if job and job["state"] == "paused":
-            job["state"] = "ended"
-            save(store, state)
+            ledger.end(job)
 
 
 def job_for(store, key: str):
     """The last session started on a tile, as the board remembers it (its branch, worktree and id)."""
-    return next((j for j in reversed(load(store)["jobs"]) if j["key"] == key and j.get("branch") and j.get("worktree")), None)
+    return ledger.Ledger(store).latest(key, "branch", "worktree")
 
 
 def _tidy_cuts(store, tile_text: str, job):
@@ -1338,7 +1175,7 @@ def _tidy_cuts(store, tile_text: str, job):
     tile's session line, else the board's record of the pickup (job); None when it has neither."""
     found = tile_cuts(store, tile_text)
     if found:
-        return found[0], TILE_SESSION_RE.search(tile_text).group(1), found[1]
+        return found[0], reader.session(tile_text).id, found[1]
     if not job:
         return None
     raw = [(c["name"], c["worktree"]) for c in _cuts_of(store, job)]
@@ -1346,7 +1183,7 @@ def _tidy_cuts(store, tile_text: str, job):
     return job["branch"], job.get("id") or "", [(n, r, p if r else None) for n, r, p in cuts]
 
 
-def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, retire=retire) -> list:
+def tidy(store, tile_text: str, *, merged, job=None, sessions: Sessions = SESSIONS) -> list:
     """An archived story's worktrees, feature branch and Claude session are done with: remove
     the worktree in each repo the story worked in, delete the branch there, and stop and remove
     the session. Only what is safe goes, all or nothing across the repos. The branch must be in
@@ -1394,7 +1231,7 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
     if behind:
         where = " or ".join(f"{r.name}'s {r.trunk}" for r in behind) if many else behind[0].trunk
         return [f"kept {held}: the branch isn't in {where} yet"]
-    if session and (sessions() or {}).get(session) == "busy":
+    if session and (sessions.sessions() or {}).get(session) == "busy":
         return [f"kept {held}: the session is still at work"]
     dirty = []
     for repo, path in there:
@@ -1405,7 +1242,7 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
             dirty.append(f"{len(files)} uncommitted file{'s' if len(files) != 1 else ''} in {whose} worktree")
     if dirty:
         return [f"kept {held}: {' and '.join(dirty)}"]
-    done = [f"closed session {session}"] if session and retire(session) else []  # first: it sits in the worktree
+    done = [f"closed session {session}"] if session and sessions.retire(session) else []  # first: it sits in the worktree
     for _, repo, path in cuts:
         at = f" in {repo.name}" if many else ""
         if (repo, path) in there:
@@ -1424,23 +1261,21 @@ def tidy(store, tile_text: str, *, merged, job=None, sessions=agent.sessions, re
     return done
 
 
-def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
+def discard(store, key: str, tile_text: str = "", *, sessions: Sessions = SESSIONS) -> list:
     """A deleted story's work is thrown away: its session stopped and removed, its worktree in
     each repo removed with whatever is uncommitted in it, and its feature branch deleted where
     it has no commits of its own (one that has is kept, so no commit is lost). Its jobs end, so
     nothing restarts or queues it. Returns what was done, as lines for the console."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         jobs = [j for j in state["jobs"] if j["key"] == key]
         for j in jobs:
-            j["state"] = "ended"
-        save(store, state)
-    if not jobs and not TILE_SESSION_RE.search(tile_text):
+            ledger.end(j)
+    if not jobs and reader.session(tile_text) is None:
         return []
     last = job_for(store, key)
     got = _tidy_cuts(store, tile_text, last)
-    sessions = {j["id"] for j in jobs if j.get("id")} | ({got[1]} if got and got[1] else set())
-    done = [f"closed session {sid}" for sid in sorted(sessions) if retire(sid)]
+    sids = {j["id"] for j in jobs if j.get("id")} | ({got[1]} if got and got[1] else set())
+    done = [f"closed session {sid}" for sid in sorted(sids) if sessions.retire(sid)]
     if not got:
         return done
     name, _, cuts = got
@@ -1470,31 +1305,26 @@ def discard(store, key: str, tile_text: str = "", *, retire=retire) -> list:
     return done
 
 
-TILE_SESSION_RE = re.compile(r"(?:Claude|Copilot) session `([0-9a-f]+)`")  # the line the server writes into a tile
-
-
 def adopt(store, tiles) -> list:
     """At the server's start: the In flight tiles that never had a session (no job, no session
     line on the tile, no sub-story in flight) are taken out of what the board saw last, so its
     next look picks them up as if they had just landed. Returns their keys."""
-    with _lock:
-        state = load(store)
+    with ledger.Ledger(store).change() as state:
         had = {j["key"] for j in state["jobs"]}
         masters = {t["parent"] for t in tiles if t.get("parent")}
         fresh = [t["key"] for t in tiles if t["key"] not in had and t["key"] not in masters
-                 and not TILE_SESSION_RE.search(t["text"]) and not OPT_OUT_RE.search(t["text"])]
+                 and reader.session(t["text"]) is None and not reader.opted_out(t["text"])]
         seen = state["inflight"] if state["inflight"] is not None else [t["key"] for t in tiles]
         state["inflight"] = [k for k in seen if k not in fresh]
-        save(store, state)
         return fresh
 
 
-def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
+def startup_report(store, tiles, *, sessions: Sessions = SESSIONS) -> list:
     """The lines the server prints when it starts: each In flight tile with its Claude
     session and what that is doing, then any other session the board started that is still
-    going. tiles: the In flight tiles now (serve.in_flight_tiles)."""
-    there = sessions()
-    jobs = {j["key"]: j for j in load(store)["jobs"]}  # the latest job for each key
+    going. tiles: the In flight tiles now (tiles.Snapshot.in_flight)."""
+    there = sessions.sessions()
+    jobs = {j["key"]: j for j in ledger.Ledger(store).read()["jobs"]}  # the latest job for each key
 
     def doing(sid):
         if there is None:
@@ -1508,8 +1338,8 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
 
     lines = [f"{len(tiles)} in flight:"] if tiles else ["Nothing in flight."]
     for t in tiles:
-        job, noted = jobs.get(t["key"]), TILE_SESSION_RE.search(t["text"])
-        sid = noted.group(1) if noted else (job or {}).get("id")
+        job, noted = jobs.get(t["key"]), reader.session(t["text"])
+        sid = noted.id if noted else (job or {}).get("id")
         if job and job["state"] == "waiting":
             what = f"queued behind {job['behind']}" if job.get("behind") else "queued"
         elif job and job["state"] == "failed":
@@ -1519,8 +1349,8 @@ def startup_report(store, tiles, *, sessions=agent.sessions) -> list:
         elif sid:
             what = doing(sid)
         else:
-            what = "no session: its tile says No pickup" if OPT_OUT_RE.search(t["text"]) else "no session"
-        if ready_note(t["text"]) is not None:
+            what = "no session: its tile says No pickup" if reader.opted_out(t["text"]) else "no session"
+        if reader.ready(t["text"]) is not None:
             what += ", ready for review"
         lines.append(f"  {t['key']} \"{t['title']}\": {what}")
     here = {t["key"] for t in tiles}
@@ -1603,7 +1433,7 @@ def eta_text(tile_text: str, started, now: float) -> str:
     est = ESTIMATE_RE.search(tile_text.split("\n", 1)[0])
     when = lambda seconds: time.strftime("%Y-%m-%d %H:%M", time.localtime(now + seconds))
     if total and done == total:  # the work is written; whether it is done is what the Ready for review line says
-        if ready_note(tile_text) is None:
+        if reader.ready(tile_text) is None:
             return f"All {total} sub-tasks ticked, but not done yet: its tests and review are still to finish (no Ready for review line)."
         return f"All {total} sub-tasks ticked, and it is ready for review."
     progress = f"{done} of {total} sub-tasks ticked" if total else ""
@@ -1624,20 +1454,21 @@ def eta_text(tile_text: str, started, now: float) -> str:
     return f"{lead}; by {by}" if lead else f"By {by}"
 
 
-def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle_reason, screen=session_screen, now=time.time):
+def status(store, key: str, tile_text: str, *, sessions: Sessions = SESSIONS):
     """The status line for a tile, as of now: "Status 2026-11-18 14:58: session ... at work.
     Branch ... 2 of 5 sub-tasks ticked ... (ETA ...) On its screen (rough): ...". None if the
     tile has no Claude session."""
-    job = next((j for j in reversed(load(store)["jobs"]) if j["key"] == key), None) or {}
-    noted = TILE_SESSION_RE.search(tile_text)
-    sid = noted.group(1) if noted else job.get("id")
+    why, screen, now = sessions.why, sessions.screen, sessions.now
+    job = ledger.Ledger(store).latest(key) or {}
+    noted = reader.session(tile_text)
+    sid = noted.id if noted else job.get("id")
     if not sid:
         return None
     found = tile_cuts(store, tile_text)
     cuts = found[1] if found else [(c["name"], store.repo(c["name"]), Path(c["worktree"]) if store.repo(c["name"]) else None)
                                    for c in job.get("repos") or []]
     if len(cuts) > 1 or (cuts and store.main_repo and cuts[0][1] != store.main_repo):  # several repos: a part for each
-        there = sessions()
+        there = sessions.sessions()
         seen = "unknown" if there is None else there.get(sid)
         if seen in ("idle", "waiting"):  # blocked on input counts as a question
             seen = why(sid) or ("question" if seen == "waiting" else "idle")
@@ -1651,7 +1482,7 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
         showing = screen(sid) if seen not in (None, "unknown") else ""
         return f"Status {stamp}: {said}" + (f' On its screen (rough): "{showing}".' if showing else "")
     path = job.get("worktree") or (tile_worktree(store, tile_text) or worktree(store, {"key": key}) if store.app else "")
-    there = sessions()
+    there = sessions.sessions()
     seen = "unknown" if there is None else there.get(sid)
     if seen in ("idle", "waiting"):
         seen = why(sid) or ("question" if seen == "waiting" else "idle")
@@ -1666,10 +1497,13 @@ def status(store, key: str, tile_text: str, *, sessions=agent.sessions, why=idle
 def summary(store) -> dict:
     """What the page shows: the jobs, without the tiles' text, and whether pickup is on (why:
     why_off's sentence when it is off). A story ready for review whose session isn't at work
-    carries "empty" when it has nothing to merge (nothing_to_merge): its review is Close."""
-    jobs = [{k: v for k, v in j.items() if k != "text"} for j in load(store)["jobs"]]
+    carries "empty" when it has nothing to merge (nothing_to_merge): its review is Close. Each job
+    carries its "view" (ledger.view): its label and the actions open to it."""
+    jobs = [{k: v for k, v in j.items() if k != "text"} for j in ledger.Ledger(store).read()["jobs"]]
     for j in jobs:
         if j.get("ready") and j["state"] in ("idle", "lost") and nothing_to_merge(store, j):
             j["empty"] = True
+    for j in jobs:
+        j["view"] = ledger.view(j)
     why = why_off(store)
     return {"enabled": why is None, "why": why, "jobs": jobs}

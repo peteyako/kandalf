@@ -157,7 +157,7 @@ class Copilot(unittest.TestCase):
         pickup.save(store, {"inflight": ["PLN-01"], "jobs": [{"key": "PLN-01", "title": "One", "state": "started", "id": old,
                                                               "session": full, "worktree": str(self.work), "branch": "pln-01-one", "model": "auto", "started": 0}]})
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertIsNone(pickup.reply(store, "PLN-01", "Leave the CSS alone.", stop=copilot_cli.stop))
+            self.assertIsNone(pickup.reply(store, "PLN-01", "Leave the CSS alone.", sessions=pickup.Sessions(stop=copilot_cli.stop)))
         self.assertNotEqual(copilot_cli.sessions().get(old), "busy")  # its process was stopped
         job = pickup.load(store)["jobs"][0]
         self.assertEqual(job["state"], "started")

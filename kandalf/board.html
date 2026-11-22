@@ -138,7 +138,9 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] .session-ask { margin-top: 4px; font-weight: 700; color: var(--text); }
 :root[data-theme="classic"] .card.needs-you { outline: 2px solid var(--p2); outline-offset: -2px; }
 /* Finished and waiting for review: a green outline and note, until the tile is in Done. */
-:root[data-theme="classic"] .card.ready { outline: 3px solid var(--done); outline-offset: -3px; }
+:root[data-theme="classic"] .card.ready { outline: 3px solid var(--done); outline-offset: -3px; animation: ready 1.6s ease-in-out infinite; }
+@keyframes ready { 0%, 100% { background: color-mix(in srgb, var(--done) 16%, var(--card)); } 50% { background: var(--card); } }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="classic"] .card.ready { animation: none; } }
 :root[data-theme="classic"] .ready-note, :root[data-theme="classic"] .tv-ready { margin-top: 6px; padding: 5px 8px; border-radius: 4px; border-left: 3px solid var(--done); background: color-mix(in srgb, var(--done) 14%, transparent); font-size: 12px; }
 :root[data-theme="classic"] .ready-note { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 :root[data-theme="classic"] .ready-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--done); }
@@ -768,7 +770,9 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 /* It waits for input: the whole tile changes, with a heavier outline, until it is answered. */
 :root:not([data-theme="classic"]) .card.needs-you { --this-bg: var(--waiting-bg); --bw-now: var(--state-bw); --bc-now: var(--wait-bc); }
 /* Finished and waiting for review: a green tile and note, until the tile is in Done. */
-:root:not([data-theme="classic"]) .card.ready { --this-bg: var(--ready-bg); --bw-now: var(--state-bw); --bc-now: var(--ready-bc); }
+:root:not([data-theme="classic"]) .card.ready { --this-bg: var(--ready-bg); --bw-now: var(--state-bw); --bc-now: var(--ready-bc); animation: t-ready 1.6s ease-in-out infinite; }
+@keyframes t-ready { 0%, 100% { background: var(--ready-bg); } 50% { background: var(--card); } }  /* green: done and waiting for you, nothing wrong */
+@media (prefers-reduced-motion: reduce) { :root:not([data-theme="classic"]) .card.ready { animation: none; } }
 :root:not([data-theme="classic"]) .ready-note, :root:not([data-theme="classic"]) .tv-ready { font-size: 13px; }
 :root:not([data-theme="classic"]) .ready-note { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 :root:not([data-theme="classic"]) .ready-label { display: inline-block; margin-right: 6px; padding: 0 6px; font: 700 11px var(--mono); line-height: 1.5; --sb: var(--ok-bg); --sf: var(--ok-fg); }
@@ -1182,8 +1186,8 @@ function readsAsBoard(text, d) {
 // "In progrees"), Doing, WIP...; Done, Shipped, Completed, Merged... Never a name that says
 // "not". A board has one of each at most: renaming a column refuses a second, and kandalf
 // check (check.js) fails a board that has two.
-const IN_FLIGHT_RE = /^(?!.*\bnot\b).*\b(?:in[\s_-]*flight|progre\w*|doing|wip|working|under[\s_-]*way|ongoing|active)\b/i;  // pickup.py
-const DONE_COL_RE = /^(?!.*\bnot\b).*\b(?:done|shipped|completed?|finished|closed|merged|released|deployed|delivered|resolved)\b/i;  // serve.py
+const IN_FLIGHT_RE = /^(?!.*\bnot\b).*\b(?:in[\s_-]*flight|progre\w*|doing|wip|working|under[\s_-]*way|ongoing|active)\b/i;  // tiles.py: IN_FLIGHT_RE
+const DONE_COL_RE = /^(?!.*\bnot\b).*\b(?:done|shipped|completed?|finished|closed|merged|released|deployed|delivered|resolved)\b/i;  // tiles.py: DONE_COL_RE
 const isDoneCol = name => DONE_COL_RE.test(name);
 function columnKind(name) {
   if (IN_FLIGHT_RE.test(name)) return "In flight";
@@ -1227,11 +1231,11 @@ const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
 let HEAD_RE, KEY_NUM_RE, LINK_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
 // Linked tiles: a tile whose text says "Moves with PLN-74" (or "PLN-74, PLN-75 and PLN-76")
-// moves with those tiles. serve.py reads the same wording (link_re there).
+// moves with those tiles. tiles.py reads the same wording (the "link" pattern in its _patterns).
 const linkRe = k => new RegExp(String.raw`\bmoves with\s+(${reEsc(k)}-\d+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)${reEsc(k)}-\d+)*)`, "gi");
 const keyAnyRe = k => new RegExp(String.raw`\b${reEsc(k)}-\d+\b`, "g");
 // Master tiles: a tile whose text says "Part of PLN-70" is a sub-story of PLN-70; only the
-// first one counts. serve.py reads the same wording (part_re there).
+// first one counts. tiles.py reads the same wording (the "part" pattern in its _patterns).
 const partRe = k => new RegExp(String.raw`\bpart of\s+(${reEsc(k)}-\d+)\b`, "gi");
 const keyLinkRe = k => new RegExp(String.raw`(<a\b[^>]*>.*?</a>|<code>.*?</code>|<[^>]+>)|(?<![\w-])${reEsc(k)}-\d+\b`, "g");
 function setKey(k) {
@@ -1266,6 +1270,12 @@ const linkTag = keys => keys.length ? `<span class="linked" title="Moves with ${
 // in both directions and chains, so only one tile of a group has to say it.
 let serverLinks = null;  // {"PLN-NN": [keys]}; null from a server too old to move linked tiles
 const cardKey = c => splitCard(c.text).key;
+// The keys a tile's own text says it moves with, in order, never itself (tiles.py: Tile.links).
+function movesWith(key, text) {
+  const out = [];
+  for (const m of text.matchAll(LINK_RE)) for (const o of m[1].match(KEY_ANY_RE)) if (o !== key && !out.includes(o)) out.push(o);
+  return out;
+}
 function linkEdges() {
   const edges = new Map();
   const oneWay = (a, b) => { if (!edges.has(a)) edges.set(a, new Set()); edges.get(a).add(b); };
@@ -1275,7 +1285,7 @@ function linkEdges() {
   for (const [k, others] of Object.entries(serverLinks || {})) for (const o of others) if (!here.has(k) || !here.has(o)) add(k, o);
   for (const s of doc.sections) for (const c of s.cards) {
     const k = cardKey(c); if (!k) continue;
-    for (const m of [c.text, ...c.body].join("\n").matchAll(LINK_RE)) for (const o of m[1].match(KEY_ANY_RE)) add(k, o);
+    for (const o of movesWith(k, [c.text, ...c.body].join("\n"))) add(k, o);
   }
   return edges;
 }
@@ -1295,7 +1305,7 @@ const keyList = keys => keys.length > 1 ? keys.slice(0, -1).join(", ") + " and "
 // ---------- master tiles, sub-stories and related tiles ----------
 // None of this moves a tile. The index holds every keyed tile: the ones on this board as
 // they read right now, and the server's word (serverTiles) on the other boards' tiles.
-let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions}} (serve.py: tile_index)
+let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions, tests}} (tiles.py: Snapshot.index)
 const byKeyOrder = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 // What a tile's own text says: its master, and the other keys it names.
 function tileFacts(key, text) {
@@ -1406,6 +1416,24 @@ const baseTag = base => base ? `<span class="repos base" title="Cut from and mer
 const testsTag = tests => tests === "full" ? `<span class="repos tests" title="Runs the full suite on ${esc(STORE_TRUNK)} when it is merged from the board">🧪 full suite</span>` : "";
 const modelTag = model => model ? `<span class="model" title="Its ${AGENT} session runs on ${esc(model)}, not the store's default (${esc(STORE_MODEL)})">◈ ${esc(model)}</span>` : "";
 const STOPPED = { idle: "idle", lost: "gone", paused: "paused" };  // a session that isn't at work, as the tile says it
+// What a job shows: its label and the actions open to it (jobs.py: view). The server sends it as
+// job.view; for one that doesn't (an older server), the same table is worked out here.
+// Same in jobs.py: view (view_cases.json holds both to one table).
+function jobView(job) {
+  if (!job) return { label: "", actions: [] };
+  if (job.view) return job.view;
+  const at = job.state, actions = [];
+  const label = at === "started" ? (job.pausing ? "pausing" : "working") : at === "idle" && job.waiting ? "waiting for you" : STOPPED[at] || "";
+  if (["started", "idle", "lost"].includes(at) && !job.pausing) actions.push("reply");
+  if (at === "started") actions.push("pause");
+  if (at === "waiting") actions.push("startnow");
+  if (["paused", "idle", "lost"].includes(at)) actions.push("continue");
+  if (at === "paused") actions.push("queue");
+  if (at === "failed") actions.push("restart");
+  if (actions.includes("reply") && at !== "started" && job.ready && job.empty) actions.push("close");
+  return { label, actions };
+}
+const canDo = (job, act) => jobView(job).actions.includes(act);
 const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? `Try starting ${AGENT} on this tile again` : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
 // Continue: get a stopped session going again. An idle or gone one is resumed in the same
 // conversation, told to carry on (pickup.py: NUDGE); a paused one is taken over by a new
@@ -1431,14 +1459,14 @@ const startNowButton = job => `<button type="button" class="pickup-restart" data
 // Queue: a paused story goes to the back of the queue; a new session takes it over in its turn.
 const queueButton = job => `<button type="button" class="pickup-restart" data-act="queue" data-key="${job.key}" title="${esc(`Put this back in the queue: a new ${AGENT} session takes it over from its handoff when a session at work ends. Continue starts it now.`)}">◌ Queue</button>`;
 function wakeButton(job) {
-  switch (job.state) {
-    case "started": return job.pausing ? pauseNowButton(job) : pauseButton(job);
-    case "waiting": return startNowButton(job);
-    case "paused": return continueButton(job) + queueButton(job);
-    case "idle": case "lost": return continueButton(job);
-    case "failed": return restartButton(job, "↻ Retry");
-    default: return "";
-  }
+  const buttons = {
+    pause: () => job.pausing ? pauseNowButton(job) : pauseButton(job),
+    startnow: () => startNowButton(job),
+    continue: () => continueButton(job),
+    queue: () => queueButton(job),
+    restart: () => restartButton(job, "↻ Retry"),
+  };
+  return jobView(job).actions.map(a => buttons[a]?.() ?? "").join("");
 }
 // The job behind a tile's session line, if the board started that session.
 function sessionJob(session, key) {
@@ -1450,10 +1478,7 @@ function sessionJob(session, key) {
 const WAITING = { interrupted: "it was interrupted", question: "it asked a question", error: "it ended on an error" };  // pickup.py: WAITING
 // What a job's session is doing, in a word or two, for the block's label.
 function sessionState(job) {
-  if (!job) return "";
-  if (job.state === "started") return job.pausing ? "pausing" : "working";
-  if (job.state === "idle" && job.waiting) return "waiting for you";
-  return STOPPED[job.state] || "";
+  return jobView(job).label;
 }
 // The message box on a tile's session (pickup.py: reply). Open when the session waits for you:
 // it asked something, ended on an error, or its story is ready for review; then a review reply
@@ -1463,11 +1488,11 @@ function sessionState(job) {
 // is drawn again.
 const replyDrafts = {}, replyOpen = new Set();
 const logTexts = {};  // each open box's log as last fetched (/api/log), by key: refreshLogs keeps them current
-const wantsReply = job => !!job && ["idle", "lost"].includes(job.state) && !!(job.waiting || job.ready);
-const canMessage = job => !!job && !job.pausing && ["started", "idle", "lost"].includes(job.state);
+const wantsReply = job => !!job && canDo(job, "reply") && !canDo(job, "pause") && !!(job.waiting || job.ready);  // not one at work: nothing to answer yet
+const canMessage = job => !!job && canDo(job, "reply");
 function replyHTML(job) {
   const draft = replyDrafts[job.key] || { text: "", steps: [] };
-  const atWork = job.state === "started";
+  const atWork = canDo(job, "pause");
   const open = wantsReply(job) || replyOpen.has(job.key) || !!draft.text || draft.steps.length > 0;
   const step = (id, label) => `<label><input type="checkbox" data-step="${id}"${draft.steps.includes(id) ? " checked" : ""}> ${label}</label>`;
   const trunks = [...new Set((job.repos || []).map(c => c.trunk).filter(Boolean))];  // the story's own repos' trunks
@@ -1475,7 +1500,7 @@ function replyHTML(job) {
   // A story with nothing to merge (a master whose sub-stories did the work: pickup.nothing_to_merge) is closed, not merged.
   const closeButton = `<button type="button" data-act="close-story" data-key="${job.key}" title="${esc(`Its branch has nothing to merge. ${AGENT} takes the Ready for review line off and moves the tile to Done, with anything typed above`)}">✓ Close</button>`;
   let steps = "";
-  if (job.ready && !atWork) steps = job.empty ? closeButton : `<div class="reply-steps">${step("squash", "Squash")}${step("merge", `Merge into ${into}`)}${step("push", "Push")}</div>`;
+  if (job.ready && !atWork) steps = canDo(job, "close") ? closeButton : `<div class="reply-steps">${step("squash", "Squash")}${step("merge", `Merge into ${into}`)}${step("push", "Push")}</div>`;
   let hint, summary = `Log · message ${AGENT}`, send = "Send";
   if (atWork) {
     hint = `Tell ${AGENT} something now: it stops mid-step, reads it, then carries on`;
@@ -1522,7 +1547,7 @@ async function refreshLogs() {
 const statusBusy = new Set();  // the keys whose Status check is running: their buttons spin, however often the board is redrawn
 function sessionHTML(session, key) {
   if (!session) return "";
-  const job = sessionJob(session, key), state = sessionState(job), waiting = job?.state === "idle" && job.waiting;
+  const job = sessionJob(session, key), state = sessionState(job), waiting = state === "waiting for you";
   const stateClass = waiting ? "waiting" : job?.pausing ? "pausing" : job?.state;
   const attach = attachCmd(session.id);
   const look = job?.state === "lost" ? " lost" : waiting ? " waiting" : "";
@@ -1545,11 +1570,11 @@ function pickupTag(key, sec, session) {
   // A queued job is said beside the key even when the tile still has a session line (a paused story queued again).
   if (!job || (sessionJob(session, key) && job.state !== "waiting")) return "";
   const inFlight = isPickupColumn(sec.name);
-  if (job.state === "started") return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>` + (inFlight ? wakeButton(job) : "");
+  if (canDo(job, "pause")) return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>` + (inFlight ? wakeButton(job) : "");
   if (!inFlight) return "";  // the rest only matters while the tile is in flight
-  if (STOPPED[job.state]) return `<span class="pickup${job.state === "paused" ? "" : " bad"}" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + wakeButton(job);
-  if (job.state === "waiting") return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. It starts by itself then; Start now doesn't wait.`)}">◌ queued</span>` + (sessionJob(session, key) ? "" : startNowButton(job));  // with a session block, Start now is in its row of buttons
-  if (job.state === "failed") return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
+  if (canDo(job, "continue")) return `<span class="pickup${job.state === "paused" ? "" : " bad"}" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + wakeButton(job);
+  if (canDo(job, "startnow")) return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. It starts by itself then; Start now doesn't wait.`)}">◌ queued</span>` + (sessionJob(session, key) ? "" : startNowButton(job));  // with a session block, Start now is in its row of buttons
+  if (canDo(job, "restart")) return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
   return "";
 }
 
@@ -1582,10 +1607,10 @@ function nextKey() {
 // story's description. Sub-tasks are edited in place by body line index, so the
 // file round-trips unchanged.
 const SUB_RE = /^  [-*] \[( |x|X)\] (.*)$/;
-// The line the server writes into a tile when a Claude session starts on it (serve.py:
+// The line the server writes into a tile when a Claude session starts on it (tiles.py:
 // with_session): "Claude session `id`: `kandalf attach id`. Branch ..., worktree .... Started ...".
 // It shows as a block of its own, not as part of the description.
-const SESSION_RE = /^\s*(?:Claude|Copilot) session `([0-9a-f]{6,})`: `[^`]+`\.?\s*(.*)$/;
+const SESSION_RE = /^[ \t]+(?:Claude|Copilot) session `([0-9a-f]{6,})`: `[^`]+`\.?\s*(.*)$/;  // tiles.py: SESSION_LINE_RE
 function sessionLine(line) {
   const m = line.match(SESSION_RE);
   return m ? { id: m[1], rest: m[2] } : null;
@@ -1593,19 +1618,19 @@ function sessionLine(line) {
 // The command that opens a session, by id (the store's agent decides it; serve.py: /api/files).
 const attachCmd = id => STORE_ATTACH.replace("{id}", id);
 // A tile picks the model its Claude session runs on with a line of its own, "Model: sonnet";
-// without one it is the store's default (pickup.py: MODEL_RE, model_for). The dialog's Model
+// without one it is the store's default (tiles.py: MODEL_RE, model). The dialog's Model
 // dropdown writes and removes that line.
-const MODEL_RE = /^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$/i;
+const MODEL_RE = /^[ \t]+model:[ \t]*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?[ \t]*$/i;
 // A "Repos: api, web" line names the repos a story works in; without one it is the main repo
-// (pickup.py: REPOS_RE, repo_names). The dialog's Repos boxes write and remove that line.
+// (tiles.py: REPOS_RE, repos). The dialog's Repos boxes write and remove that line.
 const REPOS_RE = /^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$/i;
 // A "Base: feature-x" line names the branch a story is cut from and merged into; without one it
-// is the store's trunk (pickup.py: BASE_RE, story_trunk). The dialog's Base field writes and removes it.
+// is the store's trunk (tiles.py: BASE_RE, base). The dialog's Base field writes and removes it.
 const BASE_RE = /^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._\/-]*?)`?\.?[ \t]*$/i;
 // A "Tests: full" (or "Tests: affected") line says whether merging the story from the board runs the
 // full suite on the trunk; without one the tile takes its master's, else the store's setting
-// (pickup.py: TESTS_RE). The dialog's "Full suite on merge" box writes and removes it.
-const TESTS_RE = /^[ \t]+tests:[ \t]*`?(full|affected)`?\.?[ \t]*$/i;  // same in pickup.py
+// (tiles.py: TESTS_RE, tests). The dialog's "Full suite on merge" box writes and removes it.
+const TESTS_RE = /^[ \t]+tests:[ \t]*`?(full|affected)`?\.?[ \t]*$/i;  // tiles.py: TESTS_RE
 const BRANCH_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/;
 const reposIn = line => {
   const m = line.match(REPOS_RE), names = [];
@@ -1613,8 +1638,8 @@ const reposIn = line => {
   return m ? names : null;
 };
 // A master's "Sessions: 3" line: how many of its sub-stories have a session at work at once
-// (pickup.py: SESSIONS_RE). No line is the store's number. These take a tile's body lines.
-const SESSIONS_RE = /^\s+sessions:\s*`?(\d+)`?\.?\s*$/i;
+// (tiles.py: SESSIONS_RE, sessions). No line is the store's number. These take a tile's body lines.
+const SESSIONS_RE = /^[ \t]+sessions:[ \t]*`?(\d+)`?\.?[ \t]*$/i;
 const sessionsOf = body => +(body.map(line => line.match(SESSIONS_RE)).find(Boolean)?.[1] || 0);
 function withSessions(body, n) {
   const lines = body.filter(line => !SESSIONS_RE.test(line));
@@ -1662,15 +1687,18 @@ function withBase(md, base) {
 }
 const testsOf = md => md.split("\n").slice(1).map(line => line.match(TESTS_RE)).find(Boolean)?.[1].toLowerCase() || "";
 // What a tile with no Tests line of its own gets from its nearest master that has one: "full",
-// "affected" or "". Reads the masters on the open board; one on another board counts as none.
+// "affected" or "". A master on the open board is read from its text as it is now; one on another
+// board from the server's index (serverTiles), which carries that tile's own Tests value
+// (tiles.py: Snapshot.index), as a merge reads it.
 function inheritedTests(md) {
   const index = tileIndex(), cards = new Map();
   for (const s of doc.sections) for (const c of s.cards) { const k = cardKey(c); if (k && !cards.has(k)) cards.set(k, [c.text, ...c.body].join("\n")); }
-  const seen = new Set();
-  let p = tileFacts("", md).parent;
+  const key = splitCard(md.split("\n")[0]).key;  // a ring of masters is broken as the index breaks it: the tile never inherits from itself
+  const seen = new Set([key]);
+  let p = key && index.has(key) ? index.get(key).parent : tileFacts(key, md).parent;
   while (p && !seen.has(p)) {
     seen.add(p);
-    const own = cards.has(p) ? testsOf(cards.get(p)) : "";
+    const own = cards.has(p) ? testsOf(cards.get(p)) : index.get(p)?.tests || "";
     if (own) return own;
     p = index.get(p)?.parent;
   }
@@ -1711,17 +1739,17 @@ function withRepos(md, names) {
   }
   return lines.join("\n");
 }
-// The line the Status button has the server write as a tile's last line (serve.py:
+// The line the Status button has the server write as a tile's last line (tiles.py:
 // with_status): "**Status 2026-11-18 14:58:** session `id` at work. Branch ...". It shows in
 // bold right under the session block of the opened tile, not in the description.
-const STATUS_RE = /^\s*\*\*Status (\d{4}-\d\d-\d\d \d\d:\d\d):\*\*\s*(.*)$/;
+const STATUS_RE = /^[ \t]+\*\*Status (\d{4}-\d\d-\d\d \d\d:\d\d):\*\*(?:\s+(.*))?$/;  // tiles.py: STATUS_LINE_RE
 function statusLine(line) {
   const m = line.match(STATUS_RE);
-  return m ? { at: m[1], text: m[2] } : null;
+  return m ? { at: m[1], text: m[2] || "" } : null;
 }
 // A story that is finished and waiting for review says so on a line of its own that starts
-// "Ready for review" (its session writes "**Ready for review:** <gate results>"; pickup.py:
-// READY_RE). The tile is outlined until it moves to Done.
+// "Ready for review" (its session writes "**Ready for review:** <gate results>"; tiles.py:
+// READY_RE, ready). The tile is outlined until it moves to Done.
 const READY_RE = /^\s+(?:\*\*)?Ready for review\b[:.]?(?:\*\*)?[:.]?[ \t]*(.*)$/i;
 function readyLine(line) {
   const m = line.match(READY_RE);
@@ -1907,6 +1935,14 @@ function settingsChanges(view, form) {
   }
   return out;
 }
+// How a tile stands out, from its job and whether it waits for review: " needs-you" when its
+// session asked something, else " ready" (green) when it is ready for review, however its session
+// stopped, else " lost" (red) for a session gone without being ready, else "".
+function cardLook(job, forReview) {
+  if (job?.state === "idle" && job.waiting) return " needs-you";
+  if (forReview) return " ready";
+  return job?.state === "lost" ? " lost" : "";
+}
 // A plan doc (anything in active/ or archive/ but the archive log, or any file that isn't
 // board-shaped) shows as a formatted document, not as columns.
 function isDocFile() { return (file.includes("/") && file !== "archive/archived.md") || readonly; }
@@ -2012,11 +2048,10 @@ function renderCard(c, sec) {
   const el = document.createElement("div");
   const notMerged = key && unmerged[key];
   const job = isPickupColumn(sec.name) ? pickupFor(key) : undefined;
-  const lost = job?.state === "lost", needsYou = job?.state === "idle" && job.waiting;  // its session is gone; or waits for input
-  el.className = "card" + (c.check ? " done" : "") + (isStory ? " story" : "") + (notMerged ? " unmerged" : "") + (lost ? " lost" : "") + (needsYou ? " needs-you" : "");
+  el.className = "card" + (c.check ? " done" : "") + (isStory ? " story" : "") + (notMerged ? " unmerged" : "");
   // Finished and waiting for you to review, merge and squash: outlined until it is in Done.
   const forReview = ready !== null && !isDoneCol(sec.name);
-  if (forReview && !lost && !needsYou) el.className += " ready";
+  el.className += cardLook(job, forReview);
   const readyHTML = forReview ? `<div class="ready-note"><span class="ready-label">✔ Ready for review</span>${ready ? inline(ready) : ""}</div>` : "";
   el.draggable = true; el.dataset.id = c.id;
   if (notMerged) el.title = `Done, but not merged into ${base || STORE_TRUNK} yet: ` + notMerged.join(", ");

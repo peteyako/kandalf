@@ -14,13 +14,14 @@ it links, so the doc and its story read the same.
 import re
 from pathlib import Path
 
-TILE_RE = re.compile(r"^- (\[[ xX]\] )?(.*)$")
+from . import tiles as reader
+
 ACTIVE_LINK_RE = re.compile(r"\]\(active/([\w.-]+\.md)\)")
 
 
 def highest(store, *paths: Path) -> int:
     """The highest key on a tile line; keys mentioned in prose don't count."""
-    nums = [int(n) for p in paths if p.is_file() for n in store.tile_key_re.findall(p.read_text(encoding="utf-8"))]
+    nums = [n for p in paths if p.is_file() for n in reader.numbers(store, p.read_text(encoding="utf-8"))]
     return max(nums, default=0)
 
 
@@ -37,13 +38,11 @@ def tiles_oldest_first(store, lines):
     """Indexes of unkeyed top-level tiles, oldest first: the board puts the newest tile at
     the top of its column and columns run Backlog → Done, so walk the columns right to
     left and each column bottom to top."""
-    columns, current = [], None
-    for i, line in enumerate(lines):
-        if line.startswith("## "):
-            current = []
-            columns.append(current)
-        elif current is not None and (m := TILE_RE.match(line)) and not store.keyed_re.match(m.group(2)):
-            current.append(i)
+    headings = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    columns = [[] for _ in headings]
+    for t in reader.parse(store, "\n".join(lines)):
+        if t.key is None:
+            columns[sum(1 for h in headings if h < t.start) - 1].append(t.start)
     return [i for col in reversed(columns) for i in reversed(col)]
 
 
@@ -58,8 +57,7 @@ def assign(store) -> list:
         lines = path.read_text(encoding="utf-8").split("\n")
         for i in tiles_oldest_first(store, lines):
             n += 1
-            m = TILE_RE.match(lines[i])
-            lines[i] = f"- {m.group(1) or ''}{store.fmt(n)} {m.group(2)}"
+            lines[i] = reader.with_key(lines[i], store.fmt(n))
             given.append(store.fmt(n))
         path.write_text("\n".join(lines), encoding="utf-8")
         if path != log:

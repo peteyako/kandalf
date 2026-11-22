@@ -59,10 +59,10 @@ def session_of(args):
     want = args[0]
     if all(c in "0123456789abcdef" for c in want):
         return want
-    from . import pickup
+    from . import jobs
     st, rest = pick_store(args)
     key = rest[0].upper()
-    job = next((j for j in reversed(pickup.load(st)["jobs"]) if j["key"] == key and j.get("id")), None)
+    job = jobs.Ledger(st).latest(key, "id")
     if job is None:
         print(f"{key} has no session", file=sys.stderr)
         return None
@@ -132,12 +132,12 @@ def main(argv=None):
             return 1
         return agent.open_session(sid)
     elif cmd == "status" and args:
-        from . import pickup, serve
+        from . import pickup
+        from . import tiles as reader
         st, rest = pick_store(args)
         key = rest[0].upper()
-        board = st.dir / serve.PICKUP_BOARD
-        tile = next((t for t in serve.board_tiles(st, board.read_text(encoding="utf-8")) if t["key"] == key), None) if board.is_file() else None
-        line = pickup.status(st, key, tile["text"]) if tile else None
+        tile = reader.Snapshot.read(st, [reader.PLANS]).tile(key)
+        line = pickup.status(st, key, tile.text) if tile else None
         if line is None:
             print(f"{key} has no session to report on", file=sys.stderr)
             return 1

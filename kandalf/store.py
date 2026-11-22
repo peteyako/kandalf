@@ -200,9 +200,6 @@ class Store:
         self.hooks_file = self.dir / HOOKS_FILE
         k = re.escape(self.key)
         self.key_re = re.compile(rf"\b{k}-(\d+)\b")  # a key anywhere in a line
-        self.tile_key_re = re.compile(rf"^- (?:\[[ xX]\] )?{k}-(\d+) ", re.M)  # the number of a key opening a tile line
-        self.tile_head_re = re.compile(rf"^- (?:\[[ xX]\] )?({k}-\d+) ")  # the whole key opening a tile line
-        self.keyed_re = re.compile(rf"^({k}-\d+) ")  # the key a tile's text (after "- [ ] ") opens with
 
     def _read_repos(self, entries, store_trunk):
         """The main repo, then the valid "repos" entries in file order, and one sentence

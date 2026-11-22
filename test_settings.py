@@ -268,6 +268,16 @@ class Route(unittest.TestCase):
         self.assertIn(settings.EDITABLE["parallel"]["label"], refused["error"])  # parallel's name on the page
         self.assertEqual(refused["effective"]["parallel"], 1)
 
+    def test_switching_the_agent_through_the_route_changes_the_ledger_it_holds(self):
+        self.addCleanup(agent.use, "claude")
+        st = self.handler.store
+        pickup.save(st, {"inflight": ["PLN-01"], "jobs": [{"key": "PLN-01", "state": "lost", "id": "s1", "session": "s1-full"}]})
+        _, got = self.ask("GET")
+        status, saved = self.ask("POST", {"mtime": got["mtime"], "changes": {"agent": "copilot"}})  # set_agent's change() inside the route's hold
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(st.agent, "copilot")
+        self.assertEqual(pickup.load(st)["jobs"], [{"key": "PLN-01", "state": "lost", "id": "s1"}])
+
     def test_the_route_reads_board_json_again_when_it_was_changed_by_hand(self):
         (self.dir / "board.json").write_text(json.dumps({"name": "X", "parallel": 4}), encoding="utf-8")
         status, got = self.ask("GET")

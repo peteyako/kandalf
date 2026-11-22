@@ -22,7 +22,7 @@ this server for the ones on the other board (/api/move takes them along, /api/pu
 fetches them).
 
 A tile that says "Part of KEY-NN" is a sub-story of that tile, its master. The page gets an
-index of every keyed tile (tile_index): it folds a master's sub-stories into its tile, shows
+index of every keyed tile (tiles.Snapshot.index): it folds a master's sub-stories into its tile, shows
 how far along they are, moves them with it, and makes the keys a tile mentions links.
 
 It answers only its own page (refused): a request must name the board's own address as its
@@ -52,7 +52,9 @@ sys.dont_write_bytecode = True  # no __pycache__ in the repo from importing pln
 from . import pln  # noqa: E402  tile keys
 from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
+from . import jobs as ledger  # noqa: E402  board-pickup.json, the record of each pickup job
 from . import store as stores  # noqa: E402  which store, and its settings
+from . import tiles as reader  # noqa: E402  what the board's markdown says
 from . import stamp, __version__  # noqa: E402  which kandalf this is, for the page's corner
 from . import settings  # noqa: E402  the settings panel's rules
 
@@ -61,7 +63,7 @@ BUILD = stamp.info(HERE, __version__)  # once, at the server's start: a checkout
 NAME_RE = re.compile(r"^((archive|active)/)?[A-Za-z0-9][A-Za-z0-9._-]*\.md$")
 FONT_RE = re.compile(r"^[a-z0-9-]+\.woff2$")  # a bundled font under kandalf/fonts
 DOC_RE = re.compile(r"^(active/)?[A-Za-z0-9][A-Za-z0-9._-]*\.md$")  # a plan doc a board tile can archive
-ARCHIVE_LOG = "archive/archived.md"
+ARCHIVE_LOG = reader.ARCHIVE_LOG
 ARCHIVE_HEAD = """# Archived plans
 
 Tiles dragged to the Archive column on the plans board, newest first. Their plan docs are in this folder.
@@ -188,17 +190,17 @@ def clear_column(store, board: Path, text: str, column: str, keep=()) -> tuple:
     Returns (the board text to write, the record undo_clear needs, the files changed)."""
     if not any(line == f"## {column}" for line in text.split("\n")):
         raise KeyError(f'no "## {column}" column')
-    tiles = [t for t in board_tiles(store, text) if t["column"] == column and t["key"] not in keep]
+    tiles = [t for t in reader.parse(store, text) if t.column == column and t.key not in keep]
     if not tiles:
         raise ValueError(f"nothing to clear in {column}")
-    names = {m for t in tiles for m in TILE_DOC_RE.findall(t["text"])} - {board.name}
+    names = {m for t in tiles for m in TILE_DOC_RE.findall(t.text)} - {board.name}
     docs, touched = archive_docs(store, sorted(names))
     log = store.dir / ARCHIVE_LOG
     for t in reversed(tiles):  # each goes on top, so the last one first keeps the column's order
-        file_in_archive_log(log, rebase_into_archive(relink(t["text"], docs, store.link), board.name))
+        file_in_archive_log(log, rebase_into_archive(relink(t.text, docs, store.link), board.name))
     record = {"board": board.name, "column": column, "count": len(tiles), "docs": docs,
-              "tiles": [{"key": t["key"], "text": t["text"]} for t in tiles]}
-    return relink(without_tiles(text, tiles), docs, store.link), record, [log, *touched]
+              "tiles": [{"key": t.key, "text": t.text} for t in tiles]}
+    return relink(reader.without(text, tiles), docs, store.link), record, [log, *touched]
 
 
 def undo_clear(store, board: Path, text: str, record: dict) -> tuple:
@@ -208,12 +210,12 @@ def undo_clear(store, board: Path, text: str, record: dict) -> tuple:
     cleared tile or doc is no longer where the clear left it."""
     log = store.dir / ARCHIVE_LOG
     logged = log.read_text(encoding="utf-8") if log.is_file() else ""
-    filed, taken = board_tiles(store, logged), []
+    filed, taken = reader.parse(store, logged, file=ARCHIVE_LOG), []
     def is_it(entry, tile, first_line):
         """A keyed tile is found by its key; an unkeyed one by its first line as it was filed."""
         if tile["key"]:
-            return entry["key"] == tile["key"]
-        return entry["text"].split("\n", 1)[0] == first_line
+            return entry.key == tile["key"]
+        return entry.text.split("\n", 1)[0] == first_line
 
     for t in record["tiles"]:
         first = rebase_into_archive(relink(t["text"], record["docs"], store.link), board.name).split("\n", 1)[0]
@@ -225,7 +227,7 @@ def undo_clear(store, board: Path, text: str, record: dict) -> tuple:
     for t in reversed(record["tiles"]):
         new = insert_at_top(new, record["column"], t["text"])  # KeyError if the column is gone
     touched = unarchive_docs(store, record["docs"])
-    rest = without_tiles(logged, taken)
+    rest = reader.without(logged, taken)
     for name in record["docs"]:  # other archived tiles that link a doc that moved back
         rest = rest.replace(f"]({Path(name).name})", f"](../{name})")
     write_atomic(log, rest)
@@ -260,10 +262,10 @@ def keyed_tile(store, tile: str, next_key: str) -> tuple:
     """(tile, key): the tile as a plans.md story, with a "- [ ] " checkbox and its own key,
     or next_key when it has none."""
     first, nl, rest = tile.partition("\n")
-    m = re.match(r"^- (?:\[[ xX]\] )?(.*)$", first)
+    m = re.match(r"^[-*] (?:\[[ xX]\] )?(.*)$", first)
     head = m.group(1) if m else first
-    own = store.keyed_re.match(head)
-    key = own.group(1) if own else next_key
+    own = reader.opening_key(store, first)
+    key = own or next_key
     if not own:
         head = f"{key} {head}"
     return f"- [ ] {head}{nl}{rest}", key
@@ -290,178 +292,12 @@ def insert_at_top(text: str, column: str, tile: str) -> str:
     return "\n".join(lines)
 
 
-# Linked tiles: a tile whose text says "Moves with PLN-74" (or "PLN-74, PLN-75 and PLN-76")
-# moves with those tiles. A link counts in both directions and chains, so only one tile of a
-# group has to say it. board.html reads the same wording (LINK_RE there).
-def link_re(store) -> re.Pattern:
-    k = re.escape(store.key)
-    return re.compile(rf"\bmoves with\s+({k}-\d+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+){k}-\d+)*)", re.I)
-
-
-def board_tiles(store, text: str) -> list:
-    """Every tile of a board file: {"key" (or None), "column", "start", "end", "text"},
-    start and end being its line range, without the blank lines after it."""
-    lines, out, column, i = text.split("\n"), [], None, 0
-    while i < len(lines):
-        line = lines[i]
-        if line.startswith("## "):
-            column = line[3:].strip()
-        elif column is not None and re.match(r"^[-*] ", line):
-            end = i + 1
-            while end < len(lines) and (not lines[end].strip() or lines[end][0] in " \t"):
-                end += 1
-            while not lines[end - 1].strip():
-                end -= 1
-            m = store.tile_head_re.match(line)
-            out.append({"key": m.group(1) if m else None, "column": column, "start": i, "end": end,
-                        "text": "\n".join(lines[i:end])})
-            i = end
-            continue
-        i += 1
-    return out
-
-
-def linked(store, *texts) -> dict:
-    """{"KEY-NN": [the keys it moves with]} over the tiles of these board files, for every
-    tile in a group of two or more."""
-    pat, edges = link_re(store), {}
-    for text in texts:
-        for t in board_tiles(store, text):
-            if not t["key"]:
-                continue
-            for m in pat.finditer(t["text"]):
-                for other in store.key_re.finditer(m.group(1)):
-                    if other.group(0) != t["key"]:
-                        edges.setdefault(t["key"], set()).add(other.group(0))
-                        edges.setdefault(other.group(0), set()).add(t["key"])
-    out = {}
-    for key in edges:
-        seen, todo = {key}, [key]
-        while todo:
-            for other in edges[todo.pop()]:
-                if other not in seen:
-                    seen.add(other)
-                    todo.append(other)
-        out[key] = sorted(seen - {key})
-    return out
-
-
-def take_tiles(store, text: str, keys) -> tuple:
-    """(the board without the tiles that have these keys, those tiles' markdown in board
-    order). The board keeps its layout, so it still round-trips through board.html."""
-    tiles = [t for t in board_tiles(store, text) if t["key"] in keys]
-    return without_tiles(text, tiles), [t["text"] for t in tiles]
-
-
-def without_tiles(text: str, tiles) -> str:
-    """The board without these tiles (board_tiles entries of this text), layout kept."""
-    lines = text.split("\n")
-    for t in sorted(tiles, key=lambda t: t["start"], reverse=True):
-        del lines[t["start"]:t["end"]]
-        at = t["start"]  # the column's last tile leaves two blank lines behind: keep one
-        if 0 < at < len(lines) and not lines[at - 1].strip() and not lines[at].strip():
-            del lines[at]
-    return "\n".join(lines)
-
-
-def insert_after(store, text: str, key: str, tiles) -> str:
-    """Put tiles straight after the tile with this key, in order."""
-    at = next((t for t in board_tiles(store, text) if t["key"] == key), None)
-    if at is None:
-        raise KeyError(f"no {key} tile")
-    lines = text.split("\n")
-    lines[at["end"]:at["end"]] = [line for tile in tiles for line in tile.split("\n")]
-    return "\n".join(lines)
-
-
-# Master tiles: a tile whose text says "Part of PLN-70" is a sub-story of PLN-70. Only the
-# first one counts. board.html reads the same wording (PART_RE there) and the same Done
-# columns (isDoneCol there).
-def part_re(store) -> re.Pattern:
-    return re.compile(rf"\bpart of\s+({re.escape(store.key)}-\d+)\b", re.I)
-
-
-DONE_COL_RE = re.compile(r"^(?!.*\bnot\b).*\b(?:done|shipped|completed?|finished|closed|merged|released|deployed|delivered|resolved)\b", re.I)  # same in board.html: Done, Shipped, Merged...; never "Not done"
-TILE_HEAD_RE = re.compile(r"^(?:P[1-4] )?(?:~\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw] )?(.*)$")
-
-
-def tile_title(store, tile: str) -> str:
-    """A tile's title, plain: its first line without the checkbox, key, priority, estimate
-    and bold (the page's splitCard)."""
-    line = re.sub(r"^[-*] (?:\[[ xX]\] )?", "", tile.split("\n", 1)[0])
-    rest = TILE_HEAD_RE.match(store.keyed_re.sub("", line)).group(1)
-    bold = re.match(r"^\*\*(.+?)\*\*", rest)
-    title = re.sub(r"[.:]$", "", bold.group(1)) if bold else rest
-    return re.sub(r"\*\*|`", "", title)
-
-
-def tile_index(store, files: dict) -> dict:
-    """{"KEY-NN": {"title", "file", "column", "done", "parent", "mentions"}} for every keyed
-    tile of these board files ({name: text}; a key on two of them is the first one's tile).
-    done: in a Done column, or in the archive log. parent: the master it says it is part of,
-    or None. mentions: the other keys its text names, sorted."""
-    part, out = part_re(store), {}
-    for name, text in files.items():
-        for t in board_tiles(store, text):
-            key = t["key"]
-            if not key or key in out:
-                continue
-            others = {m.group(0) for m in store.key_re.finditer(t["text"])} - {key}
-            parent = next((m.group(1) for m in part.finditer(t["text"]) if m.group(1) != key), None)
-            out[key] = {"title": tile_title(store, t["text"]), "file": name, "column": t["column"],
-                        "done": name == ARCHIVE_LOG or bool(DONE_COL_RE.search(t["column"])),
-                        "parent": parent, "mentions": sorted(others, key=store.num)}
-    return out
-
-
-def in_flight_tiles(store, text: str) -> list:
-    """The keyed tiles in the plans board's In flight column (pickup.is_pickup_column), for
-    pickup.py: [{"key", "title", "text", "parent"}]. A tile whose master isn't in flight (it
-    sits in another column, or on the backlog) also carries "of", that master's key, and
-    "context", the tiles of the masters above it, for its session to read: a design or a
-    decision is often linked from the master alone."""
-    part = part_re(store)
-
-    def parent_of(t):
-        return next((m.group(1) for m in part.finditer(t["text"]) if m.group(1) != t["key"]), None)
-
-    every = [t for t in board_tiles(store, text) if t["key"]]
-    flying = [t for t in every if pickup.is_pickup_column(store, t["column"])]
-    in_flight = {t["key"] for t in flying}
-    elsewhere = {t["key"]: t for t in every if t["key"] not in in_flight}
-    backlog = store.dir / "backlog.md"
-    if backlog.is_file() and any(parent_of(t) not in in_flight for t in flying if parent_of(t)):
-        for t in board_tiles(store, backlog.read_text(encoding="utf-8")):
-            if t["key"]:
-                elsewhere.setdefault(t["key"], t)
-    out = []
-    for t in flying:
-        tile = {"key": t["key"], "title": tile_title(store, t["text"]), "text": t["text"], "parent": parent_of(t)}
-        above, seen, up = [], {t["key"]}, tile["parent"]
-        while up in elsewhere and up not in seen:
-            above.append(elsewhere[up])
-            seen.add(up)
-            up = parent_of(elsewhere[up])
-        if above:
-            tile.update(of=above[0]["key"], context="\n".join(a["text"] for a in above))
-        out.append(tile)
-    return out
-
-
 PICKUP_BOARD = "plans.md"
-SESSION_LINE_RE = re.compile(r"^\s+(?:Claude|Copilot) session `[0-9a-f]+`: ")  # board.html reads it too (SESSION_RE there)
-
 
 def with_session(store, text: str, job: dict) -> str:
-    """The board with the job's session written into its tile: one indented line naming the
-    session, its branch and worktree, after the description and before the first sub-task.
-    It replaces the line an earlier session left."""
-    tile = next((t for t in board_tiles(store, text) if t["key"] == job["key"]), None)
-    if tile is None:
-        return text
-    lines = text.split("\n")
-    body = [line for line in lines[tile["start"] + 1:tile["end"]] if not SESSION_LINE_RE.match(line)]
-    at = next((i for i, line in enumerate(body) if re.match(r"^  [-*] ", line)), len(body))
+    """The board with the job's session written into its tile (reader.with_session): one
+    indented line naming the session, its branch and worktree, after the description and
+    before the first sub-task. It replaces the line an earlier session left."""
     cuts = job.get("repos") or []
     main = store.main_repo
     if len(cuts) > 1 or (cuts and main and cuts[0]["name"] != main.name):
@@ -472,27 +308,8 @@ def with_session(store, text: str, job: dict) -> str:
         where = f" Branch `{job['branch']}`, worktree `{pickup.worktree_label(store, job['worktree'])}`." if job.get("worktree") else ""
     where += f" Model `{job['model']}`." if job.get("model") else ""
     day = time.strftime("%Y-%m-%d", time.localtime(job.get("started") or time.time()))
-    body.insert(at, f"  {agent.short()} session `{job['id']}`: `{agent.attach(job['id'])}`.{where} Started {day}.")
-    lines[tile["start"] + 1:tile["end"]] = body
-    return "\n".join(lines)
-
-
-STATUS_LINE_RE = re.compile(r"^\s+\*\*Status \d{4}-\d\d-\d\d \d\d:\d\d:\*\* ")  # board.html reads it too (STATUS_RE there)
-
-
-def with_status(store, text: str, key: str, line: str) -> str:
-    """The board with a tile's status (pickup.status, "Status <date> <time>: ...") written in
-    right under its session line (as its last line, if it has none), its stamp in bold,
-    replacing the status it had."""
-    tile = next((t for t in board_tiles(store, text) if t["key"] == key), None)
-    if tile is None:
-        return text
-    lines = text.split("\n")
-    body = [x for x in lines[tile["start"] + 1:tile["end"]] if not STATUS_LINE_RE.match(x)]
-    session = next((i for i, x in enumerate(body) if SESSION_LINE_RE.match(x)), None)
-    body.insert(len(body) if session is None else session + 1, "  " + re.sub(r"^(Status \S+ \S+:)", r"**\1**", line))
-    lines[tile["start"] + 1:tile["end"]] = body
-    return "\n".join(lines)
+    return reader.with_session(store, text, job["key"],
+                               f"  {agent.short()} session `{job['id']}`: `{agent.attach(job['id'])}`.{where} Started {day}.")
 
 
 def note_session(store, job: dict):
@@ -503,6 +320,11 @@ def note_session(store, job: dict):
     if new != old:
         write_atomic(board, new)
         gitlog.record(store, [board], f"board: {job['key']} picked up by {agent.short()} session {job['id']}")
+
+
+# The server's sessions adapter: the real one, writing each session it starts into its tile.
+SESSIONS = pickup.Sessions(announce=note_session)
+
 PICKUP_RECHECK = 20  # seconds between looks at the sessions while a job waits or runs
 
 
@@ -512,19 +334,19 @@ def report_in_flight(store):
     if not board.is_file():
         return
     try:
-        for line in pickup.startup_report(store, in_flight_tiles(store, board.read_text(encoding="utf-8"))):
+        for line in pickup.startup_report(store, reader.Snapshot.read(store).in_flight(), sessions=SESSIONS):
             pickup.log(line)
     except Exception as e:  # the listing is a courtesy: never stop the server for it
         pickup.log(f"in flight could not be listed: {e}")
 
 
 def reload_settings(store) -> bool:
-    """Read board.json again when it changed since the last read, under pickup's lock so a look
+    """Read board.json again when it changed since the last read, under the job ledger's lock so a look
     never runs on half the settings. True when new settings are in force. A file that can't be
     read (not UTF-8, or gone between the look and the read) keeps the old ones, and the store's
     config_problem says why."""
     try:
-        with pickup._lock:
+        with ledger.Ledger(store).locked():
             return store.reload_if_changed()
     except (OSError, ValueError) as e:
         store.config_problem = f"board.json could not be read: {e}"
@@ -537,7 +359,7 @@ def adopt_in_flight(store):
     board = store.dir / PICKUP_BOARD
     try:
         if board.is_file():
-            for key in pickup.adopt(store, in_flight_tiles(store, board.read_text(encoding="utf-8"))):
+            for key in pickup.adopt(store, reader.Snapshot.read(store).in_flight()):
                 pickup.log(f"{key} is in flight with no session: picking it up")
     except Exception as e:  # a courtesy too: the watch still runs
         pickup.log(f"in flight tiles could not be adopted: {e}")
@@ -578,10 +400,10 @@ def watch_turn(store, ctx: dict):
         # A file still being written is left for the next look: half a board reads as
         # tiles that left In flight, and then as the same tiles arriving.
         settled, ctx["before"] = at == ctx["before"], at
-        busy = any(j["state"] == "waiting" or j["state"] in pickup.TRACKED for j in pickup.load(store)["jobs"])
+        busy = ledger.Ledger(store).busy()
         if at is not None and settled and (at != ctx["seen"] or (busy and time.time() - ctx["last"] > PICKUP_RECHECK)):
             ctx["seen"], ctx["last"] = at, time.time()
-            pickup.tick(store, in_flight_tiles(store, board.read_text(encoding="utf-8")), on_start=note_session)
+            pickup.tick(store, reader.Snapshot.read(store).in_flight(), sessions=SESSIONS)
             tidy_stragglers(store, ctx["told"])
     except Exception as e:  # a bad look must not end the watch
         pickup.log(f"the look at {PICKUP_BOARD} failed: {e}")
@@ -607,10 +429,6 @@ def watch_pickups(store, every: float = 2.0):
 # A linked tile still on the backlog follows its partner on the plans board: {board: where from}.
 # Never the other way, which would unschedule a tile because its partner changed kind.
 PULLS = {"plans.md": "backlog.md"}
-
-# The boards whose tiles can be each other's masters, sub-stories and mentions.
-FAMILY = ["plans.md", "backlog.md", ARCHIVE_LOG]
-
 
 # Optional, in the store: {"first": {"KEY-NN": unix seconds}} for tiles filed before the
 # store's own history began (myapp-plans: tiles filed while the board lived in the app).
@@ -678,7 +496,7 @@ def tidy_archived(store, tiles, told=None) -> list:
             pickup.archived(store, key)
         try:
             lines = pickup.tidy(store, tile, merged=lambda repo, b: _branch_merged(store, b, repo),
-                                job=pickup.job_for(store, key) if key else None)
+                                job=pickup.job_for(store, key) if key else None, sessions=SESSIONS)
         except (OSError, subprocess.SubprocessError) as e:
             lines = [f"not tidied: {e}"]
         said += [f"{key or 'a tile'} archived: {line}" for line in lines]
@@ -696,16 +514,16 @@ def tidy_stragglers(store, told: set):
     and on no board. What is kept is retried on the next look, and said once (told remembers
     what was said and which stories are finished with)."""
     log = store.dir / ARCHIVE_LOG
-    keys = {j["key"] for j in pickup.load(store)["jobs"] if j.get("branch")}
+    keys = {j["key"] for j in ledger.Ledger(store).with_branch()}
     if not keys or not log.is_file():
         return
-    live = {t["key"] for name in ("plans.md", "backlog.md") if (store.dir / name).is_file()
-            for t in board_tiles(store, (store.dir / name).read_text(encoding="utf-8"))}
-    for t in board_tiles(store, log.read_text(encoding="utf-8")):
-        key = t["key"]
+    boards = reader.Snapshot.read(store, [reader.PLANS, reader.BACKLOG])
+    live = {t.key for name in boards.files for t in boards.tiles(name)}
+    for t in reader.parse(store, log.read_text(encoding="utf-8"), file=ARCHIVE_LOG):
+        key = t.key
         if key not in keys or key in live or ("tidied", key) in told:
             continue
-        said = tidy_archived(store, [t["text"]], told)
+        said = tidy_archived(store, [t.text], told)
         if not any(": kept " in line or ": not tidied" in line for line in said):
             told.add(("tidied", key))  # nothing of it is left: don't look again
 
@@ -719,33 +537,21 @@ def unmerged_done(store, text: str) -> dict:
     main repo isn't there."""
     if not store.app or not (store.app / ".git").exists():
         return {}
-    tiles, key, in_done = {}, None, False  # each Done tile's lines: a Repos line can follow its branch
-    for line in text.splitlines():
-        if line.startswith("## "):
-            in_done, key = bool(DONE_COL_RE.search(line[3:].strip())), None
-            continue
-        if not in_done:
-            continue
-        m = re.match(rf"^- \[[ xX]\] ({re.escape(store.key)}-\d+)\b", line)
-        if m:
-            key = m.group(1)
-        elif not line.startswith(" "):
-            key = None
-        if key:
-            tiles.setdefault(key, []).append(line)
-    out, jobs = {}, {j["key"]: j for j in pickup.load(store)["jobs"] if j.get("branch") and j.get("worktree")}  # the latest of each
+    tiles = {t.key: t.text.split("\n") for t in reader.parse(store, text) if t.key and t.done}  # each Done tile's lines: a Repos line can follow its branch
+    out, jobs = {}, {j["key"]: j for j in ledger.Ledger(store).with_branch() if j.get("worktree")}  # the latest of each
     for key, lines in tiles.items():
         tile = "\n".join(lines)
         found = pickup.tile_cuts(store, tile)
         if found:
             repos = [repo for _, repo, _ in found[1] if repo]
         else:
-            names = pickup.repo_names(tile)
+            names = reader.repos(tile)
             repos = [r for r in map(store.repo, names) if r] if names is not None else [store.main_repo]
         repos = [pickup.as_story(store, r, jobs.get(key), tile) for r in repos]  # merged into the story's own trunk
         for line in lines:
-            noted = pickup.TILE_BRANCH_RE.search(line) or pickup.TILE_REPOS_RE.search(line)  # the branch pickup cut, whatever its name
-            for b in BRANCH_TOKEN.findall(line) + ([noted.group(1)] if noted else []):
+            on_line = reader.session(line)
+            noted = on_line.branch if on_line else None  # the branch pickup cut, whatever its name
+            for b in BRANCH_TOKEN.findall(line) + ([noted] if noted else []):
                 if any(_branch_merged(store, b, repo) is False for repo in repos) and b not in out.get(key, []):
                     out.setdefault(key, []).append(b)
     return out
@@ -763,12 +569,12 @@ def first_committed(store, board: Path) -> dict:
         return _first_cache[(board, head)]
     log = subprocess.run(["git", "-C", str(root), "log", "--reverse", "--format=@@C %at", "-p",
                           "--unified=0", "--", str(board)], capture_output=True, text=True).stdout
-    added_re = re.compile(rf"^\+- (?:\[[ xX]\] )?({re.escape(store.key)}-\d+) ")
+    opens = reader.head_re(store)
     first, t = {}, None
     for line in log.splitlines():
         if line.startswith("@@C "):
             t = int(line[4:])
-        elif (m := added_re.match(line)):
+        elif line.startswith("+") and (m := opens.match(line[1:])):
             first.setdefault(m.group(1), t)
     seed = store.dir / FIRST_SEED
     if board == store.dir / "plans.md" and seed.is_file():
@@ -924,33 +730,21 @@ class Handler(BaseHTTPRequestHandler):
         """The highest key in use, across every file that holds keyed tiles."""
         return pln.highest(self.store, *pln.keyed_files(self.store))
 
+    def snapshot(self, board: Path) -> reader.Snapshot:
+        """The tiles a board's page should know: plans.md, backlog.md and the archive log share
+        one snapshot, since a tile's master or sub-stories may be on another of them."""
+        name = board.relative_to(self.plans).as_posix()
+        return reader.Snapshot.read(self.store, reader.FAMILY if name in reader.FAMILY else [name])
+
     def linked(self, board: Path) -> dict:
         """The linked tiles a board's page should know: plans.md and backlog.md share their
         links, since a tile's partner may be on the other one."""
-        if board.parent == self.plans and board.name in MOVES:
-            boards = [self.plans / n for n in MOVES if (self.plans / n).is_file()]
-        else:
-            boards = [board]
-        return linked(self.store, *(b.read_text(encoding="utf-8") for b in boards))
+        names = list(MOVES) if board.parent == self.plans and board.name in MOVES else [board.relative_to(self.plans).as_posix()]
+        return reader.Snapshot.read(self.store, names).linked()
 
     def tiles(self, board: Path) -> dict:
-        """The tile index a board's page should know (tile_index): plans.md, backlog.md and the
-        archive log share one, since a tile's master or sub-stories may be on another of them."""
-        name = board.relative_to(self.plans).as_posix()
-        names = FAMILY if name in FAMILY else [name]
-        return tile_index(self.store, {n: (self.plans / n).read_text(encoding="utf-8")
-                                       for n in names if (self.plans / n).is_file()})
-
-    def texts(self, board: Path) -> dict:
-        """{key: tile markdown} over the same files as tiles(), the first board's tile winning."""
-        name = board.relative_to(self.plans).as_posix()
-        out = {}
-        for n in (FAMILY if name in FAMILY else [name]):
-            if (self.plans / n).is_file():
-                for t in board_tiles(self.store, (self.plans / n).read_text(encoding="utf-8")):
-                    if t["key"] and t["key"] not in out:
-                        out[t["key"]] = t["text"]
-        return out
+        """The tile index a board's page should know (Snapshot.index)."""
+        return self.snapshot(board).index()
 
     def commit(self, paths, message):
         gitlog.record(self.store, paths, message)
@@ -980,11 +774,11 @@ class Handler(BaseHTTPRequestHandler):
     def refresh_status(self, key: str):
         board = self.plans / PICKUP_BOARD
         old = board.read_text(encoding="utf-8") if board.is_file() else ""
-        tile = next((t for t in board_tiles(self.store, old) if t["key"] == key), None)
-        line = pickup.status(self.store, key, tile["text"]) if tile else None
+        tile = next((t for t in reader.parse(self.store, old) if t.key == key), None)
+        line = pickup.status(self.store, key, tile.text, sessions=SESSIONS) if tile else None
         if line is None:
             return self.send_json(409, {"error": f"{key} has no session to report on"})
-        write_atomic(board, with_status(self.store, old, key, line))
+        write_atomic(board, reader.with_status(self.store, old, key, line))
         self.commit([board], f"board: {key} status refreshed")
         self.send_json(200, {**pickup.summary(self.store), "status": line})
 
@@ -1075,12 +869,12 @@ class Handler(BaseHTTPRequestHandler):
         src = self.plans / PULLS[board.name]
         old, new, paths, keys = board.read_text(encoding="utf-8"), data["text"], [board], []
         src_text = src.read_text(encoding="utf-8") if src.is_file() else ""
-        rest, found = take_tiles(self.store, src_text, set(data.get("keys") or []))
+        rest, found = reader.take(self.store, src_text, set(data.get("keys") or []))
         if found:
             tiles = [keyed_tile(self.store, t, "") for t in found]  # found by key, so each has one
             keys = [key for _, key in tiles]
             try:
-                new = insert_after(self.store, new, data.get("after"), [tile for tile, _ in tiles])
+                new = reader.insert_after(self.store, new, data.get("after"), [tile for tile, _ in tiles])
             except KeyError as e:
                 return self.send_json(409, {"error": str(e)})
         write_atomic(board, new)  # this board first: a tile is never lost between the two writes
@@ -1114,7 +908,7 @@ class Handler(BaseHTTPRequestHandler):
             if data.get("discard"):  # {key, discard: true, tile}: the tile is being deleted; throw its work away
                 key = data.get("key", "")
                 try:
-                    done = pickup.discard(self.store, key, data.get("tile") or "")
+                    done = pickup.discard(self.store, key, data.get("tile") or "", sessions=SESSIONS)
                 except (OSError, subprocess.SubprocessError) as e:
                     done = [f"not discarded: {e}"]
                 for line in done:
@@ -1124,25 +918,25 @@ class Handler(BaseHTTPRequestHandler):
             if why:
                 return self.send_json(409, {"error": why})
             if "reply" in data:  # {key, reply: text, steps: [squash, merge, push]}: the reply box
-                why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], on_start=note_session,
-                                   tiles=self.tiles(self.plans / "plans.md"), texts=self.texts(self.plans / "plans.md"))
+                why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], sessions=SESSIONS,
+                                   snap=self.snapshot(self.plans / "plans.md"))
                 if why:
                     return self.send_json(409, {"error": why, **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))
             if data.get("queue"):  # {key, queue: true}: the Queue button on a paused story
-                if not pickup.requeue(self.store, data.get("key", "")):
+                if not pickup.requeue(self.store, data.get("key", ""), sessions=SESSIONS):
                     return self.send_json(409, {"error": "that tile has no paused session to queue", **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))
             if data.get("pause"):
-                if not pickup.pause(self.store, data.get("key", ""), on_start=note_session):
+                if not pickup.pause(self.store, data.get("key", ""), sessions=SESSIONS):
                     return self.send_json(409, {"error": "that tile has no session at work to pause, or it couldn't be stopped", **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))
             if data.get("continue"):
-                if not pickup.restart(self.store, data.get("key", ""), on_start=note_session, nudge=True):
+                if not pickup.restart(self.store, data.get("key", ""), sessions=SESSIONS, nudge=True):
                     return self.send_json(409, {"error": "that tile's session couldn't be stopped to continue it, or the board didn't start one", **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))
             act = pickup.restart if data.get("restart") else pickup.start_now
-            if not act(self.store, data.get("key", ""), on_start=note_session):
+            if not act(self.store, data.get("key", ""), sessions=SESSIONS):
                 return self.send_json(409, {"error": "that tile has no session to start", **pickup.summary(self.store)})
             return self.send_json(200, pickup.summary(self.store))
         if u.path in ("/api/clear", "/api/unclear"):
@@ -1171,7 +965,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(changes, dict):
             return self.send_json(400, {"error": "changes must be an object", **settings.view(self.store)})
         try:
-            with pickup._lock:  # a look waits for the new settings
+            with ledger.Ledger(self.store).locked():  # a look waits for the new settings
                 said = settings.apply(self.store, changes)
         except settings.SettingsError as e:
             return self.send_json(400, {"error": str(e), **settings.view(self.store)})
@@ -1190,7 +984,7 @@ def should_open(no_open: bool, env=None, isatty=None) -> bool:
 def log_view(store, key: str):
     """What the board's log pane shows for a tile: its session's id and state and the log's last
     lines (agent.transcript). None for a tile no session was started on."""
-    job = next((j for j in reversed(pickup.load(store)["jobs"]) if j["key"] == key and j.get("id")), None)
+    job = ledger.Ledger(store).latest(key, "id")
     if job is None:
         return None
     text = agent.transcript(job["id"], job.get("session") or pickup.full_id(job["id"]))

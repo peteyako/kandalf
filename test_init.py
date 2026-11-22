@@ -22,6 +22,7 @@ from unittest import mock
 from kandalf import agent
 from kandalf import cli
 from kandalf import init
+from kandalf import jobs as jobs_module
 from kandalf import pickup
 from kandalf import serve
 from kandalf import store as stores
@@ -517,6 +518,26 @@ class AgentCommand(Setup):
         again = stores.Store(st.dir)
         self.assertEqual((again.agent, again.model), ("copilot", "auto"))
         self.assertEqual(self.switch(again, "copilot"), ["the agent is copilot already"])
+
+    def test_an_agent_switch_leaves_a_pausing_job_lost_and_not_pausing(self):
+        st = self.made()
+        self.jobs(st, {"key": "SHO-1", "state": "started", "id": "ab12cd34", "session": "full-id", "pausing": True})
+        self.switch(st, "copilot", force=True, stop=lambda which, sid: None)
+        job = pickup.load(st)["jobs"][0]
+        self.assertEqual(job["state"], "lost")
+        self.assertNotIn("pausing", job)
+
+    def test_an_agent_switch_writes_board_json_while_the_ledger_is_held(self):
+        st = self.made()
+        held = []
+        real = init.write_config
+
+        def write(*a, **kw):
+            held.append(str(jobs_module.Ledger(st).path.with_suffix(".lock").resolve()) in jobs_module._flocks)
+            return real(*a, **kw)
+        with mock.patch.object(init, "write_config", write):
+            self.switch(st, "copilot")
+        self.assertEqual(held, [True])
 
     def test_a_running_session_stops_a_switch_unless_forced_and_restart_then_starts_afresh(self):
         st = self.made()

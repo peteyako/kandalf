@@ -22,6 +22,7 @@ from kandalf import claude_code as agent
 from kandalf import pickup
 from kandalf import serve
 from kandalf import store as stores
+from kandalf import tiles as reader
 
 
 class StoreRepos(unittest.TestCase):
@@ -109,13 +110,13 @@ class TileRepos(unittest.TestCase):
         return stores.Store(folder)
 
     def names(self, text):
-        repos, problem = pickup.resolve_repos(self.store(), pickup.repo_names(text))
+        repos, problem = pickup.resolve_repos(self.store(), reader.repos(text))
         self.assertIsNone(problem)
         return [r.name for r in repos]
 
     def test_no_line_means_the_main_repo(self):
         st = self.store()
-        self.assertIsNone(pickup.repo_names("- [ ] PLN-1 **x**"))
+        self.assertIsNone(reader.repos("- [ ] PLN-1 **x**"))
         self.assertEqual(pickup.resolve_repos(st, None), ([st.main_repo], None))
 
     def test_the_line_s_order_is_kept_and_names_match_in_any_case(self):
@@ -124,7 +125,7 @@ class TileRepos(unittest.TestCase):
     def test_repo_singular_backticks_and_spaces_are_read(self):
         self.assertEqual(self.names("  Repo: `web`"), ["web"])
         self.assertEqual(self.names("  Repos: api web."), ["api", "web"])
-        self.assertEqual(pickup.repo_names("  Repos: `api`, API, web"), ["api", "web"])
+        self.assertEqual(reader.repos("  Repos: `api`, API, web"), ["api", "web"])
 
     def test_a_sub_story_takes_its_master_s_line_unless_it_has_its_own(self):
         by_key = {
@@ -132,8 +133,8 @@ class TileRepos(unittest.TestCase):
             "PLN-2": {"key": "PLN-2", "parent": "PLN-1", "text": "- [ ] PLN-2 **a** Part of PLN-1"},
             "PLN-3": {"key": "PLN-3", "parent": "PLN-1", "text": "- [ ] PLN-3 **b** Part of PLN-1\n  Repos: web"},
         }
-        self.assertEqual(pickup.repo_names(pickup.family_text(by_key, "PLN-2")), ["api"])
-        self.assertEqual(pickup.repo_names(pickup.family_text(by_key, "PLN-3")), ["web"])
+        self.assertEqual(reader.repos(pickup.family_text(by_key, "PLN-2")), ["api"])
+        self.assertEqual(reader.repos(pickup.family_text(by_key, "PLN-3")), ["web"])
 
     def test_an_unknown_or_missing_repo_is_an_error_not_the_main_repo(self):
         st = self.store(make=("myapp", "api"))
@@ -146,22 +147,21 @@ class TileRepos(unittest.TestCase):
 
     def test_an_empty_line_names_no_repo_and_never_reads_the_next_line(self):
         st = self.store()
-        self.assertEqual(pickup.resolve_repos(st, pickup.repo_names("  Repos: ,")),
+        self.assertEqual(pickup.resolve_repos(st, reader.repos("  Repos: ,")),
                          ([], "the Repos line names no repo"))
-        self.assertEqual(pickup.resolve_repos(st, pickup.repo_names("  Repos: ``"))[1], "the Repos line names no repo")
-        self.assertIsNone(pickup.repo_names("  Repos:\n- [ ] PLN-1 **m**"))
-        self.assertIsNone(pickup.repo_names("  Repos:   \n  api"))
+        self.assertEqual(pickup.resolve_repos(st, reader.repos("  Repos: ``"))[1], "the Repos line names no repo")
+        self.assertIsNone(reader.repos("  Repos:\n- [ ] PLN-1 **m**"))
+        self.assertIsNone(reader.repos("  Repos:   \n  api"))
 
     def test_a_queued_job_carries_what_its_tile_wants(self):
         st = self.store()
-        fake = test_pickup.Fake()
+        fake = test_pickup.Fake(now=lambda: 1000, stop=lambda sid: None)
         quiet = contextlib.redirect_stdout(io.StringIO())
         quiet.__enter__()
         self.addCleanup(quiet.__exit__, None, None, None)
 
         def tick(tiles):
-            return pickup.tick(st, tiles, start=fake.start, sessions=fake.sessions, switch=fake.switch,
-                               why=fake.why, now=lambda: 1000, resume=fake.resume, stop=lambda sid: None)
+            return pickup.tick(st, tiles, sessions=fake)
 
         tile = lambda key, extra="": {"key": key, "title": "t", "parent": None, "text": f"- [ ] {key} **t**{extra}"}
         tick([])
@@ -435,9 +435,10 @@ class SessionLine(Tree):
         self.assertEqual(pickup.tile_cuts(st, line), ("pln-07-small-thing", [
             ("My App", st.main_repo, spaced / ".worktrees/pln-07"), ("api", st.repo("api"), self.top / "api/.worktrees/pln-07")]))
 
-    def test_the_old_form_pattern_does_not_match_the_new_line(self):
+    def test_the_several_worktrees_line_is_not_read_as_the_old_form(self):
         st = self.tree()
-        self.assertIsNone(pickup.TILE_BRANCH_RE.search(self.line(st, self.job_in(st, "api", "web"))))
+        cuts = reader.session(self.line(st, self.job_in(st, "api", "web"))).cuts
+        self.assertEqual([name for name, _ in cuts], ["api", "web"])  # the old form has no repo name
 
     def test_a_dropped_repo_gone_from_board_json_is_written_by_folder_name(self):
         st = self.tree()
@@ -484,10 +485,11 @@ class InFlight(Tree):
     def tick(self, st, line, reroute=pickup.switch_repos, sessions=None):
         tile = {"key": "PLN-07", "title": "Small thing", "parent": None,
                 "text": "- [ ] PLN-07 **Small thing.**" + (f"\n  Repos: {line}" if line else "")}
-        return pickup.tick(st, [tile], sessions=sessions or (lambda: {"old1": "busy"}), now=lambda: 5000,
-                           start=lambda store, job, again=False: {"state": "waiting"},  # a queued job stays queued
-                           switch=lambda *a: self.fail("model switch"), reroute=reroute,
-                           on_start=lambda store, job: self.noted.append(dict(job)))
+        return pickup.tick(st, [tile], sessions=pickup.Sessions(
+            sessions=sessions or (lambda: {"old1": "busy"}), now=lambda: 5000,
+            start=lambda store, job, again=False: {"state": "waiting"},  # a queued job stays queued
+            switch=lambda *a: self.fail("model switch"), reroute=reroute,
+            announce=lambda store, job: self.noted.append(dict(job))))
 
     def job_after(self, st):
         return pickup.load(st)["jobs"][0]
@@ -587,7 +589,7 @@ class InFlight(Tree):
         def resume(store, job, text=None):
             calls.append(("resume",))
             return pickup.resume(store, job, text)
-        pickup.restart(st, "PLN-07", start=start, resume=resume)
+        pickup.restart(st, "PLN-07", sessions=pickup.Sessions(start=start, resume=resume))
         return calls
 
     def test_a_lost_job_whose_first_repo_moved_is_restarted_by_a_new_session_there(self):
@@ -617,8 +619,8 @@ class InFlight(Tree):
         self.running(st, ["myapp"])
         tile = {"key": "PLN-07", "title": "Small thing", "parent": None,
                 "text": "- [ ] PLN-07 **Small thing.**\n  Model: sonnet\n  Repos: myapp, api"}
-        pickup.tick(st, [tile], sessions=lambda: {"old1": "busy"}, now=lambda: 5000, reroute=pickup.switch_repos,
-                    switch=lambda *a: self.fail("switched twice"))
+        pickup.tick(st, [tile], sessions=pickup.Sessions(sessions=lambda: {"old1": "busy"}, now=lambda: 5000, reroute=pickup.switch_repos,
+                                                     switch=lambda *a: self.fail("switched twice")))
         self.assertEqual(self.stopped, ["old1"])
         self.assertEqual(len(self.sent), 1)
         args = self.sent[0]["args"]
@@ -695,7 +697,7 @@ class TidyRepos(Cut):
         merged = merged or {}
         self.retired = []
         return pickup.tidy(st, self.tile if tile is None else tile, merged=lambda repo, b: merged.get(repo.name, True),
-                           job=job, sessions=sessions, retire=lambda sid: self.retired.append(sid) or True)
+                           job=job, sessions=pickup.Sessions(sessions=sessions, retire=lambda sid: self.retired.append(sid) or True))
 
     def gone(self, st):
         return [not Path(c["worktree"]).exists() and not self.has_branch(st, c["name"]) for c in self.cuts]
@@ -786,7 +788,8 @@ class TidyRepos(Cut):
         git(st.repo("web").path, "worktree", "remove", "--force", self.cuts[1]["worktree"])
         git(st.repo("web").path, "branch", "-D", self.branch)
         asked = []
-        said = pickup.tidy(st, self.tile, merged=lambda repo, b: asked.append(repo.name) or True, sessions=lambda: {}, retire=lambda s: True)
+        said = pickup.tidy(st, self.tile, merged=lambda repo, b: asked.append(repo.name) or True,
+                           sessions=pickup.Sessions(sessions=lambda: {}, retire=lambda s: True))
         self.assertEqual(asked, ["api"])
         self.assertFalse(Path(self.cuts[0]["worktree"]).exists())
 
@@ -800,6 +803,11 @@ class DoneRepos(Cut):
         self.assertEqual(serve.unmerged_done(st, board), {"PLN-07": [self.branch]})  # web still holds it
         self.land(st, "web")
         self.assertEqual(serve.unmerged_done(st, board), {})
+
+    def test_every_tile_in_a_done_column_counts_checkbox_or_not(self):
+        st = self.story("api", "web")
+        board = serve.with_session(st, self.BOARD, self.job).replace("- [x] PLN-07", "- PLN-07")
+        self.assertEqual(serve.unmerged_done(st, board), {"PLN-07": [self.branch]})
 
     def test_an_unknown_repo_on_a_done_tile_is_skipped(self):
         st = self.story("api", "web")
@@ -833,8 +841,8 @@ class DoneRepos(Cut):
 
 class StatusRepos(Cut):
     def status(self, st, tile=None):
-        return pickup.status(st, "PLN-07", tile or self.tile, sessions=lambda: {"ab12cd34": "busy"}, why=lambda s: None,
-                             screen=lambda s: "", now=time.time)
+        return pickup.status(st, "PLN-07", tile or self.tile,
+                             sessions=pickup.Sessions(sessions=lambda: {"ab12cd34": "busy"}, why=lambda s: None, screen=lambda s: ""))
 
     def test_status_gives_each_repo_its_part(self):
         st = self.story("api", "web")

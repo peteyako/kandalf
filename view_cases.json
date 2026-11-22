@@ -1,0 +1,19 @@
+{
+  "views": [
+    {"job": {"state": "started"}, "label": "working", "actions": ["reply", "pause"]},
+    {"job": {"state": "started", "pausing": true}, "label": "pausing", "actions": ["pause"]},
+    {"job": {"state": "idle"}, "label": "idle", "actions": ["reply", "continue"]},
+    {"job": {"state": "idle", "pausing": true}, "label": "idle", "actions": ["continue"], "server_refuses": ["continue"]},
+    {"job": {"state": "lost", "pausing": true}, "label": "gone", "actions": ["continue"], "server_refuses": ["continue"]},
+    {"job": {"state": "idle", "waiting": "question"}, "label": "waiting for you", "actions": ["reply", "continue"]},
+    {"job": {"state": "idle", "ready": true}, "label": "idle", "actions": ["reply", "continue"]},
+    {"job": {"state": "idle", "ready": true, "empty": true}, "label": "idle", "actions": ["reply", "continue", "close"]},
+    {"job": {"state": "lost"}, "label": "gone", "actions": ["reply", "continue"]},
+    {"job": {"state": "lost", "ready": true, "empty": true}, "label": "gone", "actions": ["reply", "continue", "close"]},
+    {"job": {"state": "started", "ready": true, "empty": true}, "label": "working", "actions": ["reply", "pause"]},
+    {"job": {"state": "paused"}, "label": "paused", "actions": ["continue", "queue"]},
+    {"job": {"state": "waiting"}, "label": "", "actions": ["startnow"]},
+    {"job": {"state": "failed"}, "label": "", "actions": ["restart"]},
+    {"job": {"state": "ended"}, "label": "", "actions": []}
+  ]
+}

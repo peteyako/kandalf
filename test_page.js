@@ -20,13 +20,14 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, columnKind, kindTaken, doubledKinds,
+   return { cardMarkdown, movesWith, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setFullSuite: on => { STORE_FULL_SUITE = on; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             setUnmerged: map => { unmerged = map; },
             setPickups: jobs => { pickups = { enabled: true, why: null, jobs }; },
+            cards: () => doc.sections.flatMap(s => s.cards.map(c => ({ column: s.name, card: c }))),
             section: name => doc.sections.find(s => s.name === name),
             open(name, text, tiles) { file = name; doc = parse(text); serverTiles = tiles || {}; } };`
 )();
@@ -66,11 +67,6 @@ test("a key inside a link, code or an attribute is left alone", () => {
   for (const md of ["[the PLN-41 plan](active/x.md)", "`PLN-41`", "[plan](../PLN-41/notes.txt)", "[PLN-41](https://example.com/PLN-41)"])
     assert.doesNotMatch(page.inline(md), /keyref/, md);
   assert.doesNotMatch(page.inline("XPLN-41 and PLN-41x"), /keyref/);
-});
-
-test("a tile's master is the first Part of, in any case, and never itself", () => {
-  assert.deepEqual(page.tileFacts("PLN-74", "PLN-74 **A.**\n  part of PLN-70 and never part of PLN-99."), { parent: "PLN-70", mentions: ["PLN-70", "PLN-99"] });
-  assert.deepEqual(page.tileFacts("PLN-82", "PLN-82 **B.** Part of PLN-82. Not part of the plan."), { parent: null, mentions: [] });
 });
 
 test("the index is this board as it reads now, plus the server's word on the other boards", () => {
@@ -365,12 +361,6 @@ test("a stored theme or accent the page no longer offers falls back to Clean and
   assert.equal(themes().storedAccent("light"), "#2f4bd8");
 });
 
-test("a Done column is any named like one, never one that says not", () => {
-  for (const name of ["Done", "done ✓", "Shipped", "Complete", "Completed", "Finished", "Closed", "Merged", "Released", "Deployed", "Delivered", "Resolved"])
-    assert.equal(page.isDoneCol(name), true, name);
-  for (const name of ["Not done", "To do", "Doing", "Undone", "Shipping", "Bugs", "In flight"]) assert.equal(page.isDoneCol(name), false, name);
-});
-
 test("a board has one In flight column and one Done column at most, under whatever names", () => {
   assert.equal(page.columnKind("In progress"), "In flight");
   assert.equal(page.columnKind("Shipped"), "Done");
@@ -412,6 +402,28 @@ test("a session at work gets Pause; a stopped one, idle, paused or gone, Continu
   assert.deepEqual(act("lost"), ["continue", "▶ Continue"]);
   assert.deepEqual(act("failed"), ["restart", "↻ Retry"]);
   assert.deepEqual(act("ended"), []);
+});
+
+// view_cases.json: the cases test_jobs.py runs through jobs.view, here through the page's own fallback.
+const VIEWS = JSON.parse(fs.readFileSync(path.join(__dirname, "view_cases.json"), "utf8")).views;
+
+test("a job with no view from the server is shown by the page's own table, the same as the server's", () => {
+  for (const { job, label, actions } of VIEWS)
+    assert.deepEqual(page.jobView(job), { label, actions }, JSON.stringify(job));
+  assert.deepEqual(page.jobView(undefined), { label: "", actions: [] });
+});
+
+test("a job that comes with a view is shown by it, whatever its state says", () => {
+  const job = { key: "PLN-01", state: "idle", view: { label: "working", actions: ["pause"] } };
+  assert.equal(page.sessionState(job), "working");
+  assert.equal(page.canMessage(job), false);
+  assert.match(page.wakeButton(job), /data-act="pause"/);
+  assert.doesNotMatch(page.wakeButton(job), /data-act="continue"/);
+  const talk = { key: "PLN-01", state: "ended", ready: true, view: { label: "idle", actions: ["reply", "continue", "close"] } };
+  assert.equal(page.canMessage(talk), true);
+  assert.equal(page.wantsReply(talk), true);
+  assert.match(page.replyHTML(talk), /data-act="close-story"/);
+  assert.doesNotMatch(page.replyHTML({ ...talk, view: { label: "idle", actions: ["reply", "continue"] } }), /data-act="close-story"/);
 });
 
 test("a session's state reads pausing while it writes its handoff, then paused", () => {
@@ -633,6 +645,26 @@ test("a tile with no Tests line takes its nearest master's", () => {
   assert.equal(page.inheritedTests("PLN-04 **Other.**"), "");
 });
 
+test("a ring of masters never hands a tile its own Tests line back", () => {
+  page.open("plans.md", "## A\n\n- [ ] PLN-01 **First.** Part of PLN-02.\n  Tests: full\n- [ ] PLN-02 **Second.** Part of PLN-01.\n", {});
+  assert.equal(page.inheritedTests("PLN-01 **First.** Part of PLN-02.\n  Tests: full"), "");  // PLN-01 stands as the master
+  assert.equal(page.inheritedTests("PLN-02 **Second.** Part of PLN-01."), "full");
+});
+
+test("a tile with no Tests line takes a master on another board's, from the server's index", () => {
+  const md = "- [ ] PLN-02 **Kid.**\n  Part of PLN-10.";
+  const server = tests => ({ "PLN-10": { title: "Master", file: "backlog.md", column: "Feature", done: false, parent: "PLN-11", mentions: [], tests },
+                             "PLN-11": { title: "Grand", file: "archive/archived.md", column: "Archived", done: true, parent: null, mentions: [], tests: "affected" } });
+  page.open("plans.md", "## In flight\n\n" + md + "\n", server("full"));
+  assert.equal(page.inheritedTests(md), "full");
+  page.open("plans.md", "## In flight\n\n" + md + "\n", server(null));  // the master says nothing: its master does
+  assert.equal(page.inheritedTests(md), "affected");
+  page.open("plans.md", "## In flight\n\n" + md + "\n- [ ] PLN-10 **Here now.**\n  Tests: full\n", server("affected"));  // the open board's own text is newer than the server's
+  assert.equal(page.inheritedTests(md), "full");
+  page.open("plans.md", "## In flight\n\n" + md + "\n", {});  // an older server: no index, no line
+  assert.equal(page.inheritedTests(md), "");
+});
+
 const SETTINGS_VIEW = {
   mtime: "1", set: { parallel: 3 }, problem: null,
   effective: { pickup: true, agent: "claude", model: "opus", permission: "auto", parallel: 3, sessions: 2, fullSuiteOnMerge: false, trunk: "main", tidy: true, push: true, commitDelay: 300 },
@@ -702,4 +734,78 @@ test("every theme has a dark palette and a dark accent for each of its accents",
     assert.match(html, new RegExp(`:root\\[data-theme="${id}"\\]\\[data-mode="dark"\\] \\{`), `${id} has a dark block`);
   }
   assert.doesNotMatch(html, /prefers-color-scheme: dark\) \{\s*:root\[data-theme/, "dark mode goes by data-mode, not the media query alone");
+});
+
+// ---------- tile_cases.json: the cases test_tiles.py runs through tiles.py ----------
+const CASES = JSON.parse(fs.readFileSync(path.join(__dirname, "tile_cases.json"), "utf8"));
+// What each reader of an attribute line gives for a tile's markdown, in the cases' terms (null: no such line).
+const bodyLines = md => md.split("\n").slice(1);
+const READERS = {
+  model: md => page.modelOf(md) || null,
+  base: md => page.baseOf(md) || null,
+  tests: md => page.testsOf(md) || null,
+  repos: md => page.reposOf(md).length ? page.reposOf(md) : null,
+  sessions: md => page.sessionsOf(bodyLines(md)) || null,
+  ready: md => bodyLines(md).map(page.readyLine).find(r => r !== null) ?? null,
+};
+// The page reads a session line for its id; the branch and cuts are the server's (tiles.session).
+const sessionOf = md => { const m = bodyLines(md).map(page.sessionLine).find(Boolean); return m ? m.id : null; };
+
+test("each line in tile_cases.json says what the case says", () => {
+  for (const c of CASES.lines) {
+    const md = "- [ ] PLN-01 **T.**\n" + c.line;
+    if (c.kind === "status") assert.equal(page.statusLine(c.line) !== null, c.value, c.line);
+    else if (c.kind === "session") assert.equal(sessionOf(md), c.value && c.value.id, c.line);
+    else assert.deepEqual(READERS[c.kind](md), c.value, `${c.kind}: ${c.line}`);
+  }
+});
+
+test("each tile in tile_cases.json has the facts the case says", () => {
+  for (const c of CASES.tiles) {
+    page.open("plans.md", `## ${c.column}\n\n${c.md}\n`);
+    const card = page.section(c.column).cards[0], md = [card.text, ...card.body].join("\n");
+    const split = page.splitCard(card.text), key = split.key || null;
+    const facts = key ? page.tileIndex().get(key) : { ...page.tileFacts("", md), title: split.title.replace(/\*\*|`/g, ""), column: c.column, done: page.isDoneCol(c.column) };
+    const got = { key, title: facts.title, parent: facts.parent, links: page.movesWith(key || "", md), mentions: facts.mentions, done: facts.done, column: facts.column };
+    for (const [name, value] of Object.entries(got)) if (name in c) assert.deepEqual(value, c[name], `${name}: ${c.md}`);
+    for (const name of Object.keys(READERS)) if (name in c) assert.deepEqual(READERS[name](md), c[name], `${name}: ${c.md}`);
+    if ("session" in c) assert.equal(sessionOf(md), c.session && c.session.id, c.md);
+  }
+});
+
+test("each board in tile_cases.json has the tiles the case says", () => {
+  for (const c of CASES.boards) {
+    page.open(c.file || "plans.md", c.text);
+    const index = page.tileIndex();
+    const got = page.cards().map(({ column, card }) => {
+      const key = page.splitCard(card.text).key || null;
+      return { key, column, done: key ? index.get(key).done : page.isDoneCol(column), md: page.cardMarkdown(card) };
+    });
+    // The page writes every tile with a "- " bullet (serialize), so a "* " tile reads as its "- " twin here.
+    const dashed = md => md.replace(/^\* /, "- ");
+    assert.deepEqual(got.map(g => [g.key, g.column, g.done, g.md]), c.tiles.map(w => [w.key, w.column, w.done, dashed(w.md)]), c.name);
+    c.tiles.forEach((w, i) => {
+      if ("model" in w) assert.equal(READERS.model(got[i].md), w.model, c.name);
+      if ("parent" in w) assert.equal(index.get(w.key).parent, w.parent, c.name);
+    });
+  }
+});
+
+test("each column in tile_cases.json is In flight or Done as the case says", () => {
+  for (const c of CASES.columns) {
+    page.setPickupColumn(c.pickupColumn || "");
+    if ("pickup" in c) assert.equal(page.isPickupColumn(c.name), c.pickup, c.name);
+    else { assert.equal(page.isPickupColumn(c.name), c.inFlight, c.name); assert.equal(page.isDoneCol(c.name), c.done, c.name); }
+  }
+  page.setPickupColumn("");
+});
+
+test("a story ready for review looks ready even when its session has gone; red is for a session gone without it", () => {
+  assert.equal(page.cardLook({ state: "lost" }, true), " ready");   // finished, its session ended: green, not red
+  assert.equal(page.cardLook({ state: "lost" }, false), " lost");   // gone without being ready: red
+  assert.equal(page.cardLook({ state: "idle", ready: true }, true), " ready");
+  assert.equal(page.cardLook({ state: "idle", waiting: "question" }, true), " needs-you");  // a question still comes first
+  assert.equal(page.cardLook({ state: "started" }, false), "");
+  assert.equal(page.cardLook(undefined, true), " ready");            // ready with no job on this server
+  assert.equal(page.cardLook(undefined, false), "");
 });
