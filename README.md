@@ -2,13 +2,17 @@
 
 A wizard for your backlog, straight outta middle management.
 
-This tool is neither original nor clever. It's a stupider version of something a hundred vibe-coded GitHub repos have probably built already. But this one is my stupid, so I love it. It's also useful to me, doing just what I really need. And that is enough. Until it isn't. And that's how we get new features. 
+What do you get when you cross kanban with wizardry (then add "alf", for reasons)? kandalf. A story is never late, nor is it early. It arrives precisely when its agent finishes.
 
-It's a local kanban board for planning work for AI agents, served on your machine. Drag a story to In flight and a background Claude Code or GitHub Copilot CLI session starts on it, in its own git worktree. Everything is markdown in git: no database, and nothing to install beyond Python 3.10+ and git.
+It's a local kanban board for planning work for AI agents, served on your machine.
 
-For the love of Sauron, keep it on your own machine: for now, kandalf is meant to be a local tool for managing your plans and the AI sessions that work on them. It isn't built to be hosted or shared over a network.
+**Why it exists.** kandalf is for organising planning sessions: the plans you write with an agent, the stories they break into, and what becomes of each. Plans already live as markdown files, so that is all kandalf keeps. The board is one more markdown file, readable and editable by hand, and each plan doc sits beside it as it was written. No database, nothing to import or sync, and nothing to install beyond Python 3.10+ and git.
 
-Feel free to contribute if you have nothing better to do, or tokens to burn.
+Plans pass both ways between kandalf and your agent. Plan in a Claude Code or GitHub Copilot CLI session in your repo, then say "add a story to kandalf": `kandalf init` taught the repo's agents how, with a section in its `AGENTS.md` and `CLAUDE.md`, so the session writes the plan doc into the store and files its tile on the backlog. The other way, plan on the board and hand it to an agent.
+
+On top of the files sits just enough process to help things along. Drag a story to In flight and a background Claude Code or Copilot session starts on it, in its own git worktree, given the tile and the plan doc it links. Its progress shows on the tile, `kandalf attach` opens the session to carry on by hand, and when it's ready for review you squash, merge and close it from the board.
+
+Contributions are welcome if you have a burning interest, or an interest in burning tokens.
 
 ![kandalf: a wizard at a kanban board](docs/kandalf.jpg)
 
@@ -38,77 +42,161 @@ kandalf serve               # the board, on http://127.0.0.1:7788 (or the port i
 
 ### Let agents pick up stories
 
-Pickup is off until you turn it on. Turning it on lets the board server start Claude Code sessions in your repo, one per story that lands in In flight. By default a session edits files and runs commands without asking (Claude Code's auto mode decides what is allowed). It works in its own worktree and branch, and is told to stop before merging or pushing.
+Pickup is off until you turn it on. Once it's on, each story that lands in In flight gets a background agent session in your repo, working in its own worktree and branch. By default the session edits files and runs commands without asking (Claude Code's auto mode decides what's allowed), and it's told to stop before merging or pushing.
 
-Turn it on with `"pickup": true` in the store's `board.json`, or answer yes when `kandalf init` asks. `kandalf doctor` lists what works and what is missing. A running `kandalf serve` reads `board.json` again within a few seconds of a change, so pickup comes on (picking up the tiles already in flight) or goes off without a restart; turning it off leaves the sessions at work alone.
+1. **Turn it on.** Answer yes when `kandalf init` asks, or set `"pickup": true` in the store's `board.json`. A running `kandalf serve` notices within a few seconds, with no restart: turned on, it starts on the tiles already in flight; turned off, it leaves running sessions alone.
+2. **Trust the repo.** Run the agent (`claude`, or `copilot` for a Copilot store) once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers its worktrees, which a store made by `kandalf init` keeps under `.worktrees/` (gitignored). A story that works in several repos (`Repos:` on its tile) needs each of them trusted.
+3. **Check.** `kandalf doctor` lists what works and what's missing.
 
-Before the first story, run `claude` once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers the worktrees cut from it. A story that works in several repos (`Repos:` on its tile) needs the prompt accepted once in each of them. A store made by `kandalf init` keeps those worktrees inside the repo, under `.worktrees/` (gitignored).
+Pickup needs [Claude Code](https://claude.com/claude-code) (the default) or the [GitHub Copilot CLI](https://github.com/features/copilot/cli). See [Platforms and requirements](#platforms-and-requirements).
 
-Pickup needs an agent CLI: [Claude Code](https://claude.com/claude-code) (the default) or the GitHub Copilot CLI (see [Platforms and requirements](#platforms-and-requirements)). Pick the agent when `kandalf init` asks (or pass `--agent copilot`), switch a store later with `kandalf agent copilot`, or set `"agent": "copilot"` to use the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot`) instead: each session is a detached `copilot -p --output-format json` process, tracked under `~/.kandalf/copilot/` (`KANDALF_COPILOT_DIR` overrides it). The tile's attach command is `kandalf attach ab12cd34`: it prints what the session has said and the tools it ran, follows it while it works (Ctrl-C leaves it working), and once it has finished opens the conversation in `copilot --resume` in its worktree, so you can read it and carry on, with the folders and permissions it ran with. Quit it (`/exit`) before Restart on the tile: while it is open, the board can't resume the session. A Copilot session can't stop to ask, so Status and the tile call it waiting for your input when it ended on an error or with a question. Copilot reads Claude Code hooks from a repo's `.claude/settings.local.json`, so a Copilot session gets the board's hooks through a link there in its worktree (kept out of git by the repo's `info/exclude`). A Copilot session reaches only its worktree and the folders it is given, so it is given the store too (`--add-dir`), for the board and plan docs behind `docs/plans`. `permission` `auto` runs with `--allow-all-tools --allow-all-paths` (any tool, any file path; URLs are still checked), `acceptEdits` with `--allow-all-tools`, `bypassPermissions` with `--allow-all`, `plan` with `--mode plan`, others ask for nothing and so deny what isn't pre-approved. Run the agent (`claude` or `copilot`) once in your repo and accept its trust prompt before the first pickup.
+### Using the Copilot CLI
 
-`kandalf agent NAME` switches an existing store: it sets `agent`, drops `model` (it was the old agent's), and leaves each story the old agent picked up lost, so Continue on its tile starts the new agent in the same worktree. It refuses while an old session is at work or idle; `--force` stops those first.
+Pick Copilot when `kandalf init` asks (or pass `--agent copilot`), or set `"agent": "copilot"` in `board.json`.
+
+`kandalf agent copilot` (or `kandalf agent claude`) switches an existing store. It sets `agent`, drops `model` (that was the old agent's), and marks each story the old agent picked up as gone, so **Continue** on its tile starts the new agent in the same worktree. It refuses while an old session is working or idle; `--force` stops those first.
+
+A Copilot session works a little differently:
+
+- **It runs detached**, as `copilot -p --output-format json`, tracked under `~/.kandalf/copilot/` (`KANDALF_COPILOT_DIR` overrides that).
+- **Attaching follows it.** `kandalf attach ab12cd34` prints what the session has said and the tools it ran, then follows it while it works (Ctrl-C leaves it working). Once it has finished, it opens the conversation with `copilot --resume` in the worktree, with the folders and permissions it ran with, so you can read it and carry on. Quit that (`/exit`) before you press Continue on the tile: while it's open, the board can't resume the session.
+- **It can't stop to ask.** Status and the tile call it waiting for your input when it ended on an error or with a question.
+- **It gets the hooks through a link.** Copilot reads Claude Code hooks from a repo's `.claude/settings.local.json`, so the worktree gets a link there to the store's hooks (kept out of git by the repo's `info/exclude`).
+- **It's given the store.** A Copilot session reaches only its worktree and the folders it's given, so it gets the store with `--add-dir`, for the board and plan docs behind `docs/plans`.
+
+The `permission` setting maps onto Copilot's flags:
+
+| `permission` | Copilot runs with |
+|---|---|
+| `auto` | `--allow-all-tools --allow-all-paths`: any tool, any file path (URLs are still checked) |
+| `acceptEdits` | `--allow-all-tools` |
+| `bypassPermissions` | `--allow-all` |
+| `plan` | `--mode plan` |
+| anything else | nothing, so it denies whatever isn't pre-approved |
 
 ## What a session does with a story
 
+### Pickup
+
 While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a keyed tile that lands in the In flight column of `plans.md` is picked up, however it got there: dragged on the board, edited in by hand, or moved by an agent. The server:
 
-1. Cuts a git worktree on a branch from the trunk (or the branch the tile's `Base:` line names): worktree `myapp/.worktrees/pln-74` in a store made by `kandalf init` (beside the app, as `myapp-pln-74`, when `"worktree"` isn't set), branch `pln-74-colour-tokens`. The store is linked in at `docs/plans` there too. `"branch"` and `"worktree"` in `board.json` change the names. A tile with a `Repos: api, web` line gets a worktree in each of those repos, all on that one branch, each beside its own repo. The store is linked in only where the repo's checkout links it.
-2. Starts a background Claude Code session in it (in the first repo's worktree, when there are several; the others are added to the session with `--add-dir`, and its prompt lists them), given the tile and told to follow the repo's rules, tick sub-tasks as they land with their commits, keep a `Handoff:` line on the tile, and stop before merging or pushing. The board writes the session, branch and worktree onto the tile itself.
+1. **Cuts a worktree** on a new branch from the trunk, or from the branch the tile's `Base:` line names. For PLN-74 in a store made by `kandalf init`, that's worktree `myapp/.worktrees/pln-74` on branch `pln-74-colour-tokens`. The default, with no `"worktree"` setting, is `myapp-pln-74`, beside the app. `"branch"` and `"worktree"` in `board.json` change the names. The store is linked in at `docs/plans` there too.
+2. **Starts a background session** in it, given the tile and told to follow the repo's rules, tick sub-tasks with their commits as they land, keep a `Handoff:` line on the tile, and stop before merging or pushing.
+3. **Writes the session, branch and worktree onto the tile.**
 
-When the server starts, a tile already in flight that never had a session (no session line on it, and no sub-stories) is picked up too. Unkeyed tiles and tiles that say `No pickup` never are (take the words out and the tile is picked up on the next look); the server's startup list says when a tile's `No pickup` is why it has no session.
+A tile with a `Repos: api, web` line gets a worktree in each repo, all on the same branch, each placed by the `worktree` pattern for its own repo (`api/.worktrees/pln-74` and `web/.worktrees/pln-74` in a store made by `kandalf init`). The session starts in the first and gets the others with `--add-dir`; its prompt lists them. The store is linked in only where that repo's checkout links it.
 
-**On the tile.** The session is written into the tile as one line: ``Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.`` A Copilot store's line says ``Copilot session `ab12cd34`: `kandalf attach ab12cd34`.`` A story in several repos names each one's worktree instead: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.`` The board shows it as a block with the session's state and a button that copies the attach command:
+When the server starts, it also picks up any tile already in flight that never had a session (no session line and no sub-stories). Unkeyed tiles, and tiles that say `No pickup`, are never picked up; take the words out and the tile is picked up on the next look. The server's startup list says when `No pickup` is why a tile has no session.
 
-- **working**: the session is at work. The block gets **Pause** (below).
-- **pausing**: it was paused and is writing its handoff before it stops. The block gets **Pause now**, which stops it there if it hangs, leaving the Handoff line the tile has.
-- **paused**: it wrote its handoff and stopped. The block gets **Continue**.
-- **idle**: it finished its turn. The block gets **Continue**.
-- **waiting for you**: idle because it needs input (interrupted, or it asked a question). The tile gets an amber outline. This is a best guess from `claude logs`.
-- **gone**: it was stopped, closed or removed. The tile flashes red until you continue it or move it out of In flight. The block gets **Continue**.
+If a session can't be started, the tile shows **not started** with the reason, and a **Retry** button.
 
-**Pause** puts a story aside. It stops the session (Claude or Copilot) and resumes it once, told to finish or undo the step it is on, commit what is worth keeping, rewrite the tile's `Handoff:` line in full (done, uncommitted, next, undecided) and stop. Once it stops the story is **paused**: it gives up its place, so the next queued tile starts. Moving a tile out of In flight while its session is at work, to To do or any other column, pauses it the same way.
+### The session block
 
-**Continue** gets a stopped session going again. On a paused story a new session takes over from the tile's `Handoff:` line and the branch, in the same worktree; the old conversation isn't needed, so this works on another day, after a server restart, or with the store switched to another agent. **Queue**, beside it, puts the paused story at the back of the queue to be taken over in its turn instead of now. A paused tile out of In flight has no button: move it back to In flight and it queues, at the back, for that take-over (**queued**, with **Start now** to start it beside the session at work). The take-over runs on the model and repos the tile names then. On an idle or gone session, Continue resumes the same conversation, told to carry on from where it was, check `git status` and the tile, and take another way rather than wait again; if the conversation can't be resumed, a new session takes over in the same worktree.
+The board writes the session onto the tile as one line:
 
-**Status** in the block checks the story right now and writes the result under the session line: session state, commits ahead of the trunk, the last commit, uncommitted files, sub-tasks ticked and an ETA, and the last words on the session's screen. The board measures it from the CLI's session list, git in the worktree and the tile; it asks the session for nothing. The ETA goes by the pace of ticked sub-tasks, or, with none ticked, by what is left of the tile's estimate.
+``Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.``
 
-**Handoff.** Each session keeps an indented `Handoff:` line on the tile: what is done, what it is doing, what comes next. The tile and the branch are all a new session needs, so **Continue** resumes the same conversation, or, if it can't be resumed, starts a new session in the same worktree; after a Pause it always starts a new one from the handoff.
+A Copilot store's line starts ``Copilot session``. A story in several repos names each worktree: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.``
 
-**Ready for review.** When every sub-task is ticked and every gate has passed, the session adds a `**Ready for review:**` line (gate results, commit count, what to look at first) and stops. The board outlines the tile in green until it is in Done or the line is removed. You review, squash and merge.
+The page shows that line as a block with the session's state, a button that copies the attach command, and a button for what you can do next:
 
-**Message.** Every session the board can reach, Claude or Copilot, has a message box in its block, and **Send** (⌘↵ or Ctrl+↵ sends too) puts what you type into the same conversation. When the session waits for your input (it asked something, ended on an error, or its story is ready for review and it stopped) the box is open. Otherwise it is folded behind a chevron: unfold it to **Interrupt with a message** while the session works, which stops it mid-step, gives it your message, and has it carry on from where it was; or to message one that is idle or gone. A paused story has Continue instead.
+| State | What it means | Button |
+|---|---|---|
+| **working** | The session is at work. | **Pause** |
+| **pausing** | It was paused and is writing its handoff before it stops. | **Pause now** stops it there if it hangs; the tile keeps the Handoff line it has. |
+| **paused** | It wrote its handoff and stopped. | **Continue** |
+| **idle** | It finished its turn. | **Continue** |
+| **waiting for you** | It's idle because it needs input: it was interrupted, or it asked a question. The tile gets an amber outline. This is a best guess from `claude logs`. | **Continue**, or answer in the message box |
+| **gone** | It was stopped, closed or removed. The tile flashes red until you continue it or move it out of In flight. | **Continue** |
 
-**Log.** The same box shows the session's log above the message field: what it was told (`❯`), what it said and each tool it ran (`⏺`), and the start of each result (`⎿`), laid out as the session's own screen lays them out, newest last, refreshed every few seconds while the box is open. It stays at the newest line unless you scroll up to read, is taller in an opened tile, and **↗ window** opens it full-size in a tab of its own (`/log?key=PLN-01`). A Claude session's log is read from Claude Code's own transcript of it under `~/.claude/projects`; a Copilot session's from the output the board keeps. On a story ready for review the box also has **Squash**, **Merge into** the trunk and **Push**: tick them and the session does those, in that order, though its rules otherwise leave them to you. Squash rebases onto the trunk first and squashes only the story's own commits; Merge rebases onto the trunk and fast-forwards it, so there is no merge commit; each runs in every repo the story works in. Push after Merge pushes the trunk, and Push alone pushes the story's branch. The session stops at the first step that can't be done cleanly and says why on the tile. After a Merge it takes the `Ready for review` line off; without one the line stays, as the story still waits to be merged. A merged story with nothing outstanding (every sub-task ticked, every step done) is closed: the session moves its tile to the top of Done, as the board's header says to close one. With something outstanding the tile stays in In flight and its `Handoff:` line says what. The go-ahead is for that reply only: any later reply tells the session squashing, merging and pushing are yours again. A story with nothing to merge (its branch has no commits beyond the trunk and nothing uncommitted, in every repo, as with a master whose sub-stories did the work) has a **✓ Close** button instead of the three: the session takes the `Ready for review` line off and closes the story the same way, without squashing, merging or pushing.
+### Pause, Continue and the handoff
 
-**Stats.** While pickup is on, a strip under the plans board's header counts the builds: **at work**, **need you** (the session asked something, ended on an error, is gone, or couldn't be started), **ready for review** (which a finished story counts as, however its session stopped), **queued**, **paused**, **idle** (the session stopped without asking anything, as a master's does while its sub-stories are built), and **not merged** (in Done with its branch unmerged). Each story is counted once. A count's tooltip lists its stories; click it to show only those tiles, and again to show them all.
+Each session keeps an indented `Handoff:` line on its tile: what's done, what it's doing and what comes next. The tile and the branch are all a new session needs to carry on.
 
-**Model.** Sessions run on `opus`. Change the store's default with `"model"`, or one story's with the Model dropdown in its dialog, which writes a `Model: sonnet` line. Change it while the story is in flight and the board stops the session and resumes it on the new model.
+- **Pause** puts a story aside, for Claude and Copilot sessions alike. The board stops the session and resumes it once, telling it to finish or undo the step it's on, commit what's worth keeping, rewrite the `Handoff:` line in full (done, uncommitted, next, undecided) and stop. A paused story gives up its place, so the next queued tile starts. Moving a working tile out of In flight, to any column, pauses it the same way.
+- **Continue** gets a stopped session going again:
+  - On a **paused** story, a new session takes over from the `Handoff:` line and the branch, in the same worktree. It doesn't need the old conversation, so this works days later, after a server restart, or after switching agents.
+  - On an **idle** or **gone** session, it resumes the same conversation, telling the session to carry on from where it was, check `git status` and the tile, and take another way rather than wait again. If the conversation can't be resumed, a new session takes over in the same worktree.
+- **Queue**, beside Continue on a paused story, puts it at the back of the queue, to be taken over in its turn instead of now.
+- A paused tile **out of In flight** has no buttons. Move it back to In flight and it queues at the back (**queued**, with **Start now** to start it beside the session at work).
 
-**Base.** A story is cut from the trunk (`dev` when the app has a dev branch) and merged back into it. To work off another branch, type or pick it in the Base field of the tile's dialog, which writes a `Base: feature-x` line; the review steps (squash, merge, push) then go against that branch too. Clearing the field, or naming the trunk, takes the line off. A branch the repo hasn't got is ignored: the story is cut from the trunk and its session is told so. The branch a story was cut from stays its base, whatever the line says later.
+A take-over, whether from Continue or the queue, runs on the model and repos the tile names when it starts.
 
-**Looks.** The header's Theme menu picks the board's look (Clean and light, Classic, Aqua bubble, Sticker pop, Realm ledger, Soft and sunny), its swatches an accent colour, and the button beside them light or dark: ◐ System follows your computer, ☀ Light and ☾ Dark stay put. Every theme has a dark palette. All three are kept in this browser only.
+### Status
 
-**Settings.** The ⚙ button in the header opens the store's settings: pickup, agent, model, permission mode, stories at once, sessions, full suite on merge, trunk, tidy, push and commit delay. Each shows its default and, once `board.json` sets it, a mark and a Reset button; Save writes only what you changed to `board.json` (Reset removes the key) and pickup follows without a restart. The store's other facts (name, key, port, folder, repos) are listed read-only: set those in `board.json`.
+**Status**, in the session block, checks the story right now and writes the result under the session line: the session's state, commits ahead of the trunk, the last commit, uncommitted files, sub-tasks ticked with an ETA, and the last words on the session's screen. The board works this out from the agent CLI's session list, git in the worktree and the tile; it doesn't ask the session anything. The ETA goes by the pace of ticked sub-tasks or, with none ticked, by what's left of the tile's estimate. `kandalf status KEY` gives the same line on the command line.
 
-**Repos.** Tick the repos in a tile's dialog (shown when the store has more than one) and it writes the `Repos:` line, in `board.json` order; ticking only the main repo removes the line, and a different first repo is a hand edit. Change a tile's `Repos:` line while the story is in flight and the board stops the session and resumes it with the new set: new repos get a worktree and are added to the session. Name a different repo first and a new session starts there, taking over from the tile and the branch. A repo you drop keeps its worktree, so tidy still clears it. A line that names an unknown repo is ignored, with a note on the board's console, while a session is at work or idle. A story that is queued, lost or failed is not started: its tile says "no repo named ...". Run `kandalf repo add` to add one; a running `kandalf serve` picks it up from `board.json` within seconds.
+### Messages and the log
 
-**Several at once.** One tile works at a time unless `"parallel"` in `board.json` says more. While that many sessions are at work, the next tile waits (**queued**) and the board asks whether to start it in parallel. Leave it queued and its tile keeps a **▶ Start now** button, to start it whenever you like. A master story's sub-stories each get their own session, two at work at once, the rest queued; the master itself gets none while any of them is in flight. Once the last has left In flight, the master is picked up like a tile that just landed, so its own sub-tasks are worked and it shows a status and buttons. A story's session runs only the tests for what it changes; the full suite runs on the trunk after a merge from the board when the store (`fullSuiteOnMerge` in `board.json`) or the tile (`Tests: full`) asks, for a master's sub-story only when it is the last of them, as a **Full suite** sub-task on the story's tile (its master's, for a sub-story) before anything is pushed. Pulling a master with several sub-stories into In flight asks how many may work at once; a number other than the store's is kept on the master as `Sessions: 3`.
+Every session the board can reach, Claude or Copilot, has a message box in its block. **Send** (or ⌘↵ / Ctrl+↵) puts what you type into the same conversation.
 
-**If it can't start**, the tile shows **not started** with the reason, and **Retry**.
+- The box is **open** when the session waits for you: it asked something, ended on an error, or its story is ready for review and it stopped.
+- Otherwise it's **folded** behind a chevron. Unfold it to **Interrupt with a message** while the session works (it stops mid-step, reads your message and carries on from where it was), or to message a session that's idle or gone.
+- A paused story has no message box; it has **Continue** instead.
 
-**Archiving tidies.** When a story is archived (Clear, or dropped on Archive) the server stops and removes its session, removes its worktree and deletes the feature branch in every repo the story worked in (the ones its session line names). It does so only when nothing would be lost in any of them: the branch is already in that repo's trunk (merged, rebased or squashed), every worktree has nothing uncommitted, the session isn't at work, and every repo is still in `board.json`. Otherwise it keeps everything and says which repo holds it up in the banner and on the console. The console gives the deleted branch's last commit, so `git branch <name> <commit>` brings it back. `"tidy": false` keeps everything.
+Above the message field, the box shows the session's **log**: what it was told (`❯`), what it said and each tool it ran (`⏺`), and the start of each result (`⎿`), laid out like the session's own screen, newest last. It refreshes every few seconds while the box is open and stays at the newest line unless you scroll up. It's taller in an opened tile, and **↗ window** opens it full-size in its own tab (`/log?key=PLN-01`). A Claude session's log comes from Claude Code's transcript under `~/.claude/projects`, a Copilot session's from the output the board keeps.
 
-**Deleting throws away.** Deleting a tile that has a session (the card's Delete button) asks first, then stops and removes the session, removes its worktree with anything uncommitted in it, and deletes the branch unless it has commits of its own (then the branch is kept, so no commit is lost). `"tidy": false` doesn't apply: a delete is asked for.
+### Review and merge
+
+When every sub-task is ticked and every gate has passed, the session adds a `**Ready for review:**` line (gate results, commit count, what to look at first) and stops. The board outlines the tile in green until it's in Done or the line is removed.
+
+You can review, squash and merge yourself, or hand those steps to the session. On a story that's ready for review, the message box has three checkboxes: **Squash**, **Merge into** the trunk, and **Push**. Tick any of them, send, and the session does them in that order, though its rules otherwise leave them to you:
+
+- **Squash** rebases onto the trunk and squashes only the story's own commits.
+- **Merge** rebases onto the trunk and fast-forwards it, so there's no merge commit.
+- **Push** after Merge pushes the trunk. Push on its own pushes the story's branch.
+
+Each step runs in every repo the story works in. The session stops at the first step that can't be done cleanly and says why on the tile. The go-ahead covers that one reply only: any later reply tells the session that squashing, merging and pushing are yours again.
+
+After a Merge, the session takes the `Ready for review` line off. (Without a Merge the line stays, since the story is still waiting to be merged.) If nothing is outstanding (every sub-task ticked, every step done), it closes the story by moving its tile to the top of Done, as the board's header says. Otherwise the tile stays in In flight and its `Handoff:` line says what's left.
+
+A story with nothing to merge gets a **✓ Close** button instead of the checkboxes. That means its branch has no commits beyond the trunk and nothing uncommitted, in every repo, as with a master whose sub-stories did the work. The session takes the `Ready for review` line off and closes the story the same way, without squashing, merging or pushing.
+
+### Several at once
+
+One tile works at a time unless `"parallel"` in `board.json` allows more. When that many sessions are at work, the next tile is **queued** and the board asks whether to start it in parallel anyway. A queued tile keeps a **▶ Start now** button, so you can start it whenever you like.
+
+**Master stories.** Each sub-story of a master gets its own session, two at a time (the store's `"sessions"`), with the rest queued. The master itself gets no session while any of its sub-stories is in flight. Once the last one leaves In flight, the master is picked up like a tile that just landed, so its own sub-tasks get worked and it shows a status and buttons. Pulling a master with several sub-stories into In flight asks how many may work at once; a number other than the store's is kept on the master as `Sessions: 3`.
+
+**Tests.** A session runs only the tests for what it changes. The full suite runs on the trunk after a merge from the board, before anything is pushed, when the store (`fullSuiteOnMerge`) or the tile (`Tests: full`) asks for it. It shows as a **Full suite** sub-task on the story's tile. For a sub-story it runs only when it's the last of its master's, and goes on the master's tile.
+
+### Stats
+
+While pickup is on, a strip under the plans board's header counts the stories:
+
+- **at work**
+- **need you**: the session asked something, ended on an error, is gone, or couldn't be started
+- **ready for review**: this includes any finished story, however its session stopped
+- **queued**
+- **paused**
+- **idle**: the session stopped without asking anything, as a master's does while its sub-stories are built
+- **not merged**: in Done with its branch unmerged
+
+Each story is counted once. A count's tooltip lists its stories. Click a count to show only those tiles, and click again to show them all.
+
+### Per-story choices
+
+Each of these has a field in the tile's dialog that writes a line on the tile (see [Tile conventions](#tile-conventions)).
+
+- **Model.** Sessions run on `opus` unless the store's `"model"` says otherwise. The Model dropdown writes a `Model: sonnet` line. Change it while the story is in flight and the board stops the session and resumes it on the new model.
+- **Base.** A story is cut from the trunk (`dev` when the app has a dev branch) and merged back into it. Type or pick another branch in the Base field to write a `Base: feature-x` line; the review steps then go against that branch too. Clearing the field, or naming the trunk, removes the line. A branch the repo doesn't have is ignored: the story is cut from the trunk and its session is told so. A story keeps the base it was cut from, whatever the line says later.
+- **Repos.** When the store has more than one repo, tick the ones the story works in to write a `Repos:` line, in `board.json` order. Ticking only the main repo removes the line; putting a different repo first is a hand edit. Change the line while the story is in flight and the board stops the session and resumes it with the new set: new repos get a worktree and are added to the session. If the first repo changes, a new session starts there, taking over from the tile and the branch. A repo you drop keeps its worktree, so archiving still tidies it. A line that names an unknown repo is ignored, with a note on the board's console, while a session is working or idle. A story that's queued, gone or not started is held back instead, and its tile says "no repo named ...". `kandalf repo add` adds a repo, and a running `kandalf serve` picks it up from `board.json` within seconds.
+
+### Cleaning up
+
+- **Archiving tidies.** When a story is archived (Clear, or dropped on Archive), the server stops and removes its session, removes its worktree and deletes its branch, in every repo its session line names. It does this only when nothing would be lost: the branch is already in that repo's trunk (merged, rebased or squashed), no worktree has uncommitted changes, the session isn't at work, and every repo is still in `board.json`. Otherwise it keeps everything and says which repo held it up, in the banner and on the console. The console logs each deleted branch's last commit, so `git branch <name> <commit>` brings it back. `"tidy": false` keeps everything.
+- **Deleting throws away.** Deleting a tile that has a session (the card's Delete button) asks first. Then it stops and removes the session, removes its worktree along with anything uncommitted in it, and deletes the branch, unless the branch has commits of its own (then it's kept, so no commit is lost). `"tidy": false` doesn't apply here, since you asked for the delete.
 
 ## The board without an agent
 
-Leave pickup off and it is a markdown kanban.
+Leave pickup off and it's a markdown kanban.
 
-- **Columns and tiles.** `plans.md` is the board: one `## ` column per status, one `- ` tile per plan. Drag a tile to change its status, or edit it in place. A tile can have a priority, an estimate and tick-box sub-tasks. The server refuses to save over a file that changed on disk since your page loaded it, and reloads it instead.
-- **Plan docs.** Longer plans live in `active/` (`YYYY-MM-DD-slug.md`), linked from the tile. A key written anywhere in a tile's text ("after PLN-41") jumps to that tile, and a tile's dialog lists what it is Related to.
-- **Backlog and Promote.** `backlog.md` is a second board of unscheduled tiles, one column per kind of work. Drop a tile on Promote and it moves to the top of To do, keyed if it had no key. On the plans board, Back to backlog lists the backlog's columns.
-- **Archive.** Drop a tile on Archive: its plan docs move from `active/` to `archive/`, links to them are rewritten, and the tile is filed at the top of `archive/archived.md`. **Clear** in Done's header archives every tile there at once (a Done tile whose branch isn't merged stays). **Undo** brings the last clear back; it is gone once the page reloads.
-- **Keys and sort.** Every tile has a key (`PLN-07`). The Sort menu orders every column by priority, estimate or when the tile was first committed; it is display only, and the file keeps its order. Cmd/Ctrl+Enter saves a tile's dialog.
+- **Columns and tiles.** `plans.md` is the board: one `## ` column per status, one `- ` tile per plan. Drag a tile to change its status, or edit it in place. A tile can have a priority, an estimate and tick-box sub-tasks. If the file changed on disk since your page loaded it, the server refuses to save over it and reloads it instead.
+- **Plan docs.** Longer plans live in `active/` (`YYYY-MM-DD-slug.md`), linked from the tile. A key written anywhere in a tile's text ("after PLN-41") jumps to that tile, and a tile's dialog lists what it's Related to.
+- **Backlog and Promote.** `backlog.md` is a second board of unscheduled tiles, one column per kind of work. Drop a tile on Promote and it moves to the top of To do, with a key if it had none. On the plans board, Back to backlog lists the backlog's columns.
+- **Archive.** Drop a tile on Archive: its plan docs move from `active/` to `archive/`, links to them are rewritten, and the tile is filed at the top of `archive/archived.md`. **Clear** in Done's header archives every tile there at once, except a tile whose branch isn't merged. **Undo** brings the last clear back, until the page reloads.
+- **Keys and sort.** Every tile has a key (`PLN-07`). The Sort menu orders every column by priority, estimate, or when the tile was first committed. It only changes the display; the file keeps its order. Cmd/Ctrl+Enter saves a tile's dialog.
+- **Looks.** The header's Theme menu picks the board's look (Clean and light, Classic, Aqua bubble, Sticker pop, Realm ledger, Soft and sunny), the swatches pick an accent colour, and the button beside them picks light or dark: ◐ System follows your computer, ☀ Light and ☾ Dark stay put. Every theme has a dark palette. All three choices are kept in this browser only.
 - **Any folder.** `kandalf serve --dir ~/notes/boards --port 7789` serves any folder of boards, with no `board.json`.
 
 ## Tile conventions
@@ -117,49 +205,49 @@ Write these in a tile and the board acts on them.
 
 | You write | What it does |
 |---|---|
-| `PLN-07` at the start of the line | The tile's key, in the store's prefix. `kandalf key next` prints the next free one, and the board keys a tile you create on it. A tile needs a key to be picked up. |
+| `PLN-07` at the start of the line | The tile's key, in the store's prefix. A tile needs a key to be picked up. The board keys a tile you create on it, and `kandalf key next` prints the next free key. |
 | `P1` to `P4` after the key | Priority: Highest, High, Medium, Low. |
 | `~4h`, `~1.5d`, `~12-18h`, `~1w` after the priority | Estimate, in wall-clock time. Used for sorting and the ETA. |
-| `Moves with PLN-74` (or `PLN-74, PLN-75 and PLN-76`) | Linked tiles: move one to another column and the others follow. Works both ways and chains. Nothing follows a tile into Done, out of Done or to Archive. |
-| `Part of PLN-70` | The tile is a sub-story of master PLN-70 and folds into it. A sub-story picked up on its own is given the master's tile to read, wherever the master sits. The master shows a bar and count of sub-stories done. Moving the master takes its sub-stories along; a sub-story moves alone. The first `Part of` counts. |
-| `No pickup` | Never pick this tile up. Write it on a tile a session of yours is already working. |
+| `Moves with PLN-74` (or `PLN-74, PLN-75 and PLN-76`) | Linked tiles: move one to another column and the others follow. It works both ways and chains. Nothing follows a tile into Done, out of Done or to Archive. |
+| `Part of PLN-70` | The tile is a sub-story of master PLN-70 and folds into it. The master shows a bar and a count of sub-stories done. Moving the master takes its sub-stories along; a sub-story moves alone. A sub-story picked up on its own is given the master's tile to read, wherever the master is. Only the first `Part of` counts. |
+| `No pickup` | Never pick this tile up. Use it on a tile one of your own sessions is already working on. |
 | `Model: sonnet` (own line) | The model for this story's session: an alias or a full model id. |
 | `Base: feature-x` (own line) | The branch this story is cut from and merged into, instead of the trunk, in each repo that has it. The dialog's Base field writes it. A sub-story takes its master's. |
-| `Tests: full` (own line) | Merging this story from the board runs the full suite on the trunk afterwards; `Tests: affected` says not to, over the store's `fullSuiteOnMerge`. A sub-story takes its master's. The tile's dialog has a **Full suite on merge** box that writes and removes the line. |
-| `Repos: api, web` (own line) | The repos this story works in. The session starts in the first one. No line: the main repo. The dialog's Repos boxes write it. A sub-story takes its master's. |
+| `Tests: full` (own line) | A merge of this story from the board runs the full suite on the trunk afterwards. `Tests: affected` says not to, whatever the store's `fullSuiteOnMerge`. The dialog's **Full suite on merge** box writes and removes the line. A sub-story takes its master's. |
+| `Repos: api, web` (own line) | The repos this story works in. The session starts in the first one. Without the line, it's the main repo. The dialog's Repos boxes write it. A sub-story takes its master's. |
 | `Sessions: 3` (own line, on a master) | How many sub-stories have a session at work at once, instead of the store's `"sessions"`. |
 | ``Claude session `ab12cd34`: ...`` | Written by the board when a session starts, and shown as its own block. Leave it as it is. |
-| `Handoff: ...` (own line) | The session's note on what is done, doing and next. Shown in the opened tile's status. |
-| `**Status 2026-11-18 14:58:** ...` | Written by the Status button; each refresh replaces it. |
+| `Handoff: ...` (own line) | The session's note on what's done, what it's doing and what's next. Shown in the opened tile's status. |
+| `**Status 2026-11-18 14:58:** ...` | Written by the Status button. Each refresh replaces it. |
 | `**Ready for review:** ...` (own line) | The story is finished and waits for you. The tile is outlined green. Anyone's line counts, not only a session's. |
-| A branch in backticks on a Done tile, with a slash in its name (`` `feat/x` ``), or the branch on the session line | The tile is outlined red until that branch is merged into the `trunk` (or the story's `Base:` branch) of each repo the tile names (its session line's repos, else its `Repos:` line's, else the main repo). Only in a column named Done. |
+| A branch in backticks with a slash in its name (`` `feat/x` ``) on a Done tile, or the branch on its session line | The tile is outlined red until that branch is merged into the trunk (or the story's `Base:` branch) of each repo the tile names: its session line's repos, else its `Repos:` line's, else the main repo. Only in a column named Done. |
 
-Only the board applies links and sub-story moves: a tile moved by hand, in an editor or by an agent, moves alone. The filing rules are in the header of each store's `plans.md`.
+Only the board applies links and sub-story moves. A tile moved by hand, in an editor or by an agent, moves alone. The filing rules are in the header of each store's `plans.md`.
 
 ## Settings
 
-A store's `board.json` is optional; every key has a default.
+A store's `board.json` is optional; every key has a default. You can edit it by hand or with the ⚙ button in the board's header, which covers pickup, agent, model, permission mode, stories at once, sessions, full suite on merge, trunk, tidy, push and commit delay. Each setting shows its default and, once `board.json` sets it, a mark and a Reset button. Save writes only what you changed (Reset removes the key), and pickup follows without a restart. The store's other facts (name, key, port, folder, repos) are listed read-only; set those in `board.json`.
 
 | Key | Default | What it does |
 |---|---|---|
 | `name` | the folder's name | Shown in the page title. |
-| `key` | `PLN` (`kandalf init` picks the name's first three letters) | Tile key prefix: `PLN-01`, `PLN-02`, ... Capital letters and digits. |
+| `key` | `PLN` (`kandalf init` uses the name's first three letters) | Tile key prefix: `PLN-01`, `PLN-02`, ... Capital letters and digits. |
 | `port` | `7788` | Where `kandalf serve` listens. |
 | `link` | `plans` | The folder name app repos link the store in by (`docs/plans`). |
 | `app` | none | The app repo, relative to the store. Needed for pickup and for the red outline on unmerged Done tiles. |
-| `trunk` | `dev` when the app has a dev branch, else `main` (`kandalf init` picks `dev` when there is one, else the app's default branch) | The app branch feature branches are cut from and merged into. A tile's `Base:` line picks another for its story. |
-| `repos` | none | Other repos stories can work in, by name: a path relative to the store, or `{"path", "trunk"}` (no trunk: the store's `trunk`, else `dev` when that repo has it, else `main`). A tile's `Repos:` line picks them. |
+| `trunk` | `dev` when the app has a dev branch, else `main` (`kandalf init` picks `dev` if there is one, else the app's default branch) | The app branch feature branches are cut from and merged into. A tile's `Base:` line picks another for its story. |
+| `repos` | none | Other repos stories can work in, by name: a path relative to the store, or `{"path", "trunk"}`. Without a trunk, a repo uses the store's `trunk`, else `dev` when it has one, else `main`. A tile's `Repos:` line picks them. |
 | `agent` | `claude` | The agent pickup hands stories to: `claude` (Claude Code) or `copilot` (GitHub Copilot CLI). |
-| `pickup` | `false` | Start an agent session (`agent`) for a tile that lands in In flight. Needs `app`. |
+| `pickup` | `false` | Start an agent session (`agent`) for each tile that lands in In flight. Needs `app`. |
 | `pickupColumn` | any column named like In flight: in-flight, in progress (typos too), doing, WIP, working, underway, ongoing, active; not one that says "not" | The one column, by name (any case), whose tiles are picked up. |
-| `permission` | `auto` | Permission mode sessions start in: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions` (`claude --help` lists them). |
-| `model` | `opus` (`auto` for copilot) | Model sessions run on: an alias or a full id. A tile's `Model:` line overrides it. |
-| `parallel` | `1` | How many tiles on their own have a session at work at once. The rest are queued, each with **Start now**. |
+| `permission` | `auto` | The permission mode sessions start in: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions` (`claude --help` lists them). |
+| `model` | `opus` (`auto` for copilot) | The model sessions run on: an alias or a full id. A tile's `Model:` line overrides it. |
+| `parallel` | `1` | How many standalone tiles have a session at work at once. The rest are queued, each with **Start now**. |
 | `sessions` | `2` | How many of a master's sub-stories have a session at work at once. A master's `Sessions:` line overrides it. |
-| `fullSuiteOnMerge` | `false` | `true`: a merge from the board runs the full suite on the trunk before the push (a sub-story's only when it is the last of its master's), unless the tile has a `Tests: affected` line. `false`: only when the tile has a `Tests: full` line. Every session runs only the tests for what it changes either way. |
+| `fullSuiteOnMerge` | `false` | `true`: a merge from the board runs the full suite on the trunk before the push (for a sub-story, only when it's the last of its master's), unless the tile has a `Tests: affected` line. `false`: only when the tile has a `Tests: full` line. Either way, sessions run only the tests for what they change. |
 | `branch` | `{key}-{slug}` | A session's feature branch. `{key}` is the tile's key in lower case, `{KEY}` as written, `{slug}` its title, `{app}` the app folder's name. Must contain `{key}` or `{KEY}`. |
-| `worktree` | `{app}-{key}` | Its worktree, relative to the folder the app is in, same placeholders. Must contain `{key}` or `{KEY}` and climbs at most one folder (`../`). `kandalf init` sets `{app}/.worktrees/{key}`, inside the app. |
-| `hooks` | `true` | The board's hooks (see Hooks). `false`, set by `kandalf init --no-hooks`, keeps `kandalf serve` from adding them. |
+| `worktree` | `{app}-{key}` | Its worktree, relative to the folder the app is in, with the same placeholders. Must contain `{key}` or `{KEY}`, and may climb at most one folder (`../`). `kandalf init` sets `{app}/.worktrees/{key}`, inside the app. |
+| `hooks` | `true` | The board's hooks (see [Hooks](#hooks)). `false`, set by `kandalf init --no-hooks`, stops `kandalf serve` adding them. |
 | `tidy` | `true` | Archiving a story removes its worktree, branch and session, when nothing would be lost. |
 | `push` | `true` | The commit queue pushes each commit to the store's upstream, when it has one. |
 | `commitDelay` | `300` | Seconds of quiet before the queue commits. |
@@ -168,16 +256,16 @@ Environment variables:
 
 | Variable | What it does |
 |---|---|
-| `BOARD_COMMIT_DELAY` | Seconds of quiet before commit; overrides `commitDelay`. |
-| `BOARD_NO_OPEN` | When set, `kandalf serve` doesn't open the browser (as `--no-open`). Nor does it when its output isn't a terminal. |
+| `BOARD_COMMIT_DELAY` | Seconds of quiet before a commit. Overrides `commitDelay`. |
+| `BOARD_NO_OPEN` | When set, `kandalf serve` doesn't open the browser (like `--no-open`). It doesn't either when its output isn't a terminal. |
 | `BOARD_PICKUP_SETTLE` | Seconds a just-started session counts as at work before it shows itself busy (default `90`). |
 | `PLANS_APP_REPO`, `PLANS_APP_TRUNK` | Override `app` and `trunk`. |
 
-**`pickup.md`**, at the top of the store, replaces the default working rules every session is given. The default (`kandalf/templates/pickup.md`) says commit subjects carry the key, and adds a last Gates sub-task, which is unticked again (or joined by a new one) for any later run of tests. `{key}` in it stands for the tile's key. The rules follow "Tick each sub-task with its commit as it lands." in the session's list, so a first line that is a sentence carries on that rule and each `- ` line is a rule of its own. An empty file gives none. What the board reads back (the session line, ticked sub-tasks, `Handoff:`, `Ready for review`) is always asked for.
+**Your own working rules.** A `pickup.md` at the top of the store replaces the default rules every session is given (`kandalf/templates/pickup.md`). The default says commit subjects carry the key, and adds a last Gates sub-task, which is unticked again (or joined by a new one) whenever tests run later. `{key}` in the file stands for the tile's key. The rules come after "Tick each sub-task with its commit as it lands." in the session's list, so a first line that's a sentence continues that rule, and each `- ` line is a rule of its own. An empty file adds no rules. What the board reads back (the session line, ticked sub-tasks, `Handoff:`, `Ready for review`) is always asked for.
 
 ## Commands
 
-With no `--dir`, `kandalf` uses the store you're in, or the one the current git repo links in under `docs/` (so from anywhere in an app checkout or worktree).
+With no `--dir`, `kandalf` uses the store you're in, or the one the current git repo links in under `docs/`, so it works from anywhere in an app checkout or worktree.
 
 ```
 kandalf init [DIR]          a new store beside this git repo, linked in at docs/plans
@@ -203,7 +291,7 @@ kandalf hook autocommit     the Claude Code hook that queues an edit (reads the 
 kandalf hook check          the Claude Code hook that flags a file the board would open view-only
 ```
 
-`kandalf init` asks for what you don't pass when run in a terminal; `--yes` takes the defaults (pickup off, hooks on; with `--pickup`, the agent is `claude` when it is on PATH, else `copilot` when that is).
+Run in a terminal, `kandalf init` asks for whatever you don't pass. `--yes` takes the defaults: pickup off and hooks on. With `--pickup`, the agent is `claude` if it's on your PATH, else `copilot` if that is.
 
 ## Commits and pushes
 
@@ -212,19 +300,19 @@ You never commit board changes by hand. A change is saved to disk at once and co
 1. **Every change is queued:** each save, archive and promote the server makes, and, through the hooks below, each Edit/Write of a `.md` file inside a store in Claude Code. The queue is the store's `.git/board-pending.json`.
 2. **The commit waits for quiet.** After 5 minutes with no new change (`commitDelay`), everything queued goes in as one commit. Every change restarts the wait.
 3. **The subject says what changed overall**, e.g. `board: PLN-26 backlog.md → To do, PLN-33 archived`. The body lists each step.
-4. **Each commit is pushed** in the background. A failed push is logged in `.git/board-push.log` and the next push sends everything waiting. A store with no upstream isn't pushed. `"push": false` commits without pushing.
+4. **Each commit is pushed** in the background. A failed push is logged in `.git/board-push.log`, and the next push sends everything waiting. A store with no upstream isn't pushed, and `"push": false` commits without pushing.
 
-On start the server also picks up changes left over from before. A commit takes only the queued paths: anything changed another way (a shell `mv` or `sed`) isn't queued, so commit it yourself or restart the server. A running server keeps the code it started with, so restart it after updating kandalf.
+On start, the server also picks up changes left over from before. A commit takes only the queued paths: anything changed another way (a shell `mv` or `sed`) isn't queued, so commit it yourself or restart the server. A running server keeps the code it started with, so restart it after updating kandalf.
 
 ## Hooks
 
-The board's hooks are Claude Code hooks, which the Copilot CLI reads too. They live in the store, in `.claude/settings.json`, committed with the rest of it. They are part of the board, not an option: `kandalf init` puts them there, and `kandalf serve` adds them to a store that lacks them when it starts (as `kandalf hooks --add` does), unless `kandalf init --no-hooks` set `"hooks": false` in its `board.json`. The app gets nothing committed:
+The board's hooks are Claude Code hooks, and the Copilot CLI reads them too. They live in the store's `.claude/settings.json`, committed with the rest of it. They're part of the board, not an option: `kandalf init` puts them there, and `kandalf serve` adds them on start to a store that lacks them (as `kandalf hooks --add` does), unless `"hooks": false` is set (`kandalf init --no-hooks` sets it). Nothing is committed to the app:
 
 - **Pickup sessions** start with `claude --settings <store>/.claude/settings.json`, so every worktree gets the hooks without a file of its own.
-- **Your own sessions in the app** get them through `.claude/settings.local.json`, a gitignored symlink to the store's file. If the app already has a `settings.local.json` of its own, the hooks are merged into it and everything else in it is kept.
-- **Old hooks** that run `board`, the command's name before it was `kandalf`, do nothing now. `kandalf hooks --add` replaces them in the store and in the app's `settings.local.json`; `kandalf doctor` points out any left in the app's committed `.claude/settings.json`, to take out by hand.
+- **Your own sessions in the app** get them through `.claude/settings.local.json`, a gitignored symlink to the store's file. If the app already has its own `settings.local.json`, the hooks are merged into it and everything else in it is kept.
+- **Old hooks** that run `board` (the command's name before it was `kandalf`) do nothing now. `kandalf hooks --add` replaces them in the store and in the app's `settings.local.json`. `kandalf doctor` points out any left in the app's committed `.claude/settings.json`, for you to take out by hand.
 
-`kandalf doctor` says where the hooks are. `kandalf hooks` prints the block:
+`kandalf doctor` says where the hooks are, and `kandalf hooks` prints the block:
 
 ```json
 "PostToolUse": [{ "matcher": "Edit|Write", "hooks": [
@@ -234,7 +322,7 @@ The board's hooks are Claude Code hooks, which the Copilot CLI reads too. They l
 ```
 
 - **`kandalf hook autocommit`** queues an Edit/Write of a `.md` file inside a store for the next batched commit. It ignores everything else and never fails the tool call.
-- **`kandalf hook check`** runs after an edit to `plans.md`, `backlog.md` or `archive/archived.md`. If the board would open the file view-only, or the file has two In flight columns or two Done columns, it hands the error back to the session that made the edit, so it fixes the file at once. It needs node.
+- **`kandalf hook check`** runs after an edit to `plans.md`, `backlog.md` or `archive/archived.md`. If the board would open the file view-only, or the file has two In flight or two Done columns, it hands the error back to the session that made the edit, so the session fixes the file at once. It needs node.
 
 ## Safety
 
@@ -242,11 +330,11 @@ The board's hooks are Claude Code hooks, which the Copilot CLI reads too. They l
 
 What it can do on your machine, and the setting for each:
 
-- **Start Claude Code sessions** in your repos, one per tile that lands in In flight. Only with `"pickup": true`; it is off by default. They run in the mode `"permission"` names: `auto` by default, where a session edits files and runs commands without asking and Claude Code's auto-mode checks decide what is allowed. Pick another mode for more stops. A session may change every repo its tile names, but only in worktrees, never in your checkouts. It is told not to merge or push in any of them.
+- **Start agent sessions** in your repos, one per tile that lands in In flight. Only with `"pickup": true`, which is off by default. Sessions run in the mode `"permission"` names: by default `auto`, where a session edits files and runs commands without asking and Claude Code's auto-mode checks decide what's allowed. Pick another mode for more stops. A session may change every repo its tile names, but only in worktrees, never in your checkouts, and it's told not to merge or push in any of them.
 - **Delete branches, worktrees and sessions** when a story is archived, but only ones already in the trunk with nothing uncommitted, and never a session still at work. `"tidy": false` keeps them all.
-- **Commit and push the store.** Every board change is committed in the store's own repo and pushed to its upstream if it has one. `"push": false` commits without pushing.
+- **Commit and push the store.** Every board change is committed in the store's own repo and pushed to its upstream, if it has one. `"push": false` commits without pushing.
 
-When it starts, the server says whether pickup is on, and if not, why and how to fix it.
+When it starts, the server says whether pickup is on and, if not, why and how to fix it.
 
 ## Platforms and requirements
 
