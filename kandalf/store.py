@@ -30,15 +30,15 @@ board.json:
                                      setting, and without one to dev when that repo has it, else main)
       "pickup": true,                start a Claude Code session for a tile that lands in
                                      In flight (pickup.py; default false, needs "app")
-      "agent": "claude",             the agent those sessions run in: claude (Claude Code) or
-                                     copilot (the GitHub Copilot CLI; default claude)
+      "agent": "claude",             the agent those sessions run in: claude (Claude Code),
+                                     copilot (the GitHub Copilot CLI) or agy (Antigravity CLI; default claude)
       "pickupColumn": "Building",    the column whose tiles are picked up, by name (any case);
                                      default: any column named like In flight (in progress, doing, WIP...)
       "permission": "auto",          the permission mode those sessions start in (claude
                                      --permission-mode): auto, acceptEdits, manual, dontAsk,
                                      plan or bypassPermissions (default auto)
       "model": "opus",               the model those sessions run on, an alias or a full id
-                                     (default opus for claude, auto for copilot); a tile's own
+                                     (default opus for claude, auto for copilot and agy); a tile's own
                                      "Model: x" line overrides it
       "parallel": 1,                 how many tiles on their own have a session at work at once
                                      (default 1); the rest are queued, each with Start now

@@ -23,16 +23,34 @@ HERE = Path(__file__).resolve().parent
 BOARDS = {"plans.md", "backlog.md", "archive/archived.md"}
 
 
-def main(stdin=sys.stdin) -> int:
+def _file_path(call: dict):
+    """The edited file's path from a Claude/Copilot (tool_input) or Antigravity (toolCall) hook."""
+    path = (call.get("tool_input") or {}).get("file_path")
+    if path:
+        return path
+    args = (call.get("toolCall") or {}).get("args") or {}
+    for key in ("Path", "TargetFile", "file_path", "path"):
+        if args.get(key):
+            return args[key]
+    return None
+
+
+def main(stdin=sys.stdin, stdout=sys.stdout) -> int:
+    is_agy = False
     try:
         call = json.load(stdin)
-        path = (call.get("tool_input") or {}).get("file_path")
+        is_agy = "toolCall" in call
+        path = _file_path(call)
         node = shutil.which("node")
         if not path or not node:
+            if is_agy:
+                stdout.write("{}\n")
             return 0
         f = Path(path).resolve()  # resolves the docs/plans symlink
         st = stores.find(f.parent)
         if not st or not f.is_file() or f.relative_to(st.dir).as_posix() not in BOARDS:
+            if is_agy:
+                stdout.write("{}\n")
             return 0
         r = subprocess.run([node, str(HERE / "check.js"), str(f)], capture_output=True, text=True, timeout=20)
         if r.returncode == 1:
@@ -40,4 +58,6 @@ def main(stdin=sys.stdin) -> int:
             return 2
     except Exception:
         pass
+    if is_agy:
+        stdout.write("{}\n")
     return 0

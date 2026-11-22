@@ -48,7 +48,7 @@ SESSIONS_RE = re.compile(r"^[ \t]+sessions:[ \t]*`?(\d+)`?\.?[ \t]*$", re.I | re
 
 # The session line the server writes into a tile, an indented line of its own (SESSION_RE in
 # board.html). A description that quotes "Claude session `abc`" is not one.
-SESSION_LINE_RE = re.compile(r"^[ \t]+(Claude|Copilot) session `([0-9a-f]{6,})`: `[^`]+`", re.M)  # same in board.html (SESSION_RE)
+SESSION_LINE_RE = re.compile(r"^[ \t]+(Claude|Copilot|Antigravity) session `([0-9a-f]{6,})`: `[^`]+`", re.M)  # same in board.html (SESSION_RE)
 SESSION_BRANCH_RE = re.compile(r"Branch `([^`]+)`, worktree `([^`]+)`")
 SESSION_REPOS_RE = re.compile(r"Branch `([^`]+)`, worktrees ([^`,]+? `[^`]+`(?:, [^`,]+? `[^`]+`)*)\.")
 SESSION_ANY_BRANCH_RE = re.compile(r"Branch `([^`]+)`")

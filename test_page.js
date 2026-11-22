@@ -167,8 +167,9 @@ test("a tile's Claude session line is read apart from its description", () => {
   assert.equal(page.sessionLine("  - [ ] Claude session `ab12cd34`: `claude attach ab12cd34`."), null);
 });
 
-test("a tile's Copilot session line is read as a session too", () => {
+test("a tile's Copilot or Antigravity session line is read as a session too", () => {
   assert.deepEqual(page.sessionLine("  Copilot session `ab12cd34`: `kandalf attach ab12cd34`. Started 2026-11-19."), { id: "ab12cd34", rest: "Started 2026-11-19." });
+  assert.deepEqual(page.sessionLine("  Antigravity session `ab12cd34`: `kandalf attach ab12cd34`. Started 2026-11-22."), { id: "ab12cd34", rest: "Started 2026-11-22." });
 });
 
 test("a story's description leaves the session line out, and the story says which session it has", () => {
@@ -671,7 +672,7 @@ const SETTINGS_VIEW = {
   defaults: { pickup: false, agent: "claude", model: "opus", permission: "auto", parallel: 1, sessions: 2, fullSuiteOnMerge: false, trunk: "main", tidy: true, push: true, commitDelay: 300 },
   fields: {
     pickup: { kind: "bool", section: "Pickup", label: "Pickup" },
-    agent: { kind: "choice", choices: ["claude", "copilot"], section: "Pickup", label: "Agent" },
+    agent: { kind: "choice", choices: ["claude", "copilot", "agy"], section: "Pickup", label: "Agent" },
     model: { kind: "text", section: "Pickup", label: "Model" },
     parallel: { kind: "int", min: 1, section: "Pickup", label: "Stories at once", help: "How many stories <b>on their own</b> work at once." },
     trunk: { kind: "text", section: "Git and commits", label: "Trunk" },

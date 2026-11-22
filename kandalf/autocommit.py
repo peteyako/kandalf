@@ -20,18 +20,39 @@ from . import gitlog
 from . import store as stores
 
 
-def main(stdin=sys.stdin) -> int:
+def _file_path(call: dict):
+    """The edited file's path from a Claude/Copilot (tool_input) or Antigravity (toolCall) hook."""
+    path = (call.get("tool_input") or {}).get("file_path")
+    if path:
+        return path
+    args = (call.get("toolCall") or {}).get("args") or {}
+    for key in ("Path", "TargetFile", "file_path", "path"):
+        if args.get(key):
+            return args[key]
+    return None
+
+
+def main(stdin=sys.stdin, stdout=sys.stdout) -> int:
+    is_agy = False
     try:
         call = json.load(stdin)
-        path = (call.get("tool_input") or {}).get("file_path")
+        is_agy = "toolCall" in call
+        path = _file_path(call)
         if not path:
+            if is_agy:
+                stdout.write("{}\n")
             return 0
         f = Path(path).resolve()  # resolves the docs/plans symlink
         st = stores.find(f.parent)
         if not st or not st.root or not f.is_file() or f.suffix != ".md":
+            if is_agy:
+                stdout.write("{}\n")
             return 0
         rel = f.relative_to(st.root).as_posix()
-        gitlog.record(st, [rel], f"claude: {'edit' if gitlog.head_text(st.root, rel) else 'add'} {rel}")
+        who = "agy" if is_agy else "claude"
+        gitlog.record(st, [rel], f"{who}: {'edit' if gitlog.head_text(st.root, rel) else 'add'} {rel}")
     except Exception:  # a hook must never break the session's edit
         pass
+    if is_agy:
+        stdout.write("{}\n")
     return 0

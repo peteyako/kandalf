@@ -1,18 +1,18 @@
-"""The agent the board hands stories to: Claude Code (claude_code.py) or the GitHub Copilot CLI
-(copilot_cli.py), as board.json's "agent" says. Store sets it with use(); pickup does
-`from . import agent` and calls the plain functions here, which go to the one in use.
-Both modules provide the functions their docstrings list; this adds label, attach and
-update_hint, the words the board shows the user.
+"""The agent the board hands stories to: Claude Code (claude_code.py), the GitHub Copilot CLI
+(copilot_cli.py) or the Antigravity CLI (agy_cli.py), as board.json's "agent" says. Store sets it
+with use(); pickup does `from . import agent` and calls the plain functions here, which go to the
+one in use. Each module provides the functions claude_code.py's docstring lists; this adds label,
+attach and update_hint, the words the board shows the user.
 """
 
-from . import claude_code, copilot_cli
+from . import agy_cli, claude_code, copilot_cli
 
-MODULES = {"claude": claude_code, "copilot": copilot_cli}
+MODULES = {"claude": claude_code, "copilot": copilot_cli, "agy": agy_cli}
 _current = {"name": "claude"}
 
 
 def use(name: str):
-    """Make name ("claude" or "copilot") the agent in use. Raises ValueError for another."""
+    """Make name ("claude", "copilot" or "agy") the agent in use. Raises ValueError for another."""
     if name not in MODULES:
         raise ValueError(f'"agent" must be one of {", ".join(MODULES)}, not {name!r}')
     _current["name"] = name
@@ -27,8 +27,8 @@ def _module():
 
 
 def label() -> str:
-    """The agent's name as the board says it: "Claude Code" or "Copilot CLI"."""
-    return "Claude Code" if _current["name"] == "claude" else copilot_cli.LABEL
+    """The agent's name as the board says it: "Claude Code", "Copilot CLI" or "Antigravity CLI"."""
+    return "Claude Code" if _current["name"] == "claude" else _module().LABEL
 
 
 def cli() -> str:
@@ -38,33 +38,38 @@ def cli() -> str:
 
 def update_hint() -> str:
     """How to update the agent's CLI, in backticks."""
-    return "`claude update`" if _current["name"] == "claude" else copilot_cli.UPDATE
+    return "`claude update`" if _current["name"] == "claude" else _module().UPDATE
 
 
 def short() -> str:
-    """The agent's name in a word, for the board's labels: "Claude" or "Copilot"."""
+    """The agent's name in a word, for the board's labels: "Claude", "Copilot" or "Antigravity"."""
     return _module().NAME
 
 
 def attach(sid: str) -> str:
     """The command that opens a session, by its short id: `kandalf attach`, whichever agent runs
-    it (open_session). For Claude it hands over to `claude attach`; for Copilot it follows the
-    session while it runs and then opens its conversation."""
+    it (open_session). For Claude it hands over to `claude attach`; for Copilot and Antigravity
+    it follows the session while it runs and then opens its conversation."""
     return f"kandalf attach {sid}"
 
 
 def transcript(sid: str, session: str = None, limit: int = 400):
-    """A session's log for the board, whichever agent ran it: by short id for Copilot, by full
-    id (session) for Claude. Its last `limit` lines, or None when it can't be read."""
-    if copilot_cli.has(sid):
-        text = copilot_cli.logs(sid)
-        return None if text is None else "\n".join(text.splitlines()[-limit:])
+    """A session's log for the board, whichever agent ran it: by short id for Copilot and
+    Antigravity, by full id (session) for Claude. Its last `limit` lines, or None when it can't
+    be read."""
+    for mod in (copilot_cli, agy_cli):
+        if mod.has(sid):
+            text = mod.logs(sid)
+            return None if text is None else "\n".join(text.splitlines()[-limit:])
     return claude_code.transcript(session, limit)
 
 
 def open_session(sid: str) -> int:
     """kandalf attach: open the session sid, whichever agent started it."""
-    return (copilot_cli if copilot_cli.has(sid) else claude_code).attach(sid)
+    for mod in (copilot_cli, agy_cli):
+        if mod.has(sid):
+            return mod.attach(sid)
+    return claude_code.attach(sid)
 
 
 def default_model() -> str:
@@ -83,10 +88,13 @@ def trust(app) -> str:
 
 
 def default_name(which=None) -> str:
-    """The agent a new store picks: claude when it is on PATH, else copilot when that is, else claude."""
+    """The agent a new store picks: claude when it is on PATH, else copilot, else agy, else claude."""
     import shutil
     which = which or shutil.which
-    return "claude" if which(claude_code.CLI) or not which(copilot_cli.CLI) else "copilot"
+    for key, mod in MODULES.items():
+        if which(mod.CLI):
+            return key
+    return "claude"
 
 
 def installed() -> bool:
@@ -98,9 +106,10 @@ def cli_lacks() -> list:
 
 
 def start(args, cwd, permission, text, dirs=(), store_dir=None):
-    """Start a session. store_dir: the store's folder, which a Copilot session is given too, as
-    it can only reach the folders it is given (Claude reaches the store through docs/plans)."""
-    if _current["name"] == "copilot" and store_dir is not None:
+    """Start a session. store_dir: the store's folder, which Copilot and Antigravity sessions are
+    given too, as they can only reach the folders they are given (Claude reaches the store through
+    docs/plans)."""
+    if _current["name"] in ("copilot", "agy") and store_dir is not None:
         dirs = [*dirs, store_dir]
     return _module().start(args, cwd, permission, text, dirs)
 

@@ -1,7 +1,7 @@
 """kandalf init: make a new plans store and, run inside a git repo, wire it to that repo (the app).
 
     kandalf init [DIR] [--name NAME] [--key KEY] [--port N] [--app PATH | --no-app]
-                 [--pickup | --no-pickup] [--agent claude|copilot] [--hooks | --no-hooks] [--example] [--yes]
+                 [--pickup | --no-pickup] [--agent claude|copilot|agy] [--hooks | --no-hooks] [--example] [--yes]
 
 The store goes in DIR, or beside the git repo you're in in a folder named for the store's name
 (<repo>-plans when the name is left at its default). It gets board.json,
@@ -13,7 +13,7 @@ which pickup sessions load with --settings and the app links in as a gitignored
 
 Values not given as flags are asked for, with the default shown, when run in a terminal;
 --yes (or no terminal) takes the defaults: pickup and hooks off, and the agent claude when
-`claude` is on PATH, else copilot when `copilot` is.
+`claude` is on PATH, else copilot when `copilot` is, else agy when `agy` is.
 
 Also here: `kandalf agent` (which agent pickup hands stories to, and switching it),
 `kandalf repo add|list|rm` (the store's other repos), the hooks block (`kandalf hooks` prints it, `kandalf hooks --add` adds it to a store made
@@ -51,7 +51,7 @@ OLD_HOOK_RE = re.compile(r"\bboard hook |command -v board\b")
 LOCAL = ".claude/settings.local.json"  # where an app links the store's hooks in
 
 PICKUP_ASK = """Pickup: when it is on, a story dragged to In flight starts a background agent session
-(Claude Code or the GitHub Copilot CLI) in a new git worktree under the app's .worktrees/, in the store's permission mode
+(Claude Code, GitHub Copilot CLI or Antigravity CLI) in a new git worktree under the app's .worktrees/, in the store's permission mode
 (auto by default, which edits and runs commands without asking). Archiving a merged story
 removes its worktree, branch and session."""
 # A new store keeps its sessions' worktrees inside the app, out of the folder the app sits in.
@@ -581,7 +581,7 @@ def set_agent(st, name: str, force: bool = False, stop=None) -> list:
 
 
 def agent_command(st, args) -> int:
-    """kandalf agent [claude|copilot] [--force]"""
+    """kandalf agent [claude|copilot|agy] [--force]"""
     ap = argparse.ArgumentParser(prog="kandalf agent", description="Show or switch the agent pickup hands stories to.")
     ap.add_argument("name", nargs="?", choices=sorted(agent.MODULES))
     ap.add_argument("--force", action="store_true", help="stop the old agent's running sessions")
@@ -632,7 +632,7 @@ def parser():
     ap.add_argument("--no-app", action="store_true", help="no app: a store on its own")
     ap.add_argument("--pickup", dest="pickup", action="store_true", default=None, help="let agents pick up stories")
     ap.add_argument("--no-pickup", dest="pickup", action="store_false")
-    ap.add_argument("--agent", choices=sorted(agent.MODULES), help="the agent pickup hands stories to (default: claude if on PATH, else copilot)")
+    ap.add_argument("--agent", choices=sorted(agent.MODULES), help="the agent pickup hands stories to (default: claude if on PATH, else copilot, else agy)")
     ap.add_argument("--hooks", dest="hooks", action="store_true", default=None,
                     help="the board's hooks, in the store's .claude/settings.json and linked into the app (the default)")
     ap.add_argument("--no-hooks", dest="hooks", action="store_false", help="leave the hooks out, and don't add them later")
@@ -695,7 +695,7 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
         cfg["pickup"] = on
         if on or a.agent:
             try:
-                cfg["agent"] = a.agent or ask("Agent: claude (Claude Code) or copilot (GitHub Copilot CLI)",
+                cfg["agent"] = a.agent or ask("Agent: claude (Claude Code), copilot (GitHub Copilot CLI) or agy (Antigravity CLI)",
                                               agent.default_name(which), check_agent)
             except ValueError as e:
                 raise SystemExit(f"kandalf init: {e}")

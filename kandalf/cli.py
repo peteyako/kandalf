@@ -10,7 +10,7 @@
     kandalf status KEY [--dir STORE]         what a story's session is doing: the tile's Status line
     kandalf where [--dir STORE]              which store, its key, port, app and repos
     kandalf doctor [--dir STORE]             what works and what doesn't, one line per check
-    kandalf agent [claude|copilot] [--force] [--dir STORE]
+    kandalf agent [claude|copilot|agy] [--force] [--dir STORE]
                                              the agent pickup hands stories to; or switch it
     kandalf repo add PATH [--name NAME] [--trunk BRANCH] [--dir STORE]
                                              another repo stories can work in

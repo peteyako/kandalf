@@ -19,7 +19,7 @@ This file is for any coding agent working on kandalf; `CLAUDE.md` imports it for
   ledger's view allows and what the page shows without it). A new twin rule gets a case in one of
   them, not a test on one side only. `test_tiles.py` and `test_jobs.py` run them in Python,
   `test_page.js` in the page.
-- **`claude_code.py` is the only module that runs `claude`, `copilot_cli.py` the only one that runs `copilot`.** Keep every CLI call behind them; `agent.py` picks one by board.json's `agent`.
+- **`claude_code.py` is the only module that runs `claude`, `copilot_cli.py` the only one that runs `copilot`, `agy_cli.py` the only one that runs `agy`.** Keep every CLI call behind them; `agent.py` picks one by board.json's `agent`.
 - **Store vs app.** A store (`<repo>-plans`) is its own git repo holding `plans.md`,
   `backlog.md`, plan docs and `board.json`; the app is the code repo it links into at
   `docs/plans`. `store.py` defines both. Tests build throwaway stores in temp dirs; never point

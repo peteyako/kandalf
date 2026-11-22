@@ -202,7 +202,7 @@ class Init(Setup):
             self.init(cwd=app, input=lambda q: asked.append(q) or next(answers), tty=True)
         self.assertEqual(asked[:3], ["Name [shop]: ", "Key prefix [TRA]: ", "Port [7788]: "])
         self.assertEqual(asked[3], "Let agents pick up stories? [y/N]: ")
-        self.assertRegex(asked[4], r"^Agent: claude .* or copilot .*: $")
+        self.assertRegex(asked[4], r"^Agent: claude .* copilot .* or agy .*: $")
         self.assertEqual(len(asked), 5)  # the hooks aren't asked about: they are part of the board
         self.assertTrue(any("new git worktree under the app's .worktrees/" in line and "auto by default" in line for line in self.said))
         cfg = self.config(self.top / "Tracker")
@@ -234,6 +234,13 @@ class Init(Setup):
         self.init("--yes", "--pickup", cwd=app, which=lambda name: "/bin/copilot" if name == "copilot" else None, why_off=lambda st: None)
         self.assertEqual(self.config(self.top / "shop-plans")["agent"], "copilot")
         self.assertTrue(any("run `copilot` once in" in line for line in self.said))
+        agent.use("claude")
+
+    def test_the_agent_is_agy_when_only_agy_is_on_path(self):
+        app = self.app()
+        self.init("--yes", "--pickup", cwd=app, which=lambda name: "/bin/agy" if name == "agy" else None, why_off=lambda st: None)
+        self.assertEqual(self.config(self.top / "shop-plans")["agent"], "agy")
+        self.assertTrue(any("run `agy` once in" in line for line in self.said))
         agent.use("claude")
 
     def test_init_says_why_pickup_cannot_run_when_it_is_switched_on(self):

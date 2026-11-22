@@ -48,7 +48,7 @@ Pickup is off until you turn it on. Once it's on, each story that lands in In fl
 2. **Trust the repo.** Run the agent (`claude`, or `copilot` for a Copilot store) once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers its worktrees, which a store made by `kandalf init` keeps under `.worktrees/` (gitignored). A story that works in several repos (`Repos:` on its tile) needs each of them trusted.
 3. **Check.** `kandalf doctor` lists what works and what's missing.
 
-Pickup needs [Claude Code](https://claude.com/claude-code) (the default) or the [GitHub Copilot CLI](https://github.com/features/copilot/cli). See [Platforms and requirements](#platforms-and-requirements).
+Pickup needs [Claude Code](https://claude.com/claude-code) (the default), the [GitHub Copilot CLI](https://github.com/features/copilot/cli), or the [Antigravity CLI](https://antigravity.google/docs) (`agy`). See [Platforms and requirements](#platforms-and-requirements).
 
 ### Using the Copilot CLI
 
@@ -73,6 +73,27 @@ The `permission` setting maps onto Copilot's flags:
 | `bypassPermissions` | `--allow-all` |
 | `plan` | `--mode plan` |
 | anything else | nothing, so it denies whatever isn't pre-approved |
+
+### Using the Antigravity CLI
+
+Pick Antigravity when `kandalf init` asks (or pass `--agent agy`), set `"agent": "agy"` in `board.json`, or switch an existing store with `kandalf agent agy`.
+
+An Antigravity session works much like a Copilot session:
+
+- **It runs detached**, as `agy --output-format stream-json --print`, tracked under `~/.kandalf/agy/` (`KANDALF_AGY_DIR` overrides that).
+- **Attaching follows it.** `kandalf attach ab12cd34` prints what the session has said and the tools it ran, then follows it while it works (Ctrl-C leaves it working). Once it has finished, it opens the conversation with `agy --conversation` in the worktree, with the folders and permissions it ran with.
+- **It gets the hooks in `.agents/hooks.json`.** Pickup writes the board's `PostToolUse` hooks there in the worktree (kept out of git by the repo's `info/exclude`).
+- **It's given the store.** The session gets the store with `--add-dir`, for the board and plan docs behind `docs/plans`.
+
+The `permission` setting maps onto Antigravity's flags:
+
+| `permission` | Antigravity runs with |
+|---|---|
+| `auto` | `--mode auto` |
+| `acceptEdits` | `--mode accept-edits` |
+| `bypassPermissions` | `--dangerously-skip-permissions` |
+| `plan` | `--mode plan` |
+| anything else | nothing (default prompts) |
 
 ## What a session does with a story
 
@@ -237,11 +258,11 @@ A store's `board.json` is optional; every key has a default. You can edit it by 
 | `app` | none | The app repo, relative to the store. Needed for pickup and for the red outline on unmerged Done tiles. |
 | `trunk` | `dev` when the app has a dev branch, else `main` (`kandalf init` picks `dev` if there is one, else the app's default branch) | The app branch feature branches are cut from and merged into. A tile's `Base:` line picks another for its story. |
 | `repos` | none | Other repos stories can work in, by name: a path relative to the store, or `{"path", "trunk"}`. Without a trunk, a repo uses the store's `trunk`, else `dev` when it has one, else `main`. A tile's `Repos:` line picks them. |
-| `agent` | `claude` | The agent pickup hands stories to: `claude` (Claude Code) or `copilot` (GitHub Copilot CLI). |
+| `agent` | `claude` | The agent pickup hands stories to: `claude` (Claude Code), `copilot` (GitHub Copilot CLI) or `agy` (Antigravity CLI). |
 | `pickup` | `false` | Start an agent session (`agent`) for each tile that lands in In flight. Needs `app`. |
 | `pickupColumn` | any column named like In flight: in-flight, in progress (typos too), doing, WIP, working, underway, ongoing, active; not one that says "not" | The one column, by name (any case), whose tiles are picked up. |
 | `permission` | `auto` | The permission mode sessions start in: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions` (`claude --help` lists them). |
-| `model` | `opus` (`auto` for copilot) | The model sessions run on: an alias or a full id. A tile's `Model:` line overrides it. |
+| `model` | `opus` (`auto` for copilot and agy) | The model sessions run on: an alias or a full id. A tile's `Model:` line overrides it. |
 | `parallel` | `1` | How many standalone tiles have a session at work at once. The rest are queued, each with **Start now**. |
 | `sessions` | `2` | How many of a master's sub-stories have a session at work at once. A master's `Sessions:` line overrides it. |
 | `fullSuiteOnMerge` | `false` | `true`: a merge from the board runs the full suite on the trunk before the push (for a sub-story, only when it's the last of its master's), unless the tile has a `Tests: affected` line. `false`: only when the tile has a `Tests: full` line. Either way, sessions run only the tests for what they change. |
@@ -280,7 +301,7 @@ kandalf check FILE...       would the board open this file view-only? names the 
 kandalf where               which store, its key, port, app and repo
 kandalf attach ID|KEY       open a story's session (for Claude, `claude attach`; for Copilot, follow it, then `copilot --resume`)
 kandalf status KEY          the Status line for a story's session, as the tile's Status button writes it
-kandalf agent [NAME]        the agent pickup hands stories to; or switch to claude or copilot (--force)
+kandalf agent [NAME]        the agent pickup hands stories to; or switch to claude, copilot or agy (--force)
 kandalf repo add PATH       another repo stories can work in (--name NAME, --trunk BRANCH)
 kandalf repo list           the store's repos, the main one first
 kandalf repo rm NAME        take a repo out of board.json (its docs/plans link stays)
@@ -343,7 +364,8 @@ When it starts, the server says whether pickup is on and, if not, why and how to
 - node, only for `kandalf check` and the check hook.
 - For pickup only, one agent CLI on your PATH:
   - [Claude Code](https://claude.com/claude-code) (`claude`), with `--bg`, `agents --json`, `logs`, `stop` and `rm` (`claude update` brings them), or
-  - the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot`), signed in (`copilot login`), with `-p`, `--session-id`, `--resume`, `--add-dir`, `--name`, `--allow-all-tools` and `--allow-all-paths`.
+  - the [GitHub Copilot CLI](https://github.com/features/copilot/cli) (`copilot`), signed in (`copilot login`), with `-p`, `--session-id`, `--resume`, `--add-dir`, `--name`, `--allow-all-tools` and `--allow-all-paths`, or
+  - the [Antigravity CLI](https://antigravity.google/docs) (`agy`), signed in, with `--print`, `--output-format`, `--conversation`, `--add-dir`, `--mode` and `--dangerously-skip-permissions`.
 - macOS and Linux. Windows is untested.
 
 ## Development
@@ -361,6 +383,7 @@ kandalf/
   settings.py             the settings panel's editable board.json keys, checked and written
   claude_code.py          every call to the claude CLI
   copilot_cli.py          every call to the copilot CLI
+  agy_cli.py              every call to the agy CLI
   init.py                 kandalf init, kandalf doctor, kandalf agent, kandalf hooks (and --add)
   gitlog.py               the batched commit queue
   store.py                what a store is, and its board.json

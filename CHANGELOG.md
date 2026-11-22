@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Pickup can hand stories to the Antigravity CLI (`agy`): set `"agent": "agy"` in `board.json`, pass `--agent agy` to `kandalf init`, or switch an existing store with `kandalf agent agy`. Antigravity sessions run detached with `agy --output-format stream-json --print`, get the store with `--add-dir`, receive the board's hooks in `.agents/hooks.json`, and open in `agy --conversation` on `kandalf attach`.
+
 ## 1.1.15
 
 - A story ready for review pulses green, even once its session has stopped; red is kept for something

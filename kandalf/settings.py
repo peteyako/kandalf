@@ -17,7 +17,7 @@ EDITABLE = {
                "help": "Start an agent session for each story that lands in In flight. Off: no new stories are picked up; "
                        "sessions already at work carry on."},
     "agent": {"kind": "choice", "choices": list(agent.MODULES), "section": "Pickup", "label": "Agent",
-              "help": "Which coding agent the sessions run in: claude (Claude Code) or copilot (GitHub Copilot CLI). "
+              "help": "Which coding agent the sessions run in: claude (Claude Code), copilot (GitHub Copilot CLI) or agy (Antigravity CLI). "
                       "It can't be switched while a session is at work."},
     "model": {"kind": "text", "section": "Pickup", "label": "Model",
               "help": "The model sessions run on: an alias such as opus or sonnet, or a full model id. "

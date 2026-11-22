@@ -1610,7 +1610,7 @@ const SUB_RE = /^  [-*] \[( |x|X)\] (.*)$/;
 // The line the server writes into a tile when a Claude session starts on it (tiles.py:
 // with_session): "Claude session `id`: `kandalf attach id`. Branch ..., worktree .... Started ...".
 // It shows as a block of its own, not as part of the description.
-const SESSION_RE = /^[ \t]+(?:Claude|Copilot) session `([0-9a-f]{6,})`: `[^`]+`\.?\s*(.*)$/;  // tiles.py: SESSION_LINE_RE
+const SESSION_RE = /^[ \t]+(?:Claude|Copilot|Antigravity) session `([0-9a-f]{6,})`: `[^`]+`\.?\s*(.*)$/;  // tiles.py: SESSION_LINE_RE
 function sessionLine(line) {
   const m = line.match(SESSION_RE);
   return m ? { id: m[1], rest: m[2] } : null;
