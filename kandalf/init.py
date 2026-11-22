@@ -741,6 +741,15 @@ def main(args=None) -> int:
 OK, BAD, INFO = "ok", "!!", "--"
 
 
+def _board_json(st) -> dict:
+    """The store's board.json as written, {} when it is missing or unreadable."""
+    try:
+        found = json.loads((st.dir / stores.CONFIG).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
 def checks(st, *, which=shutil.which, version=sys.version_info, why_off=pickup.why_off, bindable=port_free) -> list:
     """What works and what doesn't, as [(mark, text)]: ok, !! (a problem) or -- (to know)."""
     out = [(OK if version >= (3, 10) else BAD, f"Python {version[0]}.{version[1]}" + ("" if version >= (3, 10) else ": 3.10 or later is needed"))]
@@ -757,6 +766,9 @@ def checks(st, *, which=shutil.which, version=sys.version_info, why_off=pickup.w
         out.append((INFO, f"store {st.dir} has no board.json, so it runs on defaults: {settings}"))
     else:
         out.append((OK, f"store {st.dir}: {settings}"))
+    if "subStoryTests" in _board_json(st):
+        out.append((INFO, 'subStoryTests is retired: every story runs only the tests for what it changes; '
+                          'set "fullSuiteOnMerge": true, or a tile\'s "Tests: full" line, for a full suite on merge'))
     if not KEY_RE.match(st.key):
         out.append((BAD, f'key "{st.key}" isn\'t a key prefix: capital letters and digits, starting with a letter'))
     if not st.root:

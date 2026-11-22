@@ -809,7 +809,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"dir": str(self.plans), "files": files,
                                  "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(),
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
-                                 "trunk": self.store.trunk, "branches": local_branches(self.store),
+                                 "trunk": self.store.trunk, "fullSuiteOnMerge": self.store.full_suite_on_merge, "branches": local_branches(self.store),
                                  "repos": [{"name": r.name, "main": r.main} for r in self.store.repos], "build": BUILD})
         elif u.path == "/api/log":  # ?key=PLN-01: the last lines of that tile's session log
             view = log_view(self.store, (qs.get("key") or [""])[0])
@@ -877,6 +877,17 @@ class Handler(BaseHTTPRequestHandler):
         names = FAMILY if name in FAMILY else [name]
         return tile_index(self.store, {n: (self.plans / n).read_text(encoding="utf-8")
                                        for n in names if (self.plans / n).is_file()})
+
+    def texts(self, board: Path) -> dict:
+        """{key: tile markdown} over the same files as tiles(), the first board's tile winning."""
+        name = board.relative_to(self.plans).as_posix()
+        out = {}
+        for n in (FAMILY if name in FAMILY else [name]):
+            if (self.plans / n).is_file():
+                for t in board_tiles(self.store, (self.plans / n).read_text(encoding="utf-8")):
+                    if t["key"] and t["key"] not in out:
+                        out[t["key"]] = t["text"]
+        return out
 
     def commit(self, paths, message):
         gitlog.record(self.store, paths, message)
@@ -1051,7 +1062,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(409, {"error": why})
             if "reply" in data:  # {key, reply: text, steps: [squash, merge, push]}: the reply box
                 why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], on_start=note_session,
-                                   tiles=self.tiles(self.plans / "plans.md"))
+                                   tiles=self.tiles(self.plans / "plans.md"), texts=self.texts(self.plans / "plans.md"))
                 if why:
                     return self.send_json(409, {"error": why, **pickup.summary(self.store)})
                 return self.send_json(200, pickup.summary(self.store))

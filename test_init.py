@@ -432,6 +432,14 @@ class Doctor(Setup):
                                      why_off=lambda st: OFF, bindable=lambda p: True), 0)
         self.assertTrue(all(line[:4] in ("ok  ", "!!  ", "--  ") for line in said), said)
 
+    def test_doctor_says_sub_story_tests_is_retired(self):
+        st = self.made()
+        cfg = self.config(st.dir)
+        (st.dir / "board.json").write_text(json.dumps({**cfg, "subStoryTests": "all"}))
+        said = " | ".join(t for m, t in self.checks(stores.Store(st.dir)))
+        self.assertIn("subStoryTests is retired", said)
+        self.assertIn("fullSuiteOnMerge", said)
+
     def made_again(self):
         return stores.Store(self.top / "shop-plans")
 

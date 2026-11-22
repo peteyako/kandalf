@@ -19,9 +19,10 @@ const page = new Function(
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
+            setFullSuite: on => { STORE_FULL_SUITE = on; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             setUnmerged: map => { unmerged = map; },
             setPickups: jobs => { pickups = { enabled: true, why: null, jobs }; },
@@ -596,4 +597,26 @@ test("a Base line names the branch a story is cut from; withBase writes it where
   assert.equal(page.baseOf("PLN-02 **Two.**\n  base: `release/2.0`."), "release/2.0");
   assert.equal(page.storyParts({ body: ["  Base: feature/x", "  Some words."] }).base, "feature/x");
   assert.deepEqual(page.storyParts({ body: ["  Base: feature/x", "  Some words."] }).desc, ["Some words."]);
+});
+
+test("a Tests line asks for the full suite on merge; withTests writes it only when it differs from what the tile gets anyway", () => {
+  page.setFullSuite(false);
+  const md = "PLN-01 **One.**\n  Some text.\n  - [ ] a step";
+  assert.equal(page.testsOf("PLN-01 **One.**\n  tests: FULL."), "full");
+  assert.equal(page.testsOf(md), "");
+  const set = page.withTests(md, true, "");
+  assert.equal(set, "PLN-01 **One.**\n  Some text.\n  Tests: full\n  - [ ] a step");
+  assert.equal(page.withTests(set, false, ""), md);
+  assert.equal(page.withTests(md, false, "full"), md.replace("  - [ ]", "  Tests: affected\n  - [ ]"));
+  assert.equal(page.withTests(set, true, "full"), md);  // the master already asks for it
+  page.setFullSuite(true);
+  assert.equal(page.withTests(md, true, ""), md);
+  assert.equal(page.withTests(md, false, ""), md.replace("  - [ ]", "  Tests: affected\n  - [ ]"));
+  page.setFullSuite(false);
+});
+
+test("a tile with no Tests line takes its nearest master's", () => {
+  page.open("plans.md", "## In flight\n- [ ] PLN-01 **Master.**\n  Tests: full\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n- [ ] PLN-03 **Grandkid.**\n  Part of PLN-02.\n- [ ] PLN-04 **Other.**\n");
+  assert.equal(page.inheritedTests("PLN-03 **Grandkid.**\n  Part of PLN-02."), "full");
+  assert.equal(page.inheritedTests("PLN-04 **Other.**"), "");
 });

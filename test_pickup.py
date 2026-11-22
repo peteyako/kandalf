@@ -143,14 +143,18 @@ Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Rea
 Keep the tile able to hand the work over. Your session can be closed at any moment, and a new one will have only the tile and this branch to go on:
 - Commit as you go, so no finished work lives only in this session.
 - Tick each sub-task with its commit as it lands. Commit subjects carry the key, e.g. "... ({key})".
-- Ticked sub-tasks must not read as a finished story while its gates still run. If the tile has no sub-task for them, add a last one when you start, `- [ ] **Gates**: lint, every test tier and the review`, and tick it only when all of them have passed. A later run of tests or gates (after a rebase, a fix or a reply) is a sub-task too: before you start it, untick that sub-task or add a new unticked one saying what runs, and tick it when it has passed.
+- Ticked sub-tasks must not read as a finished story while its gates still run. If the tile has no sub-task for them, add a last one when you start, `- [ ] **Gates**: lint, the tests for what it changes, and the review`, and tick it only when all of them have passed. A later run of tests or gates (after a rebase, a fix or a reply) is a sub-task too: before you start it, untick that sub-task or add a new unticked one saying what runs, and tick it when it has passed.
 - Keep one indented "Handoff:" line on the tile, rewritten after each step: what is done, what you are doing now, what comes next, and anything not yet committed or decided. The board has already noted this session, the branch and the worktree on the tile ("Claude session ..."); leave that line as it is.
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
 
-SUB_STORY_TESTS = """
+TESTS_ALONE = """
 
-Tests: PLN-75 is a sub-story of PLN-70, so run only the tests that cover what it changes (the test files, packages or tiers its code touches), not the whole suite, and say which ran on its Gates sub-task and its Ready for review line. The full suite runs on main once the last of PLN-70's sub-stories has been squashed and merged into it. This stands in for any rule, here or in CLAUDE.md, that asks a story for every test tier."""
+Tests: run only the tests that cover what it changes (the test files, packages or tiers its code touches), not the whole suite, and say which ran on its Gates sub-task and its Ready for review line. This stands in for any rule, in pickup.md or CLAUDE.md, that asks for every test tier. The full suite isn't yours to run: it runs nightly, and after a merge from the board when the store or the tile asks for it."""
+
+TESTS_SUB = """
+
+Tests: PLN-75 is a sub-story of PLN-70, so run only the tests that cover what it changes (the test files, packages or tiers its code touches), not the whole suite, and say which ran on its Gates sub-task and its Ready for review line. This stands in for any rule, in pickup.md or CLAUDE.md, that asks for every test tier. The full suite isn't yours to run: it runs nightly, and after a merge from the board when the store or the tile asks for it."""
 
 
 class Reading(unittest.TestCase):
@@ -231,19 +235,35 @@ class Reading(unittest.TestCase):
         sub = pickup.entered([], serve.in_flight_tiles(st, PLANS))[0]
         for name, job in (("plain", plain), ("sub", sub)):
             for again in (False, True):
-                tail = PROMPT_TAIL if name == "plain" else PROMPT_TAIL.replace("\n\nWhen every sub-task", SUB_STORY_TESTS + "\n\nWhen every sub-task")
+                tail = PROMPT_TAIL.replace("\n\nWhen every sub-task", (TESTS_ALONE if name == "plain" else TESTS_SUB) + "\n\nWhen every sub-task")
                 want = PROMPT_OPENINGS[(name, again)] + tail.replace("{key}", job["key"])
                 self.assertEqual(pickup.prompt(st, job, "b-name", Path("/x/app-wt"), again), want, (name, again))
 
 
-    def test_a_sub_story_runs_only_the_tests_for_what_it_changes_unless_its_store_says_all(self):
+    def test_every_story_is_told_to_run_only_the_tests_for_what_it_changes(self):
+        st = stores.Store(tempfile.mkdtemp())
+        alone = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
+        text = pickup.prompt(st, alone, "b", Path("/x/wt"))
+        for part in ("run only the tests that cover what it changes",
+                     "stands in for any rule, in pickup.md or CLAUDE.md, that asks for every test tier",
+                     "The full suite isn't yours to run: it runs nightly, and after a merge from the board when the store or the tile asks for it"):
+            self.assertIn(part, text)
+        self.assertNotIn("is a sub-story of", text)
+
+    def test_a_sub_story_is_told_the_same_and_named_as_its_master_s(self):
         st = stores.Store(tempfile.mkdtemp())
         sub = pickup.entered([], serve.in_flight_tiles(st, PLANS))[0]
-        alone = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
-        self.assertIn("run only the tests that cover what it changes", pickup.prompt(st, sub, "b", Path("/x/wt")))
-        self.assertNotIn("Tests:", pickup.prompt(st, alone, "b", Path("/x/wt")))
-        (st.dir / "board.json").write_text(json.dumps({"subStoryTests": "all"}))
-        self.assertNotIn("Tests:", pickup.prompt(stores.Store(st.dir), sub, "b", Path("/x/wt")))
+        text = pickup.prompt(st, sub, "b", Path("/x/wt"))
+        for part in ("run only the tests that cover what it changes",
+                     "stands in for any rule, in pickup.md or CLAUDE.md, that asks for every test tier",
+                     "The full suite isn't yours to run",
+                     "PLN-75 is a sub-story of PLN-70"):
+            self.assertIn(part, text)
+
+    def test_the_default_rules_gate_on_the_tests_for_what_changed(self):
+        text = (Path(pickup.__file__).parent / "templates" / "pickup.md").read_text()
+        self.assertIn("`- [ ] **Gates**: lint, the tests for what it changes, and the review`", text)
+        self.assertNotIn("every test tier", text)
 
     def test_a_store_that_names_its_pickup_column_has_only_that_column_s_tiles_picked_up(self):
         board = "## In flight\n\n- [ ] PLN-01 **One.**\n\n## building \n\n- [ ] PLN-02 **Two.**\n\n## Doing\n\n- [ ] PLN-03 **Three.**\n"
@@ -801,6 +821,16 @@ class Queue(unittest.TestCase):
         with mock.patch.object(agent, "_agents", lambda *flags: listed):
             self.assertEqual(agent.sessions(), {"a": "busy", "b": "idle", "c": "waiting", "d": "waiting"})
 
+    def test_a_story_s_merge_runs_the_full_suite_only_when_asked(self):
+        job = {"key": "PLN-01", "branch": "b", "worktree": "/x/app", "ready": True}
+        told = pickup.reply_text(self.store, job, "", ["merge", "push"])
+        self.assertNotIn("Full suite", told)
+        told = pickup.reply_text(self.store, job, "", ["merge", "push"], texts={"PLN-01": "- [ ] PLN-01 **One.**\n  Tests: full\n"})
+        self.assertIn("Run the full suite on main, every test tier this repo has", told)
+        self.assertIn("- [ ] **Full suite** on main", told)
+        at = [told.index(w) for w in ("fast-forward main to it", "Run the full suite on main", "Then push main")]
+        self.assertEqual(at, sorted(at))
+
     def reply(self, key, text, resume=None, actions=()):
         return pickup.reply(self.store, key, text, actions, resume=resume or self.fake.resume, stop=self.stop, now=lambda: self.clock)
 
@@ -875,7 +905,8 @@ class Queue(unittest.TestCase):
         self.tick(family)
         tiles = serve.tile_index(self.store, {"plans.md": family})
         self.assertIsNone(pickup.reply(self.store, "PLN-01", "", ["merge"], resume=self.fake.resume, stop=self.stop,
-                                       now=lambda: self.clock, tiles=tiles))
+                                       now=lambda: self.clock, tiles=tiles,
+                                       texts={"PLN-02": "- [ ] PLN-02 **Master.**\n  Tests: full\n"}))
         self.assertIn("Run the full suite on main", self.fake.told[-1])
 
     def test_a_session_told_to_merge_that_moves_its_tile_to_done_is_left_to_finish(self):
@@ -932,8 +963,10 @@ class Queue(unittest.TestCase):
         self.assertIsNone(pickup.still_to_merge(st, {"key": "PLN-80"}, tiles))  # not a sub-story
         self.assertIsNone(pickup.still_to_merge(st, job, None))  # no index to go by
 
-    def test_merging_the_last_sub_story_runs_the_full_suite_on_the_trunk_before_the_push(self):
+    def test_a_sub_story_s_merge_runs_the_full_suite_only_when_it_is_the_last_and_asked(self):
         st = stores.Store(tempfile.mkdtemp())
+        (st.dir / "board.json").write_text(json.dumps({"fullSuiteOnMerge": True}))
+        st = stores.Store(st.dir)
         job = {"key": "PLN-75", "master": "PLN-70", "branch": "b", "worktree": "/x/app", "ready": True}
         done = {"PLN-70": {"parent": None, "done": False}, "PLN-75": {"parent": "PLN-70", "done": False},
                 "PLN-74": {"parent": "PLN-70", "done": True}}
@@ -949,9 +982,41 @@ class Queue(unittest.TestCase):
         told = pickup.reply_text(st, job, "", ["merge"])  # no index: the session checks the board itself
         self.assertIn("If every other sub-story of PLN-70 is in Done or archived", told)
         self.assertNotIn("Run the full suite", pickup.reply_text(st, job, "", ["squash"], tiles=done))  # not merged yet
-        self.assertNotIn("Run the full suite", pickup.reply_text(st, {**job, "master": None}, "", ["merge"], tiles=done))  # on its own
-        (st.dir / "board.json").write_text(json.dumps({"subStoryTests": "all"}))
-        self.assertNotIn("full suite", pickup.reply_text(stores.Store(st.dir), job, "", ["merge"], tiles=done))
+        texts = {"PLN-70": "- [ ] PLN-70 **M.**\n  Tests: full\n"}
+        off = stores.Store(tempfile.mkdtemp())  # neither the store nor the master's tile asks
+        self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], tiles=done, texts={"PLN-70": "- [ ] PLN-70 **M.**\n"}))
+        self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], tiles=left, texts={"PLN-70": "- [ ] PLN-70 **M.**\n"}))
+        self.assertIn("Run the full suite on main", pickup.reply_text(off, job, "", ["merge"], tiles=done, texts=texts))  # the tile asks
+        self.assertIn("waits for the last", pickup.reply_text(off, job, "", ["merge"], tiles=left, texts=texts))
+
+    def test_a_tests_line_says_full_or_affected_in_any_case(self):
+        self.assertEqual(pickup.tests_named("X\n  tests: FULL."), "full")
+        self.assertEqual(pickup.tests_named("  Tests: `affected`"), "affected")
+        self.assertIsNone(pickup.tests_named("  Tests: some"))
+        self.assertIsNone(pickup.tests_named("a story with no line"))
+
+    def test_the_nearest_tests_line_decides_and_the_store_s_setting_is_the_fallback(self):
+        st = stores.Store(tempfile.mkdtemp())
+        tiles = {"PLN-70": {"parent": None}, "PLN-75": {"parent": "PLN-70"}}
+        texts = {"PLN-70": "- [ ] PLN-70 **M.**\n  Tests: full\n", "PLN-75": "- [ ] PLN-75 **S.**\n"}
+        self.assertTrue(pickup.full_suite_on_merge(st, "PLN-75", texts, tiles))
+        texts["PLN-75"] += "  Tests: affected\n"
+        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", texts, tiles))
+        plain = {"PLN-70": "- [ ] PLN-70 **M.**\n", "PLN-75": "- [ ] PLN-75 **S.**\n"}
+        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", plain, tiles))
+        self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", None, tiles))
+        (st.dir / "board.json").write_text(json.dumps({"fullSuiteOnMerge": True}))
+        on = stores.Store(st.dir)
+        self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", plain, tiles))
+        self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", None, None))
+
+    def test_a_story_in_two_repos_runs_the_full_suite_in_each(self):
+        st = stores.Store(tempfile.mkdtemp())
+        job = {"key": "PLN-01", "branch": "b", "ready": True,
+               "repos": [{"name": "api", "worktree": "/x/api-wt", "trunk": "dev"}, {"name": "web", "worktree": "/x/web-wt", "trunk": "main"}]}
+        told = pickup.reply_text(st, job, "", ["merge"], texts={"PLN-01": "- [ ] PLN-01 **A.**\n  Tests: full\n"})
+        self.assertIn("- [ ] **Full suite** on api dev", told)
+        self.assertIn("- [ ] **Full suite** on web main", told)
 
     def test_steps_for_a_story_in_several_repos_name_each_repo_and_its_trunk(self):
         st = stores.Store(tempfile.mkdtemp())
