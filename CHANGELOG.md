@@ -1,5 +1,58 @@
 # Changelog
 
+## 1.1.15
+
+- A story ready for review pulses green, even once its session has stopped; red is kept for something
+  wrong: a session gone without the story being ready, or a Done tile not merged.
+- Added `GLOSSARY.md`, the words the board, the code and the docs share.
+- The `Base:`, `Tests:`, `Repos:` and `Model:` lines are now read on boards with CRLF line endings.
+- A `Model:`, `Sessions:` or `Base:` line with its value on the next line no longer counts as set.
+- `kandalf key assign` now gives a key to unkeyed tiles that start with `* ` too.
+- A merge reply for a sub-story whose master is archived puts the "Full suite" sub-task on the sub-story's own tile, not the master's.
+- `kandalf agent` writes `board.json` while it holds the jobs lock, and leaves a job that was pausing lost, not paused.
+
+- `kandalf agent` run while the server is looking at the board no longer loses either one's
+  changes to the pickup jobs: every change to `board-pickup.json` takes a lock on
+  `board-pickup.lock` beside it, which the other process waits for (where the OS has `fcntl`).
+- The tile dialog's "Full suite on merge" box takes the nearest master's `Tests:` line even when that master is on
+  another board (the backlog or the archive), as a merge does; the server's tile index now carries each tile's own
+  `Tests:` value. A session line the page didn't recognise (an unindented one, or an id under six hex digits) no
+  longer counts on the server either.
+- A tile that starts with `* ` is picked up like one that starts with `- `: the server reads both
+  the way the page does, so `* [ ] PLN-07` has a key and goes to Claude when it lands in In flight.
+- A description that quotes "Claude session `abc`" no longer counts as a session line, so adopting
+  and tidying a story ignore it; only the indented line the server writes does.
+- Every tile in a Done column counts as done for the red unmerged outline, with a checkbox or
+  without, as it does on the page.
+- A sub-story whose master has been archived still gets the master's tile to read, and a ring of
+  masters that name each other is broken the way the page does it: the first stands as the master.
+- The tagline shows at the foot of the board in every theme, not only Realm ledger and Sticker pop.
+- Every theme has a dark palette, with accents that read on it. A button beside the swatches picks
+  System (follow the computer, the default), Light or Dark, kept in this browser. Classic's dark
+  mode follows the same button.
+- The theme menu and its swatches have room for their focus rings, and the header's status line
+  gives way before the header wraps.
+- Each setting in the settings panel, and each fact under About this store, has an ⓘ beside its
+  name that says what it means, on hover or keyboard focus.
+- The settings button is a square at the far right of the header, after the status line.
+- The tile dialog's fields sit in a grid, each labelled above its control, with the two
+  checkboxes on a line of their own; neither dialog opens with a focus ring on its first control.
+- A store that sets nothing no longer runs the full suite when a master's last sub-story merges; set
+  `fullSuiteOnMerge`, or put `Tests: full` on the master, to keep it.
+- A ⚙ settings panel in the board header edits the store's `board.json` settings (pickup, agent, model, permission,
+  stories at once, sessions, full suite on merge, trunk, tidy, push, commit delay), shows each default and resets it.
+- Pickup follows `board.json`'s `"pickup"` without a restart: the server reads `board.json` again when it
+  changes, picks up the tiles already in flight when pickup comes on, and leaves sessions alone when it goes off.
+  `/api/settings` reads and writes the settings the page can change.
+- Every story's session is told to run only the tests that cover what it changes (a sub-story
+  was already), and the default Gates sub-task reads "lint, the tests for what it changes, and
+  the review". The full suite is nightly's, or a merge's when the store or the tile asks.
+- A merge from the board runs the full suite on the trunk before the push when `"fullSuiteOnMerge": true`
+  in `board.json` or the tile has a `Tests: full` line (`Tests: affected` says not to). `subStoryTests` is
+  retired and `kandalf doctor` says so.
+- A tile's dialog has a "Full suite on merge" box that writes or removes the `Tests:` line, and a tile that asks
+  for the full suite shows a chip.
+
 ## 1.1.10
 
 - The page's bottom right corner says which kandalf is serving it: the release's number for a
