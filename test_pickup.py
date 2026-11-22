@@ -1009,6 +1009,8 @@ class Queue(unittest.TestCase):
         on = stores.Store(st.dir)
         self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", plain, tiles))
         self.assertTrue(pickup.full_suite_on_merge(on, "PLN-75", None, None))
+        own = {"PLN-70": "- [ ] PLN-70 **M.**\n", "PLN-75": "- [ ] PLN-75 **S.**\n  Tests: affected\n"}
+        self.assertFalse(pickup.full_suite_on_merge(on, "PLN-75", own, tiles))
 
     def test_a_story_in_two_repos_runs_the_full_suite_in_each(self):
         st = stores.Store(tempfile.mkdtemp())

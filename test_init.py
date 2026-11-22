@@ -557,10 +557,10 @@ class RepoCommands(Setup):
         ignored = (api / ".gitignore").read_text()
         self.assertIn("docs/plans", ignored)
         self.assertIn(".worktrees/", ignored)
-        self.assertIn("trust prompt", said[-2])
+        self.assertIn("trust prompt", said[-1])
         self.assertEqual(self.record.call_args.args[1], [st.dir / "board.json"])
-        self.assertIn(str(api), said[-2])
-        self.assertIn("restart `kandalf serve`", said[-1])
+        self.assertIn(str(api), said[-1])
+        self.assertNotIn("restart", said[-1])
 
     def test_repo_add_tells_agents_how_to_file_a_story_once(self):
         st, api, web = self.made(), self.app("api", "dev"), self.app("web", "dev")
@@ -662,7 +662,7 @@ class RepoCommands(Setup):
         st, api = self.made(), self.app("api", "dev")
         self.add(st, api)
         said = init.remove_repo(stores.Store(st.dir), "API")
-        self.assertIn("restart `kandalf serve`", said[-1])
+        self.assertIn("API", said[0].upper())
         self.assertNotIn("repos", self.config(st.dir))
         self.assertTrue((api / "docs" / "plans").is_symlink())
         with self.assertRaises(SystemExit):

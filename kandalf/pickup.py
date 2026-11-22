@@ -71,8 +71,9 @@ READY_RE = re.compile(r"^\s+(?:\*\*)?Ready for review\b[:.]?(?:\*\*)?[:.]?[ \t]*
 REPOS_RE = re.compile(r"^[ \t]+repos?:[ \t]*(\S.*?)\.?[ \t]*$", re.I | re.M)  # same in board.html
 MODEL_RE = re.compile(r"^\s+model:\s*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\.?\s*$", re.I | re.M)
 # A tile picks the branch its story is cut from and merged into with a line of its own, "Base: feature-x".
-TESTS_RE = re.compile(r"^[ \t]+tests:[ \t]*`?(full|affected)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
 BASE_RE = re.compile(r"^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._/-]*?)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
+# A tile says how much of the suite its merge runs with a line of its own, "Tests: full" or "Tests: affected".
+TESTS_RE = re.compile(r"^[ \t]+tests:[ \t]*`?(full|affected)`?\.?[ \t]*$", re.I | re.M)  # same in board.html
 STATE = "board-pickup.json"
 KEEP = 30  # jobs remembered
 # Seconds a session just started counts as at work, before it has shown itself busy.

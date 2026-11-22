@@ -17,9 +17,10 @@ assert.ok(start > 0 && end > start, "board.html's functions not found");
 const page = new Function(
   `let nextId = 1, doc = null, file = null;
    const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
+   let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, columnKind, kindTaken, doubledKinds,
+   return { inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setFullSuite: on => { STORE_FULL_SUITE = on; },
@@ -619,4 +620,63 @@ test("a tile with no Tests line takes its nearest master's", () => {
   page.open("plans.md", "## In flight\n- [ ] PLN-01 **Master.**\n  Tests: full\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n- [ ] PLN-03 **Grandkid.**\n  Part of PLN-02.\n- [ ] PLN-04 **Other.**\n");
   assert.equal(page.inheritedTests("PLN-03 **Grandkid.**\n  Part of PLN-02."), "full");
   assert.equal(page.inheritedTests("PLN-04 **Other.**"), "");
+});
+
+const SETTINGS_VIEW = {
+  mtime: "1", set: { parallel: 3 }, problem: null,
+  effective: { pickup: true, agent: "claude", model: "opus", permission: "auto", parallel: 3, sessions: 2, fullSuiteOnMerge: false, trunk: "main", tidy: true, push: true, commitDelay: 300 },
+  defaults: { pickup: false, agent: "claude", model: "opus", permission: "auto", parallel: 1, sessions: 2, fullSuiteOnMerge: false, trunk: "main", tidy: true, push: true, commitDelay: 300 },
+  fields: {
+    pickup: { kind: "bool", section: "Pickup", label: "Pickup" },
+    agent: { kind: "choice", choices: ["claude", "copilot"], section: "Pickup", label: "Agent" },
+    model: { kind: "text", section: "Pickup", label: "Model" },
+    parallel: { kind: "int", min: 1, section: "Pickup", label: "Stories at once", help: "How many stories <b>on their own</b> work at once." },
+    trunk: { kind: "text", section: "Git and commits", label: "Trunk" },
+  },
+  readonly: { name: "T7", key: "PLN", port: 8799, folder: "/tmp/x", app: null, repos: [] },
+  readonlyHelp: { key: "The prefix of tile keys." },
+};
+
+test("a setting whose value is outside its choices shows it selected, and saving without an edit changes nothing", () => {
+  const view = { ...SETTINGS_VIEW, effective: { ...SETTINGS_VIEW.effective, agent: "gemini" } };
+  const out = page.settingsHTML(view);
+  assert.match(out, /<option selected>gemini<\/option>/);
+  assert.equal((out.match(/<option selected>/g) || []).filter(Boolean).length >= 1, true);
+  const ctl = { parallel: { value: "3" }, pickup: { checked: true }, agent: { value: "gemini" }, model: { value: "opus" }, trunk: { value: "main" } };
+  const form = { querySelector: sel => ctl[sel.match(/name="(\w+)"/)[1]] };
+  assert.deepEqual(page.settingsChanges(view, form), {});
+});
+
+test("each setting and store fact has its meaning beside it, escaped, and a setting without one has none", () => {
+  const out = page.settingsHTML(SETTINGS_VIEW);
+  const row = k => out.match(new RegExp(`data-key="${k}"[\\s\\S]*?</div>`))[0];
+  assert.match(row("parallel"), /class="shelp"[^>]*data-tip="How many stories &lt;b&gt;on their own&lt;\/b&gt; work at once\."/);
+  assert.match(row("parallel"), /aria-label="How many stories &lt;b&gt;on their own/);
+  assert.doesNotMatch(row("model"), /shelp/);
+  assert.match(out, /<dt>Key<span class="shelp"[^>]*data-tip="The prefix of tile keys\."/);
+  assert.match(out, /<dt>Name<\/dt>/);  // no help given: no marker
+});
+
+test("the settings panel shows each setting with its default, marks the changed ones, and sends only what changed", () => {
+  const out = page.settingsHTML(SETTINGS_VIEW);
+  const row = k => out.match(new RegExp(`<div class="[^"]*"[^>]*data-key="${k}"[\\s\\S]*?</div>\\s*(?=<div class="srow|</section>|<h4|$)`))[0];
+  assert.match(row("parallel"), /class="[^"]*\bchanged\b/);
+  assert.match(row("parallel"), /default: 1/);
+  assert.match(row("parallel"), /data-reset="parallel"/);
+  assert.doesNotMatch(row("pickup"), /changed/);
+  assert.doesNotMatch(row("pickup"), /data-reset/);
+  assert.doesNotMatch(row("pickup"), /default:/);  // an unchanged setting is its default: not said again
+  assert.match(row("parallel"), /<label for="set-parallel">/);
+  assert.match(out, /Git and commits/);
+  assert.match(out, /About this store/);
+  assert.match(out, /T7/);
+  assert.match(out, /Set in board\.json/);
+  const ctl = { parallel: { value: "2" }, pickup: { checked: true }, agent: { value: "claude" }, model: { value: "opus" }, trunk: { value: "main" } };
+  const form = { querySelector: sel => ctl[sel.match(/name="(\w+)"/)[1]] };
+  assert.deepEqual(page.settingsChanges(SETTINGS_VIEW, form), { parallel: 2 });
+  ctl.parallel = { value: "3", dataset: { reset: "1" } };
+  assert.deepEqual(page.settingsChanges(SETTINGS_VIEW, form), { parallel: null });
+  ctl.parallel = { value: "4" };  // reset, then edited: the edit wins (the page drops the flag on input)
+  assert.deepEqual(page.settingsChanges(SETTINGS_VIEW, form), { parallel: 4 });
+  assert.match(page.settingsHTML({ ...SETTINGS_VIEW, problem: "board.json doesn't parse" }), /doesn&#39;t parse|doesn't parse/);
 });

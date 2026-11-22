@@ -459,6 +459,7 @@ def read_config(st) -> dict:
     return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
 
 
+# What uninstall tells people to do: the server has the hooks it started with.
 RESTART_SERVE = "restart `kandalf serve` if it is running, so it sees the change"
 
 
@@ -493,7 +494,6 @@ def add_repo(st, path: Path, name: str = None, trunk: str = None) -> list:
     if has_hooks(st.hooks_file):
         said += link_hooks(repo, st.hooks_file)
     said.append(agent.trust(repo))
-    said.append(RESTART_SERVE)
     return said
 
 
@@ -511,7 +511,7 @@ def remove_repo(st, name) -> list:
     if not repos:
         del cfg["repos"]
     write_config(st, cfg, f"board: repo {key} removed")
-    return [f"board.json: repo {key} removed; its docs/{st.link} link and .gitignore lines in the repo were left", RESTART_SERVE]
+    return [f"board.json: repo {key} removed; its docs/{st.link} link and .gitignore lines in the repo were left"]
 
 
 def uninstall(st) -> list:
@@ -576,7 +576,7 @@ def set_agent(st, name: str, force: bool = False, stop=None) -> list:
     agent.use(name)
     said.insert(0, f"board.json: agent {name}" + (f"; model {model} (for {old}) dropped, so sessions run on {agent.default_model()}" if model else ""))
     said += ["tiles' own Model: lines are left as they are, so check they name a model " + name + " has",
-             agent.trust(st.app or "the app"), RESTART_SERVE]
+             agent.trust(st.app or "the app")]
     return said
 
 

@@ -540,6 +540,46 @@ html, body { height: 100%; margin: 0; }
 #version { position: fixed; right: 8px; bottom: 4px; z-index: 40; font-size: 11px; color: var(--muted); opacity: .75; }
 /* What the board tells you (flash): toasts in the bottom-right corner, over the board, not in its way. */
 #toasts { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+/* The settings panel, for every theme. */
+dialog#settingsDlg { width: min(560px, 94vw); }
+#settingsBody { max-height: 62vh; overflow-y: auto; padding-right: 14px; }
+#settingsBody:focus, #cardDlg:focus, #settingsDlg:focus { outline: none; }  /* opened dialogs take the focus themselves, not their first control */
+/* The tile dialog's fields: a grid of labelled controls, label above, so they line up whatever the width. */
+#cardForm .card-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 12px; align-items: end; margin-bottom: 12px; }
+#cardForm .card-fields .field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
+#cardForm .card-fields .field select, #cardForm .card-fields .field input { width: 100%; box-sizing: border-box; font-size: 14px; font-weight: 400; color: var(--text); }
+#cardForm .card-fields .field-wide { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--muted); }
+#cardForm .card-checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+#cardForm .card-checks label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+#settingsBody section + section { border-top: 1px solid var(--line); margin-top: 8px; }
+#settingsBody h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+/* Label, control, reset: one grid, so every control starts in the same column. */
+#settingsDlg .srow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 190px) 64px; align-items: center; column-gap: 12px; padding: 5px 0; }
+@media (max-width: 480px) { #settingsDlg .srow { grid-template-columns: minmax(0, 1fr) minmax(96px, 140px) 56px; column-gap: 8px; } }
+#settingsDlg .srow > label { font-weight: 600; color: var(--text); cursor: pointer; }
+#settingsDlg .srow.changed .sname::after { content: " \2022"; color: var(--accent); }
+#settingsDlg .shelp { position: relative; display: inline-block; margin-left: 5px; font-size: 13px; font-weight: 400; color: var(--muted); cursor: help; }
+#settingsDlg .shelp:hover, #settingsDlg .shelp:focus-visible { color: var(--accent); outline: none; }
+#settingsDlg .shelp::after { content: attr(data-tip); position: absolute; left: -6px; top: calc(100% + 6px); z-index: 5; width: max-content; max-width: 280px;
+  padding: 7px 10px; border-radius: 6px; background: var(--text); color: var(--card, #fff); font-size: 12px; font-weight: 400; line-height: 1.4;
+  text-transform: none; letter-spacing: normal; white-space: normal; box-shadow: 0 4px 14px rgba(0,0,0,.18); visibility: hidden; opacity: 0; transition: opacity .12s; pointer-events: none; }
+#settingsDlg .shelp:hover::after, #settingsDlg .shelp:focus-visible::after { visibility: visible; opacity: 1; }
+#settingsDlg .srow .sdef { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+#settingsDlg .srow .sctl { display: flex; align-items: center; min-width: 0; }
+#settingsDlg .srow .sctl input[type=text], #settingsDlg .srow .sctl select { width: 100%; box-sizing: border-box; }
+#settingsDlg .srow .sctl input[type=number] { width: 84px; box-sizing: border-box; }
+#settingsDlg .srow .sctl input[type=checkbox] { margin: 0; }
+#settingsDlg .srow button[data-reset] { justify-self: end; padding: 2px 8px; font-size: 12px; }
+#settingsDlg .snote { font-size: 12px; color: var(--muted); margin: 4px 0; }
+#settingsDlg .snote.problem { color: var(--text); border-left: 3px solid var(--accent); padding-left: 8px; }
+#settingsDlg details.sabout > summary { cursor: pointer; margin: 12px 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#settingsDlg .sfacts { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 4px 12px; font-size: 12px; margin: 4px 0 8px; }
+#settingsDlg .sfacts dt { color: var(--muted); }
+#settingsDlg .sfacts dd { margin: 0; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+/* The header's last item, after the status line: a square button the height of the header's selects. */
+#settingsBtn { padding: 0; display: inline-grid; place-items: center; font-size: 18px; line-height: 1; flex: none; }
+:root[data-theme="classic"] #settingsBtn { width: 29px; height: 29px; }
+:root:not([data-theme="classic"]) #settingsBtn { width: 38px; height: 38px; }
 .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; max-width: min(440px, calc(100vw - 32px)); padding: 10px 12px 10px 14px;
   background: var(--card); color: var(--text); border-left: 4px solid var(--accent); border-radius: 8px; font-size: 13px; line-height: 1.4;
   box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.12); overflow-wrap: anywhere; animation: toast-in .18s ease-out; }
@@ -918,6 +958,7 @@ applyTheme(themeNow, accentNow);
     <option value="file">Newest archived</option><option value="desc">Key, high to low</option><option value="asc">Key, low to high</option></select></label>
   <span id="themePick"><label class="hint">Theme <select id="themeSel" title="The board's look, remembered in this browser"></select></label><span id="accentSel" role="group" aria-label="Accent colour"></span></span>
   <span id="status">Loading…</span>
+  <button type="button" id="settingsBtn" title="This store's settings (board.json)" aria-label="Settings">⚙</button>
 </header>
 <nav id="stats" aria-label="Builds" hidden></nav>
 <div id="toasts" role="status" aria-live="polite"></div>
@@ -927,20 +968,21 @@ applyTheme(themeNow, accentNow);
 <div id="version"></div>
 <script src="/marked.min.js"></script>
 
-<dialog id="cardDlg">
+<dialog id="cardDlg" tabindex="-1">
   <form method="dialog" class="dlg" id="cardForm">
-    <div class="row">
-      <label><input type="checkbox" id="cardCheck"> Checked off</label>
-      <span class="spacer"></span>
-      <label>Priority <select id="cardPrio"><option value="">None</option>
+    <div class="card-fields">
+      <label class="field">Priority <select id="cardPrio"><option value="">None</option>
         <option value="P1">⇈ P1 Highest</option><option value="P2">↑ P2 High</option>
         <option value="P3">= P3 Medium</option><option value="P4">↓ P4 Low</option></select></label>
-      <label id="cardModelLabel" title="The model the agent's session for this story runs on, when the tile is picked up from In flight">Model <select id="cardModel"></select></label>
-      <label id="cardTestsLabel" title="Merging this story from the board runs the full suite on the trunk afterwards (the Tests line on the tile); unticked, only the tests for what it changes ran"><input type="checkbox" id="cardTests"> Full suite on merge</label>
-      <label id="cardBaseLabel" title="The branch the agent's session cuts this story from and merges it into (the Base line on the tile); empty is the store's trunk">Base <input type="text" id="cardBase" size="12" list="cardBaseList" autocomplete="off" spellcheck="false"><datalist id="cardBaseList"></datalist></label>
-      <span id="cardRepos" class="repos-pick hidden" title="The repos the agent's session for this story works in (the Repos line on the tile)">Repos <span id="cardReposBoxes"></span></span>
-      <label>Estimate <input type="text" id="cardEst" size="6" placeholder="none" title="Wall-clock time: hours (4h), days of 24 h (1.5d) or weeks (1w); a range like 12-18h works"></label>
-      <label>Column <select id="cardCol"></select></label>
+      <label class="field">Estimate <input type="text" id="cardEst" placeholder="none" title="Wall-clock time: hours (4h), days of 24 h (1.5d) or weeks (1w); a range like 12-18h works"></label>
+      <label class="field">Column <select id="cardCol"></select></label>
+      <label class="field" id="cardModelLabel" title="The model the agent's session for this story runs on, when the tile is picked up from In flight">Model <select id="cardModel"></select></label>
+      <label class="field" id="cardBaseLabel" title="The branch the agent's session cuts this story from and merges it into (the Base line on the tile); empty is the store's trunk">Base <input type="text" id="cardBase" list="cardBaseList" autocomplete="off" spellcheck="false"><datalist id="cardBaseList"></datalist></label>
+      <span id="cardRepos" class="repos-pick field-wide hidden" title="The repos the agent's session for this story works in (the Repos line on the tile)">Repos <span id="cardReposBoxes"></span></span>
+      <div class="card-checks">
+        <label><input type="checkbox" id="cardCheck"> Checked off</label>
+        <label id="cardTestsLabel" title="Merging this story from the board runs the full suite on the trunk afterwards (the Tests line on the tile); unticked, only the tests for what it changes run"><input type="checkbox" id="cardTests"> Full suite on merge</label>
+      </div>
     </div>
     <div id="cardView" class="tile-view"></div>
     <label for="cardText" class="edit-only">Tile (markdown — first line is the tile, indented lines below it are its body; indented <code>  - [ ] </code> lines are sub-tasks and make it a story; <code>Part of PLN-NN</code> makes it a sub-story of that tile)</label>
@@ -966,6 +1008,18 @@ applyTheme(themeNow, accentNow);
       <span class="spacer"></span>
       <button value="cancel" formnovalidate id="askCancel">Cancel</button>
       <button value="ok" class="primary" id="askOk">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg" class="ask settings" tabindex="-1">
+  <form method="dialog" class="dlg" id="settingsForm">
+    <h3>Settings</h3>
+    <div id="settingsBody"></div>
+    <div class="row">
+      <span class="spacer"></span>
+      <button type="button" id="settingsCancel">Close</button>
+      <button type="submit" class="primary" id="settingsSave">Save</button>
     </div>
   </form>
 </dialog>
@@ -1701,6 +1755,62 @@ function scrollPlaces(root) {
     [root.scrollLeft, root.scrollTop] = own;
   };
 }
+// A setting's meaning (settings.py: each field's help) as an ⓘ beside its name: shown on hover or
+// keyboard focus, and read out by screen readers. "" when there is none.
+function helpMark(text) {
+  return text ? `<span class="shelp" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">ⓘ</span>` : "";
+}
+// The settings panel: board.json's editable settings, one row each (settings.py: EDITABLE).
+function settingsHTML(view) {
+  const set = view.set || {}, sections = [];
+  for (const [k, f] of Object.entries(view.fields)) {
+    let sec = sections.find(x => x.name === f.section);
+    if (!sec) sections.push(sec = { name: f.section, keys: [] });
+    sec.keys.push(k);
+  }
+  const control = (k, f) => {
+    const v = view.effective[k], n = `name="${esc(k)}" id="set-${esc(k)}"`;
+    if (f.kind === "bool") return `<input type="checkbox" ${n}${v ? " checked" : ""}>`;
+    if (f.kind === "int") return `<input type="number" ${n} min="${f.min}" step="1" value="${esc(String(v))}">`;
+    if (f.kind === "choice") {  // a value board.json holds that isn't a choice is shown, so saving another field leaves it be
+      const all = f.choices.includes(v) ? f.choices : [...f.choices, v];
+      return `<select ${n}>${all.map(c => `<option${c === v ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
+    }
+    const list = k === "model" ? MODELS : k === "trunk" ? STORE_BRANCHES : [];
+    return `<input type="text" ${n} value="${esc(String(v))}" autocomplete="off" list="settings-${esc(k)}"><datalist id="settings-${esc(k)}">${list.map(m => `<option value="${esc(m)}">`).join("")}</datalist>`;
+  };
+  const shown = x => x === true ? "on" : x === false ? "off" : String(x);
+  const row = k => {
+    const f = view.fields[k], changed = k in set;
+    // The default is said only where board.json sets the key: elsewhere the value is the default.
+    const d = esc(shown(view.defaults[k]));
+    const def = changed ? `<span class="sdef">default: ${d}</span>` : "";
+    const reset = changed ? `<button type="button" data-reset="${esc(k)}" title="Back to the default, ${d}, when you save">Reset</button>` : "<span></span>";
+    return `<div class="srow${changed ? " changed" : ""}" data-key="${esc(k)}"><label for="set-${esc(k)}"><span class="sname">${esc(f.label)}</span>${helpMark(f.help)}${def}</label><span class="sctl">${control(k, f)}</span>${reset}</div>`;
+  };
+  const ro = view.readonly || {}, roHelp = view.readonlyHelp || {};
+  const facts = [["name", "Name", ro.name], ["key", "Key", ro.key], ["port", "Port", ro.port], ["folder", "Folder", ro.folder], ["app", "App", ro.app],
+    ["repos", "Repos", (ro.repos || []).map(r => r.name + (r.trunk ? ` (${r.trunk})` : "")).join(", ")], ["link", "Link", ro.link],
+    ["pickupColumn", "Pickup column", ro.pickupColumn], ["branch", "Branch", ro.branch], ["worktree", "Worktree", ro.worktree], ["hooks", "Hooks", shown(ro.hooks)]]
+    .filter(([, , v]) => v !== undefined && v !== null && v !== "");
+  return (view.problem ? `<p class="snote problem">${esc(view.problem)}</p>` : "")
+    + sections.map(sec => `<section><h4>${esc(sec.name)}</h4>${sec.keys.map(row).join("")}</section>`).join("")
+    + `<section><details class="sabout"><summary>About this store</summary><p class="snote">Set in board.json</p><dl class="sfacts">${facts.map(([k, l, v]) => `<dt>${esc(l)}${helpMark(roHelp[k])}</dt><dd>${esc(String(v))}</dd>`).join("")}</dl></details></section>`;
+}
+// What the form changes: {key: value, or null to reset it}, only for the keys that differ from what is in force.
+function settingsChanges(view, form) {
+  const out = {};
+  for (const [k, f] of Object.entries(view.fields)) {
+    const c = form.querySelector(`[name="${k}"]`);
+    if (!c) continue;
+    if (c.dataset && c.dataset.reset) { out[k] = null; continue; }
+    let v = f.kind === "bool" ? !!c.checked : f.kind === "int" ? Number(c.value) : c.value;
+    if (f.kind === "text" && v === "") { if (k in (view.set || {})) out[k] = null; continue; }
+    if (f.kind === "int" && c.value === "") continue;
+    if (v !== view.effective[k]) out[k] = v;
+  }
+  return out;
+}
 // A plan doc (anything in active/ or archive/ but the archive log, or any file that isn't
 // board-shaped) shows as a formatted document, not as columns.
 function isDocFile() { return (file.includes("/") && file !== "archive/archived.md") || readonly; }
@@ -2376,6 +2486,47 @@ function ask({ title, body = [], note = "", ok = "OK", cancel = "Cancel", danger
   }, { once: true }));
 }
 
+// ---------- settings panel ----------
+const settingsDlg = $("#settingsDlg");
+let settingsView = null;
+function showSettings(view) {
+  settingsView = view;
+  $("#settingsBody").innerHTML = settingsHTML(view);
+}
+async function openSettings() {
+  const r = await fetch("/api/settings").catch(() => null);
+  if (!r || !r.ok) { flash("The settings couldn't be read."); return; }
+  showSettings(await r.json());
+  settingsDlg.showModal();
+  settingsDlg.focus();
+}
+async function saveSettings(changes = settingsChanges(settingsView, $("#settingsForm"))) {
+  if (!Object.keys(changes).length) { flash("Nothing changed."); return; }
+  const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mtime: settingsView.mtime, changes }) }).catch(() => null);
+  if (!r) { flash("The settings weren't saved: the server didn't answer."); return; }
+  const j = await r.json();
+  if (r.status === 400) { flash(j.error); if (j.mtime) settingsView.mtime = j.mtime; return; }
+  showSettings(j);
+  if (r.status === 409) { flash("board.json changed on disk: here it is as it is now"); return; }
+  for (const line of j.said || []) flash(line);
+  loadStoreFacts().then(() => { showBoardButtons(isDocFile() ? lastBoard : file); if (doc && !docEditing) render(); }).catch(() => {}); pollPickups();
+}
+$("#settingsBtn").addEventListener("click", openSettings);
+$("#settingsCancel").addEventListener("click", () => settingsDlg.close());
+$("#settingsForm").addEventListener("submit", e => { e.preventDefault(); saveSettings(); });  // Enter in a field saves
+$("#settingsBody").addEventListener("click", e => {
+  const b = e.target.closest("[data-reset]");
+  if (!b) return;
+  const k = b.dataset.reset, c = $("#settingsForm").querySelector(`[name="${k}"]`), d = settingsView.defaults[k];
+  c.dataset.reset = "1";  // saved as a reset (null) with the other changes, unless it is edited again
+  c.addEventListener("input", () => delete c.dataset.reset, { once: true });
+  c.addEventListener("change", () => delete c.dataset.reset, { once: true });
+  if (c.type === "checkbox") c.checked = !!d; else c.value = d;
+  const r = b.closest(".srow");
+  r.classList.remove("changed");
+  r.querySelector(".sdef")?.remove();
+  b.replaceWith(document.createElement("span"));  // keeps the row's third column
+});
 // ---------- card dialog ----------
 const dlg = $("#cardDlg");
 // The dialog shows a tile formatted, with an Edit button for its markdown. The view is
@@ -2503,6 +2654,7 @@ function openCard(card, sec, kidOf) {
   repoPicker.archived = file === ARCHIVE_LOG;
   syncRepos();
   dlg.showModal();
+  dlg.focus();  // not its first checkbox: a focus ring there read as a selection
   setCardMode(card ? "view" : "edit");
   if (kidOf) { const at = $("#cardText").value.indexOf(NEW_KID); $("#cardText").setSelectionRange(at, at + NEW_KID.length); }  // type the title over it
 }
@@ -2686,7 +2838,9 @@ async function load(name) {
   showBoardButtons(isDocFile() ? lastBoard : name);
   pollPickups().catch(() => {});  // know at once whether tiles are picked up here, not at the next poll
 }
-async function listFiles(select) {
+// The store's facts from /api/files (name, repos, models, branches, the board picker...); the
+// open file is left alone. Returns the reply.
+async function loadStoreFacts() {
   const j = await (await fetch("/api/files")).json();
   if (j.key) setKey(j.key);
   STORE_NAME = j.name || "";
@@ -2706,6 +2860,10 @@ async function listFiles(select) {
   $("#storeName").textContent = STORE_NAME;
   $("#fileSel").innerHTML = j.files.map(f => `<button type="button" role="tab" data-file="${esc(f)}" title="${esc(f)}">${esc(boardLabel(f))}</button>`).join("");
   $("#fileSel").title = j.dir;
+  return j;
+}
+async function listFiles(select) {
+  const j = await loadStoreFacts();
   let pick = select || new URLSearchParams(location.search).get("file");
   if (!pick) try { pick = localStorage.getItem("board.file"); } catch {}
   // A plan doc isn't in the picker, but a tab opened from its link loads it from the URL.

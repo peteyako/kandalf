@@ -54,6 +54,7 @@ from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
 from . import store as stores  # noqa: E402  which store, and its settings
 from . import stamp, __version__  # noqa: E402  which kandalf this is, for the page's corner
+from . import settings  # noqa: E402  the settings panel's rules
 
 HERE = Path(__file__).resolve().parent
 BUILD = stamp.info(HERE, __version__)  # once, at the server's start: a checkout's build time is when it started
@@ -517,30 +518,89 @@ def report_in_flight(store):
         pickup.log(f"in flight could not be listed: {e}")
 
 
-def watch_pickups(store, every: float = 2.0):
-    """Forever: look at plans.md when it changes (and now and then while a job waits or runs),
-    and hand what landed in In flight to pickup.tick."""
-    board, seen, last, told, before = store.dir / PICKUP_BOARD, None, 0.0, set(), None
-    report_in_flight(store)
+def reload_settings(store) -> bool:
+    """Read board.json again when it changed since the last read, under pickup's lock so a look
+    never runs on half the settings. True when new settings are in force. A file that can't be
+    read (not UTF-8, or gone between the look and the read) keeps the old ones, and the store's
+    config_problem says why."""
+    try:
+        with pickup._lock:
+            return store.reload_if_changed()
+    except (OSError, ValueError) as e:
+        store.config_problem = f"board.json could not be read: {e}"
+        return False
+
+
+def adopt_in_flight(store):
+    """Hand the In flight tiles that never had a session to the next look (pickup.adopt), and
+    say which: at the start, and whenever pickup comes on."""
+    board = store.dir / PICKUP_BOARD
     try:
         if board.is_file():
             for key in pickup.adopt(store, in_flight_tiles(store, board.read_text(encoding="utf-8"))):
                 pickup.log(f"{key} is in flight with no session: picking it up")
-    except Exception as e:  # a courtesy too: the watch below still runs
+    except Exception as e:  # a courtesy too: the watch still runs
         pickup.log(f"in flight tiles could not be adopted: {e}")
+
+
+def watch_turn(store, ctx: dict):
+    """One turn of the pickup watch: read board.json again if it changed, and while pickup is
+    on and can run, look at plans.md when it changes (and now and then while a job waits or
+    runs) and hand what landed in In flight to pickup.tick. Pickup coming on adopts what is in
+    flight first; on but unable to run says why once. ctx carries the watch from turn to turn:
+    seen, last, told and before for the looks, was_on, mtime (board.json's, as last read), and
+    why and problem, what was last said."""
+    ctx.setdefault("why", None)
+    ctx.setdefault("problem", None)
+    reload_settings(store)
+    # Read again here or by the settings route (settings.apply reloads the store itself).
+    changed, ctx["mtime"] = store.config_mtime != ctx.get("mtime"), store.config_mtime
+    if store.config_problem != ctx["problem"]:
+        ctx["problem"] = store.config_problem
+        if store.config_problem:
+            pickup.log(f"{store.config_problem}; the settings before it stay in force")
+    if not store.pickup:
+        ctx["was_on"], ctx["why"] = False, None
+        return
+    if changed or not ctx["was_on"]:
+        why = pickup.why_off(store)
+        if why and why != ctx["why"]:
+            pickup.log(why)
+        elif not why and (not ctx["was_on"] or ctx["why"]):
+            adopt_in_flight(store)
+            ctx["seen"] = None  # look at once
+        ctx["was_on"], ctx["why"] = True, why
+    if ctx["why"]:
+        return
+    board = store.dir / PICKUP_BOARD
+    try:
+        at = board.stat().st_mtime_ns if board.is_file() else None
+        # A file still being written is left for the next look: half a board reads as
+        # tiles that left In flight, and then as the same tiles arriving.
+        settled, ctx["before"] = at == ctx["before"], at
+        busy = any(j["state"] == "waiting" or j["state"] in pickup.TRACKED for j in pickup.load(store)["jobs"])
+        if at is not None and settled and (at != ctx["seen"] or (busy and time.time() - ctx["last"] > PICKUP_RECHECK)):
+            ctx["seen"], ctx["last"] = at, time.time()
+            pickup.tick(store, in_flight_tiles(store, board.read_text(encoding="utf-8")), on_start=note_session)
+            tidy_stragglers(store, ctx["told"])
+    except Exception as e:  # a bad look must not end the watch
+        pickup.log(f"the look at {PICKUP_BOARD} failed: {e}")
+
+
+def watch_pickups(store, every: float = 2.0):
+    """Forever, from the server's start: say what is in flight, adopt what has no session when
+    pickup can run, then a watch_turn every few seconds, so pickup follows board.json."""
+    report_in_flight(store)
+    why = pickup.why_off(store) if store.pickup else None  # main has said it
+    if store.pickup and not why:
+        adopt_in_flight(store)
+    ctx = {"seen": None, "last": 0.0, "told": set(), "before": None, "was_on": store.pickup, "why": why,
+           "mtime": store.config_mtime, "problem": store.config_problem}
     while True:
         try:
-            at = board.stat().st_mtime_ns if board.is_file() else None
-            # A file still being written is left for the next look: half a board reads as
-            # tiles that left In flight, and then as the same tiles arriving.
-            settled, before = at == before, at
-            busy = any(j["state"] == "waiting" or j["state"] in pickup.TRACKED for j in pickup.load(store)["jobs"])
-            if at is not None and settled and (at != seen or (busy and time.time() - last > PICKUP_RECHECK)):
-                seen, last = at, time.time()
-                pickup.tick(store, in_flight_tiles(store, board.read_text(encoding="utf-8")), on_start=note_session)
-                tidy_stragglers(store, told)
-        except Exception as e:  # a bad look must not end the watch
-            pickup.log(f"the look at {PICKUP_BOARD} failed: {e}")
+            watch_turn(store, ctx)
+        except Exception as e:  # nor a bad turn
+            pickup.log(f"the pickup watch's turn failed: {e}")
         time.sleep(every)
 
 
@@ -823,6 +883,9 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif u.path == "/api/pickup":
             self.send_json(200, pickup.summary(self.store))
+        elif u.path == "/api/settings":
+            reload_settings(self.store)
+            self.send_json(200, settings.view(self.store))
         elif u.path == "/api/board":
             p = self.target(qs)
             if p is None or not p.is_file():
@@ -1092,7 +1155,29 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             return self.archive(p)
+        if u.path == "/api/settings":  # {mtime, changes}: the settings panel's Save
+            return self.save_settings(self.read_body())
         self.send_json(404, {"error": "not found"})
+
+    def save_settings(self, data):
+        """Write the settings panel's changes to board.json (settings.apply) and answer with
+        the settings now: 409 when board.json changed since the page read it, 400 when a change
+        is refused."""
+        reload_settings(self.store)
+        f = self.store.dir / stores.CONFIG
+        if data.get("mtime") != (mtime(f) if f.is_file() else ""):
+            return self.send_json(409, {"error": "changed on disk", **settings.view(self.store)})
+        changes = data.get("changes")
+        if not isinstance(changes, dict):
+            return self.send_json(400, {"error": "changes must be an object", **settings.view(self.store)})
+        try:
+            with pickup._lock:  # a look waits for the new settings
+                said = settings.apply(self.store, changes)
+        except settings.SettingsError as e:
+            return self.send_json(400, {"error": str(e), **settings.view(self.store)})
+        for line in said:
+            pickup.log(f"settings: {line}")
+        self.send_json(200, {"said": said, **settings.view(self.store)})
 
 
 def should_open(no_open: bool, env=None, isatty=None) -> bool:
@@ -1162,8 +1247,9 @@ def main(args=None):
     for line in ensure_hooks(st):
         print(line, flush=True)
     why = pickup.why_off(st)  # None: pickup runs
-    # Both list what is in flight first. Off the main thread: asking the CLI for its sessions takes a second.
-    threading.Thread(target=report_in_flight if why else watch_pickups, args=(st,), daemon=True).start()
+    # The watch runs whether or not pickup does, so turning it on in board.json needs no restart.
+    # It lists what is in flight first. Off the main thread: asking the CLI for its sessions takes a second.
+    threading.Thread(target=watch_pickups, args=(st,), daemon=True).start()
     port = args.port or st.port
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"{st.name} board on http://127.0.0.1:{port}  (files in {st.dir}, keys {st.key}-NN)")

@@ -122,8 +122,52 @@ def git_root(path: Path):
 class Store:
     def __init__(self, folder):
         self.dir = Path(folder).expanduser().resolve()
+        self.config_problem = None
+        self.config_mtime = None
+        self._read(self._load_config())
+
+    def _load_config(self) -> dict:
+        """board.json parsed (an empty dict when there is none), and config_mtime noted.
+        Raises ValueError when the file doesn't parse."""
         f = self.dir / CONFIG
-        cfg = json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+        if not f.is_file():
+            self.config_mtime = None
+            return {}
+        self.config_mtime = f.stat().st_mtime_ns
+        return json.loads(f.read_text(encoding="utf-8"))
+
+    def reload(self) -> bool:
+        """Read board.json again into this same object and return True. When it doesn't
+        parse, every setting stays as it was, config_problem says why, and this returns False."""
+        saved = dict(self.__dict__)
+        try:
+            cfg = self._load_config()
+        except json.JSONDecodeError as e:
+            self.config_problem = f"board.json doesn't parse: {e}"
+            return False
+        try:
+            if not isinstance(cfg, dict):
+                raise ValueError("it is not a JSON object")
+            self._read(cfg)
+        except (ValueError, TypeError, AttributeError) as e:
+            mtime = self.config_mtime
+            self.__dict__.clear()
+            self.__dict__.update(saved)
+            self.config_mtime = mtime
+            agent.use(self.agent if self.agent_problem is None else "claude")
+            self.config_problem = f"board.json has a bad value: {e}"
+            return False
+        self.config_problem = None
+        return True
+
+    def reload_if_changed(self) -> bool:
+        """Reload when board.json's modification time differs from the one last read."""
+        f = self.dir / CONFIG
+        mtime = f.stat().st_mtime_ns if f.is_file() else None
+        return mtime != self.config_mtime and self.reload()
+
+    def _read(self, cfg: dict):
+        """Set every setting from the parsed board.json (and the environment's overrides)."""
         self.name = cfg.get("name") or self.dir.name
         self.key = cfg.get("key", "PLN")
         self.port = int(cfg.get("port", 7788))
