@@ -34,11 +34,20 @@ MODELS = [
     "gemini-4-neon-high",
     "gemini-4-neon-medium",
     "gemini-4-argon-high",
+    "gemini-4-argon-medium",
     "gemini-4-hydrogen-high",
     "gemini-3.8-flash-medium",
     "claude-opus-5-5-high",
     "claude-sonnet-5-5-medium",
 ]
+ALIASES = {
+    "neon": "gemini-4-neon-medium",
+    "argon": "gemini-4-argon-medium",
+    "hydrogen": "gemini-4-hydrogen-medium",
+    "flash": "gemini-3.8-flash-medium",
+    "opus": "claude-opus-5-5-medium",
+    "sonnet": "claude-sonnet-5-5-medium",
+}
 TRUST = "Before the first story: run `agy` once in {app} and sign in, or sessions may not start there."
 STATE_DIR = Path(os.environ.get("KANDALF_AGY_DIR") or Path.home() / ".kandalf" / "agy")
 
@@ -177,14 +186,12 @@ def start(args, cwd, permission: str, text: str, dirs=()) -> dict:
     if session:
         cmd += ["--conversation", session]
     if opts.get("--model") and opts["--model"] != "auto":
-        cmd += ["--model", opts["--model"]]
+        cmd += ["--model", ALIASES.get(opts["--model"], opts["--model"])]
     reach = [arg for d in dirs for arg in ("--add-dir", str(d))]  # what attach opens it with too
     if permission == "plan":
         reach += ["--mode", "plan"]
-    elif permission == "bypassPermissions":
+    elif permission in ("auto", "bypassPermissions"):
         reach += ["--dangerously-skip-permissions"]
-    elif permission == "auto":
-        reach += ["--mode", "auto"]
     elif permission == "acceptEdits":
         reach += ["--mode", "accept-edits"]
     cmd += reach

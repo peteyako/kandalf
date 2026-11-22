@@ -55,8 +55,7 @@ class Agy(unittest.TestCase):
         self.assertIn("stream-json", args)
         self.assertIn("--model", args)
         self.assertIn("gemini-4-neon-high", args)
-        self.assertIn("--mode", args)
-        self.assertIn("auto", args)
+        self.assertIn("--dangerously-skip-permissions", args)
         self.assertIn("--add-dir", args)
         self.assertIn(str(self.work / "api"), args)
         self.assertIn("--print=do it", args)
@@ -64,6 +63,12 @@ class Agy(unittest.TestCase):
         self.assertNotIn("-n", args)
         self.assertEqual(agy_cli.known()[began["id"]], "11111111-2222-3333-4444-555555555555")
         self.assertIn("done working", agy_cli.logs(began["id"]))
+
+    def test_short_model_alias_expands_to_an_agy_model_id(self):
+        began = agy_cli.start(["--model", "argon"], self.work, "auto", "do it")
+        self.wait_idle(began["id"])
+        args = (self.work / "args.txt").read_text().splitlines()
+        self.assertEqual(args[args.index("--model") + 1], "gemini-4-argon-medium")
 
     def test_auto_model_omits_the_model_flag(self):
         began = agy_cli.start(["--model", "auto"], self.work, "acceptEdits", "do it")
@@ -175,7 +180,7 @@ class Agy(unittest.TestCase):
         execvp.assert_called_once_with(
             "agy",
             ["agy", "--conversation", "11111111-2222-3333-4444-555555555555",
-             "--add-dir", str(self.work / "plans"), "--mode", "auto"],
+             "--add-dir", str(self.work / "plans"), "--dangerously-skip-permissions"],
         )
 
     def test_kandalf_attach_and_transcript_go_to_agy_for_its_sessions(self):

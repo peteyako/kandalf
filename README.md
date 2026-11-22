@@ -89,7 +89,7 @@ The `permission` setting maps onto Antigravity's flags:
 
 | `permission` | Antigravity runs with |
 |---|---|
-| `auto` | `--mode auto` |
+| `auto` | `--dangerously-skip-permissions` |
 | `acceptEdits` | `--mode accept-edits` |
 | `bypassPermissions` | `--dangerously-skip-permissions` |
 | `plan` | `--mode plan` |
