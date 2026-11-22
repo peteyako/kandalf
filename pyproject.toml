@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kandalf"
 dynamic = ["version"]
-description = "A wizard for your backlog, straight from middle management: a markdown kanban board that hands stories to coding agents."
+description = "A wizard for your backlog, straight outta middle management: a markdown kanban board that hands stories to coding agents."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"

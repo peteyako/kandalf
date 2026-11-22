@@ -324,12 +324,23 @@ test("the store's pickup column is the only one picked up, by name in any case; 
 });
 
 // The theme picker, lifted out of the page's head script, with a stand-in localStorage.
-function themes(stored = {}) {
+function themes(stored = {}, osDark = false) {
   const from = html.indexOf("const BOARD_THEMES"), to = html.indexOf("let themeNow", from);
   assert.ok(from > 0 && to > from, "board.html's theme script not found");
   const localStorage = { getItem: k => (k in stored ? stored[k] : null) };
-  return new Function("localStorage", `${html.slice(from, to)} return { BOARD_THEMES, storedTheme, storedAccent };`)(localStorage);
+  const matchMedia = () => ({ matches: osDark, addEventListener() {} });
+  return new Function("localStorage", "matchMedia", `${html.slice(from, to)} return { BOARD_THEMES, storedTheme, storedAccent, storedMode, isDark };`)(localStorage, matchMedia);
 }
+
+test("the colour mode is System unless the browser keeps Light or Dark, and System follows the OS", () => {
+  assert.equal(themes().storedMode(), "system");
+  assert.equal(themes({ "board.mode": "dark" }).storedMode(), "dark");
+  assert.equal(themes({ "board.mode": "dusk" }).storedMode(), "system");
+  assert.equal(themes({}, true).isDark("system"), true);
+  assert.equal(themes({}, false).isDark("system"), false);
+  assert.equal(themes({}, true).isDark("light"), false);
+  assert.equal(themes({}, false).isDark("dark"), true);
+});
 
 test("every theme in the menu has its style block, and offers valid accents with its default first", () => {
   const { BOARD_THEMES } = themes();
@@ -679,4 +690,16 @@ test("the settings panel shows each setting with its default, marks the changed 
   ctl.parallel = { value: "4" };  // reset, then edited: the edit wins (the page drops the flag on input)
   assert.deepEqual(page.settingsChanges(SETTINGS_VIEW, form), { parallel: 4 });
   assert.match(page.settingsHTML({ ...SETTINGS_VIEW, problem: "board.json doesn't parse" }), /doesn&#39;t parse|doesn't parse/);
+});
+
+test("every theme has a dark palette and a dark accent for each of its accents", () => {
+  const src = html.match(/const BOARD_THEMES = (\{[\s\S]*?\n\});/)[1];
+  const themes = new Function(`return ${src}`)();
+  for (const [id, t] of Object.entries(themes)) {
+    assert.ok(Array.isArray(t.dark), `${id} has dark accents`);
+    assert.equal(t.dark.length, t.accents.length, `${id}: one dark accent per accent`);
+    assert.ok(t.dark.every(c => /^#[0-9a-f]{6}$/i.test(c)), `${id}: dark accents are colours`);
+    assert.match(html, new RegExp(`:root\\[data-theme="${id}"\\]\\[data-mode="dark"\\] \\{`), `${id} has a dark block`);
+  }
+  assert.doesNotMatch(html, /prefers-color-scheme: dark\) \{\s*:root\[data-theme/, "dark mode goes by data-mode, not the media query alone");
 });

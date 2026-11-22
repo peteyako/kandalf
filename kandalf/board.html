@@ -32,14 +32,15 @@ html, body { height: 100%; margin: 0; }
   --code: #f1f2f4; --story: #22a06b; --p2: #c25100; --p3: #946f00; --yellow: #f5cd47;
   --purple: #6e5dc6; --magenta: #ae2e8a; --teal: #1d7f8c;
 }
-@media (prefers-color-scheme: dark) {
-  :root[data-theme="classic"] {
-    --bg: #1d2125; --col: #161a1d; --card: #22272b; --text: #b6c2cf; --muted: #8c9bab;
-    --line: #2c333a; --accent: #579dff; --accent-soft: #1c2b41; --done: #4bce97; --warn: #f87168; --warn-soft: #42221f;
-    --shadow: 0 1px 1px rgba(0,0,0,.5), 0 0 1px rgba(0,0,0,.5);
-    --code: #2c333a; --story: #4bce97; --p2: #fea362; --p3: #e2b203; --yellow: #e2b203;
-    --purple: #9f8fef; --magenta: #e774bb; --teal: #6cc3e0;
-  }
+/* Dark mode, for every theme: data-mode on the root (applyTheme), from the Mode button or the OS. */
+:root[data-mode="dark"] { color-scheme: dark; }
+:root[data-mode="light"] { color-scheme: light; }
+:root[data-theme="classic"][data-mode="dark"] {
+  --bg: #1d2125; --col: #161a1d; --card: #22272b; --text: #b6c2cf; --muted: #8c9bab;
+  --line: #2c333a; --accent: #579dff; --accent-soft: #1c2b41; --done: #4bce97; --warn: #f87168; --warn-soft: #42221f;
+  --shadow: 0 1px 1px rgba(0,0,0,.5), 0 0 1px rgba(0,0,0,.5);
+  --code: #2c333a; --story: #4bce97; --p2: #fea362; --p3: #e2b203; --yellow: #e2b203;
+  --purple: #9f8fef; --magenta: #e774bb; --teal: #6cc3e0;
 }
 :root[data-theme="classic"] body { background: var(--bg); color: var(--text); font: 14px/1.42 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
 :root[data-theme="classic"] header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -286,7 +287,8 @@ html, body { height: 100%; margin: 0; }
 @media (max-width: 600px) { :root[data-theme="classic"] header { padding: 10px 16px; } :root[data-theme="classic"] #board { padding: 12px 16px; } :root[data-theme="classic"] #search { width: 100%; } }
 /* The theme menu sits in Classic's header too; the logo, accents and tagline belong to the other themes. */
 :root[data-theme="classic"] #themePick { display: flex; align-items: center; gap: 8px; }
-:root[data-theme="classic"] #tagline, :root[data-theme="classic"] #accentSel { display: none; }
+:root[data-theme="classic"] #accentSel { display: none; }
+:root[data-theme="classic"] #tagline { padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
 :root[data-theme="classic"] .logo { flex: none; display: inline-flex; margin-right: -4px; }
 :root[data-theme="classic"] .logo svg { display: block; width: 28px; height: 28px; }
 :root[data-theme="classic"] .logo .l-hat { fill: var(--text); } :root[data-theme="classic"] .logo .l-brim { stroke: var(--bg); } :root[data-theme="classic"] .logo .l-star { fill: #dcbb62; }
@@ -479,6 +481,82 @@ html, body { height: 100%; margin: 0; }
   --logo-hat: #25221d; --logo-brim: #fbf7ef; --logo-star: #dcbb62;
 }
 
+/* ---------- each theme's dark palette (data-mode="dark"): the same look, at night ---------- */
+/* Chips keep their bright colours with dark --ink on them; what changes is the paper, the text and the lines. */
+:root:not([data-theme="classic"])[data-mode="dark"] {
+  --waiting-bg: #3a3418;
+  --gloss-n: linear-gradient(180deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,0) 50%); --gloss-n-hi: inset 0 1px 0 rgba(255,255,255,.06);
+}
+:root[data-theme="light"][data-mode="dark"] {   /* near-black, flat, hairlines */
+  --bg: #17171a; --col: #1f1f23; --card: #26262b; --text: #ececea; --muted: #a3a39b; --link: #8ea2ff;
+  --bugs: #ff8a7a; --todo: #ececea; --done: #5fd39a; --design: #b39dff; --major: #f08cc0; --feature: #8ea2ff; --change: #5fc9d1; --accent: #8ea2ff; --on-accent: #111114;
+  --ok: #5fd39a; --p1: #ff8a7a; --p2: #f0a95a; --st-work: #5fd39a; --st-wait: #f0a95a; --st-gone: #ff8a7a;
+  --ok-bg: #1f6b45; --ok-fg: #ffffff; --danger: #c2493d; --danger-fg: #ffffff; --code: #2c2c31;
+  --edge: #3a3a40; --solid-edge: #a3a39b; --dash: #6b6b66; --check-bc: #8a8a84; --input-bc: #44444b;
+  --ctl-shadow-hover: 0 1px 3px rgba(0,0,0,.5);
+  --card-bc: #34343a; --card-shadow-hover: 0 2px 8px rgba(0,0,0,.45); --dlg-shadow: 0 12px 32px rgba(0,0,0,.6);
+  --wait-bc: #f0a95a; --ready-bc: #5fd39a; --warn-bc: #ff8a7a; --waiting-bg: #26262b; --tint: 12%;
+  --rule: 1px solid #34343a; --track: #34343a; --bar-gates: #f0a95a; --zone-bd: 1px dashed #8a8a84;
+  --hdr-bd: 1px solid #2c2c31; --hdr-text: #a3a39b; --hdr-edge: #3a3a40; --hdr-ctl-shadow-hover: 0 1px 3px rgba(0,0,0,.5);
+  --tab-fg: #a3a39b; --logo-hat: #ececea; --logo-brim: #17171a;
+}
+:root[data-theme="aqua"][data-mode="dark"] {    /* deep ocean: a night-sea gradient, frosted dark glass */
+  --bg: #0a1e2e; --ground: linear-gradient(180deg, #06243a 0%, #0a1e2e 50%, #0b2a24 100%);
+  --col: rgba(255,255,255,.06); --card: #11293d; --text: #e3f4ff; --muted: #9fc0d4; --link: #7cc8ff;
+  --ok: #7fe38f; --neutral: #163650; --code: #163650;
+  --edge: rgba(227,244,255,.22); --shadow-c: rgba(0,0,0,.45); --dash: rgba(227,244,255,.35); --check-bc: rgba(227,244,255,.55); --input-bc: rgba(227,244,255,.3);
+  --ctl-shadow: 0 2px 4px rgba(0,0,0,.4); --ctl-shadow-hover: 0 3px 7px rgba(0,0,0,.5);
+  --col-bd: 1px solid rgba(255,255,255,.12); --col-shadow: 0 8px 24px rgba(0,0,0,.35);
+  --card-bc: rgba(227,244,255,.12); --card-shadow: 0 6px 14px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.07);
+  --card-shadow-hover: 0 9px 20px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.07); --dlg-shadow: 0 18px 44px rgba(0,0,0,.55);
+  --wait-bc: #ffd95a; --ready-bc: #7fe38f; --warn-bc: #ff8d7a;
+  --track: #163650; --track-bd: 1px solid rgba(227,244,255,.2);
+  --add-bd: 2px dashed rgba(227,244,255,.35); --zone-bd: 2px dashed rgba(227,244,255,.35);
+  --hdr-bg: rgba(6,24,38,.75); --hdr-bd: 1px solid rgba(255,255,255,.12); --hdr-name: #e3f4ff; --hdr-text: #9fc0d4; --hdr-edge: rgba(227,244,255,.25);
+  --logo-hat: #e3f4ff; --logo-brim: #0a1e2e;
+}
+:root[data-theme="sticker"][data-mode="dark"] { /* dark paper, cream ink, hard black shadows */
+  --bg: #24170f; --ground: radial-gradient(rgba(255,226,179,.10) 1.5px, transparent 1.5px) 0 0 / 22px 22px, #24170f;
+  --col: rgba(255,255,255,.05); --card: #34241a; --text: #ffe9cc; --muted: #d4b293; --link: #ff9b85;
+  --ok: #7ddc6f; --neutral: #3a281c; --code: #3a281c;
+  --edge: #f3d9b1; --shadow-c: #0b0604; --dash: rgba(243,217,177,.45);
+  --col-bd: 2px solid #f3d9b1; --waiting-bg: #4a3a10;
+  --track: #3a281c; --track-bd: 2px solid #f3d9b1;
+  --add-bd: 2px dashed rgba(243,217,177,.45); --zone-bd: 2px dashed rgba(243,217,177,.45);
+  --hdr-bg: #34241a; --hdr-bd: 2px solid #f3d9b1; --hdr-name: #ffe9cc; --hdr-text: #d4b293; --hdr-edge: #f3d9b1;
+  --logo-hat: #ffe9cc; --logo-brim: #24170f;
+}
+:root[data-theme="realm"][data-mode="dark"] {   /* the ledger by candlelight: ink-dark vellum, gilt and ember */
+  --bg: #1c1913; --ground: radial-gradient(ellipse at 50% 30%, #2a251b 0%, #1c1913 60%, #14110c 100%);
+  --card: #26211a; --text: #eadfc2; --muted: #b3a684; --link: #e0897d; --ink: #eadfc2; --rule-c: #4a4130;
+  --bugs: #d4776b; --todo: #eadfc2; --flight: #6fb0c4; --done: #8fbf7a; --design: #b48fd0; --major: #d4776b; --feature: #6fb0c4; --change: #d6b15a; --accent: #d4776b; --on-accent: #1c1913;
+  --ok: #8fbf7a; --neutral: #26211a; --code: #2e281e;
+  --p1: #d4776b; --p1-fg: #1c1913; --p2: #e9c46a; --p2-fg: #1c1913;
+  --st-work: #8fbf7a; --st-wait: #e0b04a; --st-gone: #d4776b;
+  --ok-bg: #35592a; --ok-fg: #f3ead2; --danger: #8a3a30; --danger-fg: #f3ead2;
+  --edge: #8a7d5c; --solid-edge: #b3a684; --dash: #5d5340; --check-bc: #b3a684; --input-bc: #8a7a45;
+  --ctl-shadow-hover: 0 1px 3px rgba(0,0,0,.5);
+  --card-bc: #4a4130;
+  --card-shadow: inset 0 0 0 3px var(--card), inset 0 0 0 4px #4a4130, 0 1px 2px rgba(0,0,0,.4);
+  --card-shadow-hover: inset 0 0 0 3px var(--card), inset 0 0 0 4px #4a4130, 0 3px 8px rgba(0,0,0,.5);
+  --dlg-shadow: 0 14px 36px rgba(0,0,0,.6);
+  --wait-bc: #e0b04a; --ready-bc: #8fbf7a; --warn-bc: #d4776b; --waiting-bg: #3a3018;
+  --ready-bg: color-mix(in srgb, #8fbf7a 12%, var(--card)); --warn-bg: color-mix(in srgb, #d4776b 10%, var(--card));
+  --rule: 1px solid #4a4130; --track: #3a3326; --track-bd: 1px solid #4a4130; --bar-gates: #e0b04a; --zone-bd: 1px dashed #8a7d5c;
+  --hdr-bg: #142019;
+}
+:root[data-theme="soft"][data-mode="dark"] {    /* a soft night: dusk-violet paper, the same pastel chips */
+  --bg: #1d1b22; --col: #26232d; --card: #2c2934; --text: #f1ece4; --muted: #b5ad9f; --link: #b9a8ff;
+  --ok: #a9e3b9; --neutral: #34303c; --code: #34303c;
+  --dash: rgba(241,236,228,.35); --check-bc: #8f8778; --input-bc: #6b6577; --col-tint: 14%;
+  --ctl-shadow-hover: 0 2px 5px rgba(0,0,0,.5);
+  --card-shadow: 0 1px 2px rgba(0,0,0,.4); --card-shadow-hover: 0 4px 10px rgba(0,0,0,.5); --dlg-shadow: 0 14px 36px rgba(0,0,0,.6);
+  --wait-bc: #ffdc7a; --ready-bc: #a9e3b9; --warn-bc: #ffb3a6; --waiting-bg: #3d3520; --tint: 22%;
+  --track: #34303c; --add-bd: 2px dashed rgba(241,236,228,.35); --zone-bd: 2px dashed rgba(241,236,228,.35);
+  --hdr-bd: 1px solid #34303c; --hdr-name: #f1ece4; --hdr-text: #b5ad9f;
+  --logo-hat: #f1ece4; --logo-brim: #1d1b22;
+}
+
 :root:not([data-theme="classic"]) body { background: var(--wash-layer), var(--ground); color: var(--text); font: var(--body-size)/1.42 var(--sans); display: flex; flex-direction: column; }
 :root:not([data-theme="classic"]) a { color: var(--link); }
 :root:not([data-theme="classic"]) :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
@@ -534,7 +612,7 @@ html, body { height: 100%; margin: 0; }
 :root:not([data-theme="classic"]) header button { box-shadow: var(--sh, var(--gloss-n-hi)), var(--hdr-ctl-shadow); }
 :root:not([data-theme="classic"]) header button:hover { box-shadow: var(--sh, var(--gloss-n-hi)), var(--hdr-ctl-shadow-hover); }
 :root:not([data-theme="classic"]) header select, :root:not([data-theme="classic"]) header input { box-shadow: var(--hdr-ctl-shadow); }
-:root:not([data-theme="classic"]) #status { margin-left: auto; color: var(--hdr-text); font: 12px var(--mono); }
+:root:not([data-theme="classic"]) #status { margin-left: auto; color: var(--hdr-text); font: 12px var(--mono); min-width: 0; flex: 1 1 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* it takes the space that is left, so it never wraps the header */
 :root:not([data-theme="classic"]) #status.err { color: var(--danger-fg); background-color: var(--danger); background-image: var(--gloss); border: var(--bw) solid var(--edge); border-radius: var(--ctl-radius); padding: 3px 8px; font-weight: 700; }
 /* Which kandalf this is (versionLabel), small in the bottom-right corner, under the toasts. */
 #version { position: fixed; right: 8px; bottom: 4px; z-index: 40; font-size: 11px; color: var(--muted); opacity: .75; }
@@ -577,9 +655,9 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 #settingsDlg .sfacts dt { color: var(--muted); }
 #settingsDlg .sfacts dd { margin: 0; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 /* The header's last item, after the status line: a square button the height of the header's selects. */
-#settingsBtn { padding: 0; display: inline-grid; place-items: center; font-size: 18px; line-height: 1; flex: none; }
-:root[data-theme="classic"] #settingsBtn { width: 29px; height: 29px; }
-:root:not([data-theme="classic"]) #settingsBtn { width: 38px; height: 38px; }
+#settingsBtn, #modeBtn { padding: 0; display: inline-grid; place-items: center; font-size: 18px; line-height: 1; flex: none; }
+:root[data-theme="classic"] :is(#settingsBtn, #modeBtn) { width: 29px; height: 29px; }
+:root:not([data-theme="classic"]) :is(#settingsBtn, #modeBtn) { width: 38px; height: 38px; }
 .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; max-width: min(440px, calc(100vw - 32px)); padding: 10px 12px 10px 14px;
   background: var(--card); color: var(--text); border-left: 4px solid var(--accent); border-radius: 8px; font-size: 13px; line-height: 1.4;
   box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.12); overflow-wrap: anywhere; animation: toast-in .18s ease-out; }
@@ -593,8 +671,8 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root:not([data-theme="classic"]) #fileSel { display: flex; gap: 6px; flex-wrap: wrap; }
 :root:not([data-theme="classic"]) #fileSel button { font-size: 14px; padding: 6px 14px; background-color: var(--sb, var(--tab-bg)); color: var(--sf, var(--tab-fg)); }
 /* The Theme menu and its accent swatches. */
-:root:not([data-theme="classic"]) #themePick { display: flex; align-items: center; gap: 8px; }
-:root:not([data-theme="classic"]) #accentSel { display: flex; gap: 5px; }
+:root:not([data-theme="classic"]) #themePick { display: flex; align-items: center; gap: 14px; }  /* room for the select's focus ring and the picked swatch's ring, 4px each */
+:root:not([data-theme="classic"]) #accentSel { display: flex; gap: 10px; }
 :root:not([data-theme="classic"]) #accentSel button { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; background-image: none; border: 1.5px solid var(--hdr-edge);
   background-color: var(--swatch); box-shadow: none; }
 :root:not([data-theme="classic"]) #accentSel button[aria-pressed="true"] { outline: 2px solid var(--hdr-text); outline-offset: 2px; }
@@ -837,7 +915,7 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root:not([data-theme="classic"]) .md-doc hr { border: 0; border-top: var(--rule); margin: 24px 0; }
 :root:not([data-theme="classic"]) .md-doc input[type=checkbox] { margin-right: 6px; }
 @media (max-width: 600px) { :root:not([data-theme="classic"]) .md-doc { padding: 18px 16px; } }
-:root:not([data-theme="classic"]) #tagline { display: none; padding: 0 24px 18px; font-size: 14px; color: var(--muted); }
+:root:not([data-theme="classic"]) #tagline { padding: 0 24px 18px; font-size: 14px; color: var(--muted); }
 @media (max-width: 600px) { :root:not([data-theme="classic"]) header { padding: 10px 16px; } :root:not([data-theme="classic"]) #board { padding: 12px 16px; } :root:not([data-theme="classic"]) #search { width: 100%; } }
 
 /* ---------- what a theme's tokens can't say ---------- */
@@ -855,15 +933,15 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 /* Clean and light: the add button is a plain line of text. */
 :root[data-theme="light"] .add-card { padding: 8px; min-height: 36px; margin-top: 4px; font-weight: 400; font-size: 13px; }
 /* Realm ledger: no column panels; columns are ruled apart, each named under a double rule with a diamond. */
-:root[data-theme="realm"] .column { padding: 0 0 0 16px; border-left: 1px solid #c9b98f; }
+:root[data-theme="realm"] .column { padding: 0 0 0 16px; border-left: 1px solid var(--rule-c, #c9b98f); }
 :root[data-theme="realm"] .column:first-child { padding-left: 0; border-left: 0; }
-:root[data-theme="realm"] .col-head { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 3px double #c9b98f; }
+:root[data-theme="realm"] .col-head { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 3px double var(--rule-c, #c9b98f); }
 :root[data-theme="realm"] .column .col-name::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 10px 2px 2px; transform: rotate(45deg); background: currentColor; }
 :root[data-theme="realm"] :is(.session-state, .pickup) { font-family: var(--head); text-transform: uppercase; letter-spacing: .08em; }
 :root[data-theme="realm"] :is(.session-state, .pickup)::before { border-radius: 0; transform: rotate(45deg); }
-:root[data-theme="realm"] .card { --card-shadow: inset 0 0 0 3px var(--this-bg), inset 0 0 0 4px #c9b98f, 0 1px 2px rgba(42,36,24,.18);
-  --card-shadow-hover: inset 0 0 0 3px var(--this-bg), inset 0 0 0 4px #c9b98f, 0 3px 8px rgba(42,36,24,.25); }
-:root[data-theme="realm"] .prio { border-color: var(--p-bc, #5d5340); }
+:root[data-theme="realm"] .card { --card-shadow: inset 0 0 0 3px var(--this-bg), inset 0 0 0 4px var(--rule-c, #c9b98f), 0 1px 2px rgba(42,36,24,.18);
+  --card-shadow-hover: inset 0 0 0 3px var(--this-bg), inset 0 0 0 4px var(--rule-c, #c9b98f), 0 3px 8px rgba(42,36,24,.25); }
+:root[data-theme="realm"] .prio { border-color: var(--p-bc, var(--edge)); }
 :root[data-theme="realm"] .prio-P1 { --p-bc: #7a2a22; } :root[data-theme="realm"] .prio-P2 { --p-bc: #8a6a12; }
 :root[data-theme="realm"] button, :root[data-theme="realm"] #fileSel button { font-size: 12px; }
 :root[data-theme="realm"] .session button, :root[data-theme="realm"] .pickup-restart { font-size: 11px; }
@@ -873,7 +951,6 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 /* Aqua bubble: frosted header and columns. */
 :root[data-theme="aqua"] header, :root[data-theme="aqua"] .column { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 /* The tagline under the board, in the two themes that have one. */
-:root:is([data-theme="realm"], [data-theme="sticker"]) #tagline { display: block; }
 :root[data-theme="realm"] #tagline { font-style: italic; font-size: 15px; }
 :root[data-theme="sticker"] #tagline { font-family: var(--head); }
 :root .session-reply { margin-top: 8px; cursor: auto; }
@@ -913,14 +990,30 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 // The board's looks: Clean and light (the default: the first one here), Classic (the original),
 // then the rest of the style block's [data-theme] blocks, each with the accents it offers, its
 // default first. An accent colours the whole page, not only the controls (--wash in the style block). The pick is kept in this browser and applied here, before the first paint.
+// dark: the accent each of them becomes in dark mode, in the same order (a deep blue or oxblood
+// can't be read on a dark page); the style block's [data-mode="dark"] block holds the first.
 const BOARD_THEMES = {
-  light: { name: "Clean and light", accents: [["#2f4bd8", "Blue"], ["#6b3fd0", "Violet"], ["#0f6a73", "Teal"], ["#a3306e", "Berry"]] },
-  classic: { name: "Classic", accents: [["#0c66e4", "Blue"]] },
-  aqua: { name: "Aqua bubble", accents: [["#3fb6ff", "Sky"], ["#7fe38f", "Lime"], ["#ffd95a", "Lemon"], ["#ff9ecb", "Bubblegum"]] },
-  sticker: { name: "Sticker pop", accents: [["#ff5a8a", "Pink"], ["#3dd6c4", "Teal"], ["#ffc21a", "Yellow"], ["#9d7bff", "Violet"]] },
-  realm: { name: "Realm ledger", accents: [["#7a2a22", "Oxblood"], ["#1f4a5a", "Deep teal"], ["#4a2f5e", "Plum"], ["#5a4410", "Umber"]] },
-  soft: { name: "Soft and sunny", accents: [["#c3b8ff", "Lavender"], ["#ffb3a6", "Peach"], ["#a9e3b9", "Mint"], ["#ffdc7a", "Butter"]] },
+  light: { name: "Clean and light", accents: [["#2f4bd8", "Blue"], ["#6b3fd0", "Violet"], ["#0f6a73", "Teal"], ["#a3306e", "Berry"]],
+           dark: ["#8ea2ff", "#b39dff", "#5fc9d1", "#f08cc0"] },
+  classic: { name: "Classic", accents: [["#0c66e4", "Blue"]], dark: ["#579dff"] },
+  aqua: { name: "Aqua bubble", accents: [["#3fb6ff", "Sky"], ["#7fe38f", "Lime"], ["#ffd95a", "Lemon"], ["#ff9ecb", "Bubblegum"]],
+          dark: ["#3fb6ff", "#7fe38f", "#ffd95a", "#ff9ecb"] },
+  sticker: { name: "Sticker pop", accents: [["#ff5a8a", "Pink"], ["#3dd6c4", "Teal"], ["#ffc21a", "Yellow"], ["#9d7bff", "Violet"]],
+             dark: ["#ff5a8a", "#3dd6c4", "#ffc21a", "#9d7bff"] },
+  realm: { name: "Realm ledger", accents: [["#7a2a22", "Oxblood"], ["#1f4a5a", "Deep teal"], ["#4a2f5e", "Plum"], ["#5a4410", "Umber"]],
+           dark: ["#d4776b", "#6fb0c4", "#b48fd0", "#d6b15a"] },
+  soft: { name: "Soft and sunny", accents: [["#c3b8ff", "Lavender"], ["#ffb3a6", "Peach"], ["#a9e3b9", "Mint"], ["#ffdc7a", "Butter"]],
+          dark: ["#c3b8ff", "#ffb3a6", "#a9e3b9", "#ffdc7a"] },
 };
+// Light or dark: "system" (the default) follows the OS, "light" and "dark" stay put. Kept in this browser.
+const MODES = ["system", "light", "dark"];
+const darkOS = matchMedia("(prefers-color-scheme: dark)");
+function storedMode() {
+  let mode = "";
+  try { mode = localStorage.getItem("board.mode") || ""; } catch {}
+  return MODES.includes(mode) ? mode : "system";
+}
+const isDark = mode => mode === "dark" || (mode === "system" && darkOS.matches);
 function storedTheme() {
   let theme = "";
   try { theme = localStorage.getItem("board.theme") || ""; } catch {}
@@ -932,14 +1025,17 @@ function storedAccent(theme) {
   const offered = BOARD_THEMES[theme].accents;
   return offered.some(([c]) => c === accent) ? accent : offered[0][0];
 }
-// A theme's own accent needs no inline value; another of its accents overrides --accent.
-function applyTheme(theme, accent) {
-  const root = document.documentElement;
+// A theme's own accent needs no inline value; another of its accents overrides --accent, with its
+// dark twin in dark mode. accent is always the light one: that is what is stored.
+function applyTheme(theme, accent, mode = modeNow) {
+  const root = document.documentElement, t = BOARD_THEMES[theme], dark = isDark(mode);
   root.dataset.theme = theme;
-  if (accent === BOARD_THEMES[theme].accents[0][0]) root.style.removeProperty("--accent");
-  else root.style.setProperty("--accent", accent);
+  root.dataset.mode = dark ? "dark" : "light";
+  const i = Math.max(0, t.accents.findIndex(([c]) => c === accent));
+  if (i === 0) root.style.removeProperty("--accent");
+  else root.style.setProperty("--accent", dark ? t.dark[i] : accent);
 }
-let themeNow = storedTheme(), accentNow = storedAccent(themeNow);
+let themeNow = storedTheme(), accentNow = storedAccent(themeNow), modeNow = storedMode();
 applyTheme(themeNow, accentNow);
 </script>
 </head>
@@ -956,7 +1052,7 @@ applyTheme(themeNow, accentNow);
     <option value="filed-new">First committed, newest first</option><option value="filed-old">First committed, oldest first</option></select></label>
   <label id="listSortLabel" class="hint" hidden>Sort <select id="listSort" title="Order the archive (display only; the file keeps its order)">
     <option value="file">Newest archived</option><option value="desc">Key, high to low</option><option value="asc">Key, low to high</option></select></label>
-  <span id="themePick"><label class="hint">Theme <select id="themeSel" title="The board's look, remembered in this browser"></select></label><span id="accentSel" role="group" aria-label="Accent colour"></span></span>
+  <span id="themePick"><label class="hint">Theme <select id="themeSel" title="The board's look, remembered in this browser"></select></label><span id="accentSel" role="group" aria-label="Accent colour"></span><button type="button" id="modeBtn"></button></span>
   <span id="status">Loading…</span>
   <button type="button" id="settingsBtn" title="This store's settings (board.json)" aria-label="Settings">⚙</button>
 </header>
@@ -964,7 +1060,7 @@ applyTheme(themeNow, accentNow);
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="docView" hidden></section>
-<footer id="tagline">A wizard for your backlog, straight from middle management.</footer>
+<footer id="tagline">A wizard for your backlog, straight outta middle management.</footer>
 <div id="version"></div>
 <script src="/marked.min.js"></script>
 
@@ -2895,12 +2991,19 @@ $("#colSort").addEventListener("change", e => {
   doc && render();
 });
 // The Theme menu and the chosen theme's accent swatches (BOARD_THEMES and applyTheme are in the head).
+// The mode button: its icon, its name, and what it means.
+const MODE_LOOK = { system: ["◐", "System", "light or dark as your computer is"], light: ["☀", "Light", "always light"], dark: ["☾", "Dark", "always dark"] };
+const nextMode = () => MODES[(MODES.indexOf(modeNow) + 1) % MODES.length];
 function showThemePick() {
-  const offered = BOARD_THEMES[themeNow].accents;
+  const t = BOARD_THEMES[themeNow], dark = isDark(modeNow);
   $("#themeSel").value = themeNow;
-  $("#accentSel").hidden = offered.length < 2;
-  $("#accentSel").innerHTML = offered.map(([c, name]) =>
-    `<button type="button" data-accent="${c}" style="--swatch: ${c}" title="${name} accent" aria-label="${name} accent" aria-pressed="${c === accentNow}"></button>`).join("");
+  $("#accentSel").hidden = t.accents.length < 2;
+  $("#accentSel").innerHTML = t.accents.map(([c, name], i) =>
+    `<button type="button" data-accent="${c}" style="--swatch: ${dark ? t.dark[i] : c}" title="${name} accent" aria-label="${name} accent" aria-pressed="${c === accentNow}"></button>`).join("");
+  const [icon, name, means] = MODE_LOOK[modeNow];
+  $("#modeBtn").textContent = icon;
+  $("#modeBtn").title = `Colour mode: ${name}, ${means}. Click for ${MODE_LOOK[nextMode()][1]}.`;
+  $("#modeBtn").setAttribute("aria-label", `Colour mode: ${name}`);
 }
 function setTheme(theme, accent) {
   themeNow = theme; accentNow = accent;
@@ -2910,6 +3013,12 @@ function setTheme(theme, accent) {
 $("#themeSel").innerHTML = Object.entries(BOARD_THEMES).map(([id, t]) => `<option value="${id}">${t.name}</option>`).join("");
 $("#themeSel").addEventListener("change", e => setTheme(e.target.value, storedAccent(e.target.value)));
 $("#accentSel").addEventListener("click", e => { const b = e.target.closest("button[data-accent]"); if (b) setTheme(themeNow, b.dataset.accent); });
+$("#modeBtn").addEventListener("click", () => {
+  modeNow = nextMode();
+  try { localStorage.setItem("board.mode", modeNow); } catch {}
+  applyTheme(themeNow, accentNow); showThemePick();
+});
+darkOS.addEventListener("change", () => { applyTheme(themeNow, accentNow); showThemePick(); });  // System follows the OS as it changes
 showThemePick();
 
 // Pick up edits made elsewhere (an editor, another Claude session) while idle.
