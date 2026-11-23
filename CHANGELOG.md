@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - Pickup can hand stories to the Antigravity CLI (`agy`): set `"agent": "agy"` in `board.json`, pass `--agent agy` to `kandalf init`, or switch an existing store with `kandalf agent agy`. Antigravity sessions run detached with `agy --output-format stream-json --print`, get the store with `--add-dir`, receive the board's hooks in `.agents/hooks.json`, and open in `agy --conversation` on `kandalf attach`.
+- An Antigravity store's `auto` and `bypassPermissions` both run `agy --dangerously-skip-permissions`, and its `model` takes the short names `neon`, `argon`, `hydrogen`, `flash`, `opus` and `sonnet` (each that model's `-medium` variant).
 
 ## 1.1.15
 

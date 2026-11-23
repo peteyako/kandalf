@@ -8,9 +8,9 @@ It's a local kanban board for planning work for AI agents, served on your machin
 
 **Why it exists.** kandalf is for organising planning sessions: the plans you write with an agent, the stories they break into, and what becomes of each. Plans already live as markdown files, so that is all kandalf keeps. The board is one more markdown file, readable and editable by hand, and each plan doc sits beside it as it was written. No database, nothing to import or sync, and nothing to install beyond Python 3.10+ and git.
 
-Plans pass both ways between kandalf and your agent. Plan in a Claude Code or GitHub Copilot CLI session in your repo, then say "add a story to kandalf": `kandalf init` taught the repo's agents how, with a section in its `AGENTS.md` and `CLAUDE.md`, so the session writes the plan doc into the store and files its tile on the backlog. The other way, plan on the board and hand it to an agent.
+Plans pass both ways between kandalf and your agent. Plan in a Claude Code, GitHub Copilot CLI or Antigravity CLI session in your repo, then say "add a story to kandalf": `kandalf init` taught the repo's agents how, with a section in its `AGENTS.md` and `CLAUDE.md`, so the session writes the plan doc into the store and files its tile on the backlog. The other way, plan on the board and hand it to an agent.
 
-On top of the files sits just enough process to help things along. Drag a story to In flight and a background Claude Code or Copilot session starts on it, in its own git worktree, given the tile and the plan doc it links. Its progress shows on the tile, `kandalf attach` opens the session to carry on by hand, and when it's ready for review you squash, merge and close it from the board.
+On top of the files sits just enough process to help things along. Drag a story to In flight and a background Claude Code, Copilot or Antigravity session starts on it, in its own git worktree, given the tile and the plan doc it links. Its progress shows on the tile, `kandalf attach` opens the session to carry on by hand, and when it's ready for review you squash, merge and close it from the board.
 
 Contributions are welcome if you have a burning interest, or an interest in burning tokens.
 
@@ -45,16 +45,29 @@ kandalf serve               # the board, on http://127.0.0.1:7788 (or the port i
 Pickup is off until you turn it on. Once it's on, each story that lands in In flight gets a background agent session in your repo, working in its own worktree and branch. By default the session edits files and runs commands without asking (Claude Code's auto mode decides what's allowed), and it's told to stop before merging or pushing.
 
 1. **Turn it on.** Answer yes when `kandalf init` asks, or set `"pickup": true` in the store's `board.json`. A running `kandalf serve` notices within a few seconds, with no restart: turned on, it starts on the tiles already in flight; turned off, it leaves running sessions alone.
-2. **Trust the repo.** Run the agent (`claude`, or `copilot` for a Copilot store) once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers its worktrees, which a store made by `kandalf init` keeps under `.worktrees/` (gitignored). A story that works in several repos (`Repos:` on its tile) needs each of them trusted.
+2. **Trust the repo.** Run the agent (`claude`, `copilot` for a Copilot store, or `agy` for an Antigravity store, signed in) once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers its worktrees, which a store made by `kandalf init` keeps under `.worktrees/` (gitignored). A story that works in several repos (`Repos:` on its tile) needs each of them trusted.
 3. **Check.** `kandalf doctor` lists what works and what's missing.
 
 Pickup needs [Claude Code](https://claude.com/claude-code) (the default), the [GitHub Copilot CLI](https://github.com/features/copilot/cli), or the [Antigravity CLI](https://antigravity.google/docs) (`agy`). See [Platforms and requirements](#platforms-and-requirements).
 
+`kandalf agent claude` (or `copilot`, or `agy`) switches an existing store. It sets `agent`, drops `model` (that was the old agent's), and marks each story the old agent picked up as gone, so **Continue** on its tile starts the new agent in the same worktree. It refuses while an old session is working or idle; `--force` stops those first.
+
+### Using Claude Code
+
+Claude Code is the default: `kandalf init` picks it when `claude` is on your PATH, and `"agent": "claude"` in `board.json` (or no `agent` at all) keeps it.
+
+- **It runs as a Claude Code background session**, `claude --bg`, so Claude Code keeps it and lists it in `claude agents`.
+- **Attaching opens it.** `kandalf attach ab12cd34` runs `claude attach ab12cd34`: the session's own screen, to watch it or carry on.
+- **It can stop to ask.** When it asks a question or is interrupted, status and the tile say it's waiting for your input.
+- **It gets the hooks with `--settings`**, pointing at the store's `.claude/settings.json`, so the worktree needs no file of its own.
+- **It reaches the store through `docs/plans`**, the link in its worktree. The other repos a `Repos:` line names come with `--add-dir`.
+- **Models** are `opus` (the default), `sonnet`, `haiku` and `fable`, or a full model id.
+
+The `permission` setting goes to Claude Code as it is, as `--permission-mode`: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions`.
+
 ### Using the Copilot CLI
 
 Pick Copilot when `kandalf init` asks (or pass `--agent copilot`), or set `"agent": "copilot"` in `board.json`.
-
-`kandalf agent copilot` (or `kandalf agent claude`) switches an existing store. It sets `agent`, drops `model` (that was the old agent's), and marks each story the old agent picked up as gone, so **Continue** on its tile starts the new agent in the same worktree. It refuses while an old session is working or idle; `--force` stops those first.
 
 A Copilot session works a little differently:
 
@@ -84,6 +97,7 @@ An Antigravity session works much like a Copilot session:
 - **Attaching follows it.** `kandalf attach ab12cd34` prints what the session has said and the tools it ran, then follows it while it works (Ctrl-C leaves it working). Once it has finished, it opens the conversation with `agy --conversation` in the worktree, with the folders and permissions it ran with.
 - **It gets the hooks in `.agents/hooks.json`.** Pickup writes the board's `PostToolUse` hooks there in the worktree (kept out of git by the repo's `info/exclude`).
 - **It's given the store.** The session gets the store with `--add-dir`, for the board and plan docs behind `docs/plans`.
+- **Models have short names.** `model` (or a tile's `Model:` line) can be `auto` (Antigravity picks), a full id such as `gemini-4-neon-high`, or an alias: `neon`, `argon`, `hydrogen`, `flash`, `opus` and `sonnet` each run that model's `-medium` variant.
 
 The `permission` setting maps onto Antigravity's flags:
 
@@ -117,7 +131,7 @@ The board writes the session onto the tile as one line:
 
 ``Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.``
 
-A Copilot store's line starts ``Copilot session``. A story in several repos names each worktree: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.``
+A Copilot store's line starts ``Copilot session``, an Antigravity store's ``Antigravity session``. A story in several repos names each worktree: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.``
 
 The page shows that line as a block with the session's state, a button that copies the attach command, and a button for what you can do next:
 
@@ -134,7 +148,7 @@ The page shows that line as a block with the session's state, a button that copi
 
 Each session keeps an indented `Handoff:` line on its tile: what's done, what it's doing and what comes next. The tile and the branch are all a new session needs to carry on.
 
-- **Pause** puts a story aside, for Claude and Copilot sessions alike. The board stops the session and resumes it once, telling it to finish or undo the step it's on, commit what's worth keeping, rewrite the `Handoff:` line in full (done, uncommitted, next, undecided) and stop. A paused story gives up its place, so the next queued tile starts. Moving a working tile out of In flight, to any column, pauses it the same way.
+- **Pause** puts a story aside, whichever agent runs the session. The board stops the session and resumes it once, telling it to finish or undo the step it's on, commit what's worth keeping, rewrite the `Handoff:` line in full (done, uncommitted, next, undecided) and stop. A paused story gives up its place, so the next queued tile starts. Moving a working tile out of In flight, to any column, pauses it the same way.
 - **Continue** gets a stopped session going again:
   - On a **paused** story, a new session takes over from the `Handoff:` line and the branch, in the same worktree. It doesn't need the old conversation, so this works days later, after a server restart, or after switching agents.
   - On an **idle** or **gone** session, it resumes the same conversation, telling the session to carry on from where it was, check `git status` and the tile, and take another way rather than wait again. If the conversation can't be resumed, a new session takes over in the same worktree.
@@ -149,13 +163,13 @@ A take-over, whether from Continue or the queue, runs on the model and repos the
 
 ### Messages and the log
 
-Every session the board can reach, Claude or Copilot, has a message box in its block. **Send** (or ⌘↵ / Ctrl+↵) puts what you type into the same conversation.
+Every session the board can reach, whichever the agent, has a message box in its block. **Send** (or ⌘↵ / Ctrl+↵) puts what you type into the same conversation.
 
 - The box is **open** when the session waits for you: it asked something, ended on an error, or its story is ready for review and it stopped.
 - Otherwise it's **folded** behind a chevron. Unfold it to **Interrupt with a message** while the session works (it stops mid-step, reads your message and carries on from where it was), or to message a session that's idle or gone.
 - A paused story has no message box; it has **Continue** instead.
 
-Above the message field, the box shows the session's **log**: what it was told (`❯`), what it said and each tool it ran (`⏺`), and the start of each result (`⎿`), laid out like the session's own screen, newest last. It refreshes every few seconds while the box is open and stays at the newest line unless you scroll up. It's taller in an opened tile, and **↗ window** opens it full-size in its own tab (`/log?key=PLN-01`). A Claude session's log comes from Claude Code's transcript under `~/.claude/projects`, a Copilot session's from the output the board keeps.
+Above the message field, the box shows the session's **log**: what it was told (`❯`), what it said and each tool it ran (`⏺`), and the start of each result (`⎿`), laid out like the session's own screen, newest last. It refreshes every few seconds while the box is open and stays at the newest line unless you scroll up. It's taller in an opened tile, and **↗ window** opens it full-size in its own tab (`/log?key=PLN-01`). A Claude session's log comes from Claude Code's transcript under `~/.claude/projects`, a Copilot or Antigravity session's from the output the board keeps.
 
 ### Review and merge
 
@@ -299,7 +313,7 @@ kandalf commit status       what's queued, and when it will commit
 kandalf commit now          commit and push the queue right away
 kandalf check FILE...       would the board open this file view-only? names the first bad line, and a second In flight or Done column
 kandalf where               which store, its key, port, app and repo
-kandalf attach ID|KEY       open a story's session (for Claude, `claude attach`; for Copilot, follow it, then `copilot --resume`)
+kandalf attach ID|KEY       open a story's session (for Claude, `claude attach`; for Copilot or Antigravity, follow it, then `copilot --resume` or `agy --conversation`)
 kandalf status KEY          the Status line for a story's session, as the tile's Status button writes it
 kandalf agent [NAME]        the agent pickup hands stories to; or switch to claude, copilot or agy (--force)
 kandalf repo add PATH       another repo stories can work in (--name NAME, --trunk BRANCH)
@@ -312,7 +326,7 @@ kandalf hook autocommit     the Claude Code hook that queues an edit (reads the 
 kandalf hook check          the Claude Code hook that flags a file the board would open view-only
 ```
 
-Run in a terminal, `kandalf init` asks for whatever you don't pass. `--yes` takes the defaults: pickup off and hooks on. With `--pickup`, the agent is `claude` if it's on your PATH, else `copilot` if that is.
+Run in a terminal, `kandalf init` asks for whatever you don't pass. `--yes` takes the defaults: pickup off and hooks on. With `--pickup`, the agent is `claude` if it's on your PATH, else `copilot` if that is, else `agy` if that is.
 
 ## Commits and pushes
 
@@ -327,7 +341,7 @@ On start, the server also picks up changes left over from before. A commit takes
 
 ## Hooks
 
-The board's hooks are Claude Code hooks, and the Copilot CLI reads them too. They live in the store's `.claude/settings.json`, committed with the rest of it. They're part of the board, not an option: `kandalf init` puts them there, and `kandalf serve` adds them on start to a store that lacks them (as `kandalf hooks --add` does), unless `"hooks": false` is set (`kandalf init --no-hooks` sets it). Nothing is committed to the app:
+The board's hooks are Claude Code hooks. The Copilot CLI reads them too, and an Antigravity session gets them written into its worktree's `.agents/hooks.json`. They live in the store's `.claude/settings.json`, committed with the rest of it. They're part of the board, not an option: `kandalf init` puts them there, and `kandalf serve` adds them on start to a store that lacks them (as `kandalf hooks --add` does), unless `"hooks": false` is set (`kandalf init --no-hooks` sets it). Nothing is committed to the app:
 
 - **Pickup sessions** start with `claude --settings <store>/.claude/settings.json`, so every worktree gets the hooks without a file of its own.
 - **Your own sessions in the app** get them through `.claude/settings.local.json`, a gitignored symlink to the store's file. If the app already has its own `settings.local.json`, the hooks are merged into it and everything else in it is kept.
@@ -406,9 +420,9 @@ node --test test_page.js
 
 The two `*_cases.json` files are run by both readers: `test_tiles.py` and `test_jobs.py` on the Python side, `test_page.js` on the page's. A rule that board.html and the server both read gets a case in one of them.
 
-The page's bottom right corner says which kandalf is serving it: `kandalf 1.1.10` for a build of a release's tag with every file committed, else `kandalf 1.1.10+dev` and when it was built, with the commit in its tooltip. `setup.py` stamps an installed copy when it is built; one run from a checkout asks git when the server starts.
+The page's bottom right corner says which kandalf is serving it: `kandalf 1.2.0` for a build of a release's tag with every file committed, else `kandalf 1.2.0+dev` and when it was built, with the commit in its tooltip. `setup.py` stamps an installed copy when it is built; one run from a checkout asks git when the server starts.
 
-To support another agent, `kandalf/claude_code.py` and `kandalf/copilot_cli.py` are the seams: nothing else runs `claude` or `copilot`, and its docstring lists the functions another agent's module would provide.
+To support another agent, `kandalf/claude_code.py`, `kandalf/copilot_cli.py` and `kandalf/agy_cli.py` are the seams: nothing else runs `claude`, `copilot` or `agy`, and its docstring lists the functions another agent's module would provide.
 
 ## Licence
 
