@@ -474,7 +474,7 @@ node --test test_page.js
 
 The two `*_cases.json` files are run by both readers: `test_tiles.py` and `test_jobs.py` on the Python side, `test_page.js` on the page's. A rule that board.html and the server both read gets a case in one of them.
 
-The page's bottom right corner says which kandalf is serving it: `kandalf 1.2.0` for a build of a release's tag with every file committed, else `kandalf 1.2.0+dev` and when it was built, with the commit in its tooltip. `setup.py` stamps an installed copy when it is built; one run from a checkout asks git when the server starts.
+The page's bottom right corner says which kandalf is serving it: `kandalf 1.3.0` for a build of a release's tag with every file committed, else `kandalf 1.3.0+dev` and when it was built, with the commit in its tooltip. `setup.py` stamps an installed copy when it is built; one run from a checkout asks git when the server starts.
 
 To support another agent, `kandalf/claude_code.py`, `kandalf/copilot_cli.py` and `kandalf/agy_cli.py` are the seams: nothing else runs `claude`, `copilot` or `agy`, and its docstring lists the functions another agent's module would provide.
 
