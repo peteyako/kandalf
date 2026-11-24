@@ -870,10 +870,24 @@ def unmerged_done(store, text: str) -> dict:
     return out
 
 
+# A board's name on Plan and Build and the name it had before the move: whatever reads a
+# board's history reads both, so a tile keeps its dates across the move.
+WAS = {stores.BUILD: stores.OLD_BUILD, stores.PLAN: stores.OLD_PLAN}
+
+
+def history_paths(store, board: Path) -> list:
+    """The paths a board's git history is read by: the board, and, for a store's Build or Plan
+    board on the new names, the old name it had before the move (build.md and plans.md, plan.md
+    and backlog.md)."""
+    was = WAS.get(board.name) if board.parent == store.dir and board.name in store.boards else None
+    return [str(board)] + ([str(board.parent / was)] if was else [])
+
+
 def first_committed(store, board: Path) -> dict:
     """{"KEY-NN": Unix seconds} for each tile key: the author time of the first commit
-    that added a line for it to this board. Author time, because a rebase rewrites the
-    commit time. Cached per HEAD, so it's one git log per new commit."""
+    that added a line for it to this board, or to the board under its old name (history_paths),
+    the earliest kept. Author time, because a rebase rewrites the commit time. Cached per HEAD,
+    so it's one git log per new commit."""
     root = store.root
     if not root:
         return {}
@@ -881,14 +895,15 @@ def first_committed(store, board: Path) -> dict:
     if (board, head) in _first_cache:
         return _first_cache[(board, head)]
     log = subprocess.run(["git", "-C", str(root), "log", "--reverse", "--format=@@C %at", "-p",
-                          "--unified=0", "--", str(board)], capture_output=True, text=True).stdout
+                          "--unified=0", "--", *history_paths(store, board)], capture_output=True, text=True).stdout
     opens = reader.head_re(store)
     first, t = {}, None
     for line in log.splitlines():
         if line.startswith("@@C "):
             t = int(line[4:])
         elif line.startswith("+") and (m := opens.match(line[1:])):
-            first.setdefault(m.group(1), t)
+            key = m.group(1)
+            first[key] = min(t, first.get(key, t))
     seed = store.dir / FIRST_SEED
     if board == store.dir / store.build and seed.is_file():
         for key, at in json.loads(seed.read_text(encoding="utf-8"))["first"].items():

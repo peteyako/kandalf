@@ -552,6 +552,29 @@ class Restart(Base):
             self.assertEqual(q["paths"], [DOC])
 
 
+class History(Base):
+    OLD = "2020-01-02T03:04:05+00:00"
+
+    def test_a_tile_keeps_its_first_committed_date_across_the_move(self):
+        with mock.patch.dict(os.environ, {"GIT_AUTHOR_DATE": self.OLD, "GIT_COMMITTER_DATE": self.OLD}):
+            st = make_store(self.top)
+            for name, tile in (("plans.md", "- [ ] PLN-50 **Old build tile.**\n"), ("backlog.md", "- [ ] PLN-51 **Old plan tile.**\n")):
+                board = st.dir / name
+                board.write_text(board.read_text(encoding="utf-8") + "\n" + tile, encoding="utf-8")
+            git(st.dir, "commit", "-qam", "board: two old tiles")
+        old = int(datetime.datetime.fromisoformat(self.OLD).timestamp())
+        renaming.move(st, sessions=IDLE, record=commit_now)
+        self.assertEqual(st.boards, ("build.md", "plan.md"))
+        self.assertNotEqual(git(st.dir, "log", "-1", "--format=%at").strip(), str(old))  # the move is now
+        serve._first_cache.clear()
+        build = serve.first_committed(st, st.dir / "build.md")
+        plan = serve.first_committed(st, st.dir / "plan.md")
+        self.assertEqual(build.get("PLN-50"), old)
+        self.assertEqual(plan.get("PLN-51"), old)
+        self.assertTrue(build and all(at == old for at in build.values()), build)
+        self.assertTrue(all(at == old for at in plan.values()), plan)
+
+
 class Headers(Base):
     def test_the_move_gives_an_old_template_header_the_new_templates_read_from_its_file(self):
         st = make_store(self.top, repo=False)
