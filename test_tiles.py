@@ -98,7 +98,7 @@ class Parse(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())  # no board.json: keys are PLN-NN
         self.plans = {t.key: t for t in tiles.parse(self.store, PLANS)}
-        self.backlog = {t.key: t for t in tiles.parse(self.store, BACKLOG, file="backlog.md")}
+        self.backlog = {t.key: t for t in tiles.parse(self.store, BACKLOG, file="plan.md")}
 
     def test_tiles_are_found_with_their_columns_and_bodies(self):
         got = tiles.parse(self.store, LINKS)
@@ -335,11 +335,11 @@ class Helpers(unittest.TestCase):
         self.assertTrue(tiles.session(tiles.parse(self.store, new)[0].text))
 
     def test_key_assign_keys_a_starred_tile_too_and_keeps_its_star(self):
-        (self.store.dir / "plans.md").write_text("## To do\n\n* [ ] **Starred.**\n- [ ] PLN-04 **Keyed.**\n- [ ] **Dashed.**\n", encoding="utf-8")
+        (self.store.dir / "build.md").write_text("## To do\n\n* [ ] **Starred.**\n- [ ] PLN-04 **Keyed.**\n- [ ] **Dashed.**\n", encoding="utf-8")
         self.assertEqual(pln.assign(self.store), ["PLN-05", "PLN-06"])
-        self.assertEqual((self.store.dir / "plans.md").read_text(encoding="utf-8"),
+        self.assertEqual((self.store.dir / "build.md").read_text(encoding="utf-8"),
                          "## To do\n\n* [ ] PLN-06 **Starred.**\n- [ ] PLN-04 **Keyed.**\n- [ ] PLN-05 **Dashed.**\n")
-        self.assertEqual(pln.highest(self.store, self.store.dir / "plans.md"), 6)
+        self.assertEqual(pln.highest(self.store, self.store.dir / "build.md"), 6)
 
 
 FAMILY_PLANS = """# Plans
@@ -381,19 +381,19 @@ RING = """## In flight
 class SnapshotTests(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())
-        self.snap = tiles.Snapshot(self.store, {"plans.md": FAMILY_PLANS, tiles.ARCHIVE_LOG: FAMILY_ARCHIVE})
+        self.snap = tiles.Snapshot(self.store, {"build.md": FAMILY_PLANS, tiles.ARCHIVE_LOG: FAMILY_ARCHIVE})
 
     def test_it_reads_the_files_of_a_store_that_are_there(self):
         (self.store.dir / "archive").mkdir(parents=True, exist_ok=True)
-        (self.store.dir / "plans.md").write_text(FAMILY_PLANS, encoding="utf-8")
+        (self.store.dir / "build.md").write_text(FAMILY_PLANS, encoding="utf-8")
         (self.store.dir / tiles.ARCHIVE_LOG).write_text(FAMILY_ARCHIVE, encoding="utf-8")
-        snap = tiles.Snapshot.read(self.store)  # no backlog.md
+        snap = tiles.Snapshot.read(self.store)  # no plan.md
         self.assertEqual(sorted(snap.index()), ["PLN-40", "PLN-41", "PLN-80", "PLN-81", "PLN-82", "PLN-83", "PLN-84"])
-        self.assertEqual(sorted(tiles.Snapshot.read(self.store, ["plans.md"]).index()), ["PLN-80", "PLN-81", "PLN-82", "PLN-83", "PLN-84"])
+        self.assertEqual(sorted(tiles.Snapshot.read(self.store, ["build.md"]).index()), ["PLN-80", "PLN-81", "PLN-82", "PLN-83", "PLN-84"])
 
     def test_the_index_says_where_each_keyed_tile_is_and_its_own_tests_line(self):
         index = self.snap.index()
-        self.assertEqual(index["PLN-83"], {"title": "Master", "file": "plans.md", "column": "In flight", "done": False,
+        self.assertEqual(index["PLN-83"], {"title": "Master", "file": "build.md", "column": "In flight", "done": False,
                                            "parent": None, "mentions": [], "blockers": [], "decision": None,
                                            "tests": "full", "domain": None})
         self.assertEqual((index["PLN-41"]["file"], index["PLN-41"]["done"], index["PLN-41"]["tests"]),
@@ -401,8 +401,8 @@ class SnapshotTests(unittest.TestCase):
         self.assertIsNone(index["PLN-80"]["tests"])  # its own line only: the master's is for nearest()
 
     def test_a_key_on_two_files_is_the_first_one_s_tile(self):
-        both = tiles.Snapshot(self.store, {"plans.md": "## A\n\n- [ ] PLN-01 **Plans.**\n", "backlog.md": "## B\n\n- [ ] PLN-01 **Backlog.**\n"})
-        self.assertEqual(both.index()["PLN-01"]["file"], "plans.md")
+        both = tiles.Snapshot(self.store, {"build.md": "## A\n\n- [ ] PLN-01 **Plans.**\n", "plan.md": "## B\n\n- [ ] PLN-01 **Backlog.**\n"})
+        self.assertEqual(both.index()["PLN-01"]["file"], "build.md")
         self.assertEqual(both.texts(), {"PLN-01": "- [ ] PLN-01 **Plans.**"})
 
     def test_the_texts_are_the_keyed_tiles_markdown(self):
@@ -420,11 +420,11 @@ class SnapshotTests(unittest.TestCase):
         self.assertIsNone(self.snap.nearest("PLN-99", tiles.tests))
 
     def test_a_tile_s_own_line_beats_its_master_s(self):
-        own = tiles.Snapshot(self.store, {"plans.md": "## A\n\n- [ ] PLN-01 **M.**\n  Tests: full\n- [ ] PLN-02 **K.** Part of PLN-01.\n  Tests: affected\n"})
+        own = tiles.Snapshot(self.store, {"build.md": "## A\n\n- [ ] PLN-01 **M.**\n  Tests: full\n- [ ] PLN-02 **K.** Part of PLN-01.\n  Tests: affected\n"})
         self.assertEqual(own.nearest("PLN-02", tiles.tests), "affected")
 
     def test_a_ring_of_masters_is_broken_with_the_first_of_them_standing_as_the_master(self):
-        ring = tiles.Snapshot(self.store, {"plans.md": RING})
+        ring = tiles.Snapshot(self.store, {"build.md": RING})
         self.assertEqual({k: t["parent"] for k, t in ring.index().items()}, {"PLN-01": None, "PLN-02": "PLN-01", "PLN-03": "PLN-02"})
         self.assertEqual(ring.lineage("PLN-01"), [])
         self.assertEqual([t.key for t in ring.lineage("PLN-03")], ["PLN-02", "PLN-01"])
@@ -447,19 +447,19 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("context", kid)
 
     def test_a_master_on_the_backlog_is_found_for_context(self):
-        snap = tiles.Snapshot(self.store, {"plans.md": "## In flight\n\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n",
-                                           "backlog.md": "## Feature\n\n- [ ] PLN-01 **Master.**\n  The design.\n"})
+        snap = tiles.Snapshot(self.store, {"build.md": "## In flight\n\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n",
+                                           "plan.md": "## Feature\n\n- [ ] PLN-01 **Master.**\n  The design.\n"})
         self.assertEqual((snap.in_flight()[0]["of"], snap.in_flight()[0]["context"]), ("PLN-01", "- [ ] PLN-01 **Master.**\n  The design."))
 
     def test_an_unkeyed_tile_s_links_are_ignored(self):
-        two = tiles.Snapshot(self.store, {"plans.md": "## To do\n\n- [ ] Unkeyed. Moves with PLN-5 and PLN-6.\n- [ ] PLN-5 keyed\n"})
+        two = tiles.Snapshot(self.store, {"build.md": "## To do\n\n- [ ] Unkeyed. Moves with PLN-5 and PLN-6.\n- [ ] PLN-5 keyed\n"})
         self.assertEqual(two.linked(), {})
-        one = tiles.Snapshot(self.store, {"plans.md": "## To do\n\n- [ ] Unkeyed. Moves with PLN-5.\n- [ ] PLN-5 keyed\n"})
+        one = tiles.Snapshot(self.store, {"build.md": "## To do\n\n- [ ] Unkeyed. Moves with PLN-5.\n- [ ] PLN-5 keyed\n"})
         self.assertEqual(one.linked(), {})
 
     def test_linked_groups_run_across_the_files(self):
-        snap = tiles.Snapshot(self.store, {"backlog.md": "## A\n\n- [ ] PLN-74 **A.** Moves with PLN-75.\n",
-                                           "plans.md": "## B\n\n- [ ] PLN-75 **B.**\n- [ ] PLN-01 **One.** Moves with PLN-01.\n"})
+        snap = tiles.Snapshot(self.store, {"plan.md": "## A\n\n- [ ] PLN-74 **A.** Moves with PLN-75.\n",
+                                           "build.md": "## B\n\n- [ ] PLN-75 **B.**\n- [ ] PLN-01 **One.** Moves with PLN-01.\n"})
         self.assertEqual(snap.linked(), {"PLN-74": ["PLN-75"], "PLN-75": ["PLN-74"]})
 
 
@@ -472,7 +472,7 @@ class BlockedSnapshotTests(unittest.TestCase):
         self.store = stores.Store(tempfile.mkdtemp())
 
     def snap(self, **files):
-        return tiles.Snapshot(self.store, {"plans.md": BLOCKED_PLANS, **files})
+        return tiles.Snapshot(self.store, {"build.md": BLOCKED_PLANS, **files})
 
     def test_the_index_carries_each_tile_s_blockers_and_its_decision(self):
         index = self.snap(**{tiles.ARCHIVE_LOG: "## Archived\n\n" + DECIDED}).index()
@@ -487,7 +487,7 @@ class BlockedSnapshotTests(unittest.TestCase):
         self.assertEqual(index["PLN-30"]["decision"]["text"], "retire it.")
 
     def test_an_in_flight_tile_carries_what_still_blocks_it(self):
-        tile = self.snap(**{"backlog.md": "## Ideas\n\n- [ ] PLN-30 **Auth.**\n"}).in_flight()[0]
+        tile = self.snap(**{"plan.md": "## Ideas\n\n- [ ] PLN-30 **Auth.**\n"}).in_flight()[0]
         self.assertEqual(tile["blocked"], ["PLN-30"])
         self.assertNotIn("decisions", tile)
 
@@ -497,8 +497,40 @@ class BlockedSnapshotTests(unittest.TestCase):
         self.assertEqual(tile["decisions"], DECIDED.rstrip("\n"))
 
     def test_a_decided_tile_put_back_on_the_backlog_blocks_again(self):
-        snap = self.snap(**{"backlog.md": "## Ideas\n\n" + DECIDED})
+        snap = self.snap(**{"plan.md": "## Ideas\n\n" + DECIDED})
         self.assertEqual(snap.blocking("PLN-41"), ["PLN-30"])
+
+
+class OldNames(unittest.TestCase):
+    """A store still on plans.md and backlog.md reads exactly as it did."""
+
+    def setUp(self):
+        folder = Path(tempfile.mkdtemp())
+        (folder / "plans.md").write_text("# Plans\n")
+        (folder / "backlog.md").write_text("# Backlog\n")
+        self.store = stores.Store(folder)
+
+    def test_a_store_with_plans_md_is_on_the_old_names(self):
+        self.assertEqual((self.store.build, self.store.plan), ("plans.md", "backlog.md"))
+
+    def test_a_key_on_two_old_files_is_the_first_one_s_tile(self):
+        both = tiles.Snapshot(self.store, {"plans.md": "## A\n\n- [ ] PLN-01 **Plans.**\n", "backlog.md": "## B\n\n- [ ] PLN-01 **Backlog.**\n"})
+        self.assertEqual(both.index()["PLN-01"]["file"], "plans.md")
+        self.assertEqual(both.texts(), {"PLN-01": "- [ ] PLN-01 **Plans.**"})
+
+    def test_a_master_in_backlog_md_is_found_for_context(self):
+        snap = tiles.Snapshot(self.store, {"plans.md": "## In flight\n\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n",
+                                           "backlog.md": "## Feature\n\n- [ ] PLN-01 **Master.**\n  The design.\n"})
+        self.assertEqual((snap.in_flight()[0]["of"], snap.in_flight()[0]["context"]), ("PLN-01", "- [ ] PLN-01 **Master.**\n  The design."))
+
+    def test_an_in_flight_tile_on_plans_md_is_blocked_by_a_tile_in_backlog_md(self):
+        snap = tiles.Snapshot(self.store, {"plans.md": BLOCKED_PLANS, "backlog.md": "## Ideas\n\n- [ ] PLN-30 **Auth.**\n"})
+        self.assertEqual(snap.in_flight()[0]["blocked"], ["PLN-30"])
+
+    def test_a_store_reads_the_files_it_has_by_their_old_names(self):
+        (self.store.dir / "plans.md").write_text(FAMILY_PLANS, encoding="utf-8")
+        snap = tiles.Snapshot.read(self.store)
+        self.assertEqual(snap.index()["PLN-83"]["file"], "plans.md")
 
 
 CASES = json.loads((HERE / "tile_cases.json").read_text(encoding="utf-8"))  # test_page.js runs the same file
@@ -564,7 +596,7 @@ class TileCases(unittest.TestCase):
     def test_each_board_has_the_tiles_the_case_says(self):
         for case in CASES["boards"]:
             with self.subTest(case["name"]):
-                got = tiles.parse(self.store, case["text"], file=case.get("file", "plans.md"))
+                got = tiles.parse(self.store, case["text"], file=case.get("file", "build.md"))
                 self.assertEqual([(t.key, t.column, t.done, t.text) for t in got],
                                  [(w["key"], w["column"], w["done"], w["md"]) for w in case["tiles"]])
                 for t, want in zip(got, case["tiles"]):

@@ -32,6 +32,8 @@ const page = new Function(
             section: name => doc.sections.find(s => s.name === name),
             open(name, text, tiles) { file = name; doc = parse(text); serverTiles = tiles || {}; } };`
 )();
+const NEW_NAMES = { build: "build.md", plan: "plan.md" }, OLD_NAMES = { build: "plans.md", plan: "backlog.md" };
+page.setNames(NEW_NAMES);  // the harness reads boards under the new names; OldNames below sets the old ones
 page.setRepos([{ name: "myapp", main: true }, { name: "api", main: false }, { name: "web", main: false }]);
 
 const PLANS = `# Plans
@@ -53,10 +55,10 @@ const PLANS = `# Plans
 `;
 // What the server knows: the other boards' tiles, and a stale word on this board's.
 const SERVER = {
-  "PLN-81": { title: "Theme analytics", file: "backlog.md", column: "Feature", done: false, parent: "PLN-70", mentions: ["PLN-70"] },
+  "PLN-81": { title: "Theme analytics", file: "plan.md", column: "Feature", done: false, parent: "PLN-70", mentions: ["PLN-70"] },
   "PLN-41": { title: "Login reopen", file: "archive/archived.md", column: "Archived", done: true, parent: null, mentions: [] },
-  "PLN-60": { title: "Needs the embed", file: "backlog.md", column: "Change", done: false, parent: null, mentions: ["PLN-75"] },
-  "PLN-12": { title: "Deleted here since the last save", file: "plans.md", column: "To do", done: false, parent: "PLN-70", mentions: [] },
+  "PLN-60": { title: "Needs the embed", file: "plan.md", column: "Change", done: false, parent: null, mentions: ["PLN-75"] },
+  "PLN-12": { title: "Deleted here since the last save", file: "build.md", column: "To do", done: false, parent: "PLN-70", mentions: [] },
 };
 
 test("a key in a tile's text becomes a link to that tile", () => {
@@ -71,16 +73,16 @@ test("a key inside a link, code or an attribute is left alone", () => {
 });
 
 test("the index is this board as it reads now, plus the server's word on the other boards", () => {
-  page.open("plans.md", PLANS, SERVER);
+  page.open("build.md", PLANS, SERVER);
   const index = page.tileIndex();
   assert.deepEqual([...index.keys()].sort(), ["PLN-100", "PLN-41", "PLN-60", "PLN-70", "PLN-74", "PLN-75", "PLN-81"]);
-  assert.deepEqual(index.get("PLN-74"), { title: "Colour tokens", file: "plans.md", column: "Done", done: true, parent: "PLN-70", mentions: ["PLN-70", "PLN-99"], blockers: [], decision: null, domain: null });
+  assert.deepEqual(index.get("PLN-74"), { title: "Colour tokens", file: "build.md", column: "Done", done: true, parent: "PLN-70", mentions: ["PLN-70", "PLN-99"], blockers: [], decision: null, domain: null });
   assert.equal(index.get("PLN-75").done, false);
-  assert.equal(index.get("PLN-81").file, "backlog.md");
+  assert.equal(index.get("PLN-81").file, "plan.md");
 });
 
 test("a master's sub-stories come from every board, in key order", () => {
-  page.open("plans.md", PLANS, SERVER);
+  page.open("build.md", PLANS, SERVER);
   const kids = page.kidsOf("PLN-70", page.tileIndex());
   assert.deepEqual(kids.map(k => [k.key, k.done, page.whereLabel(k)]),
     [["PLN-74", true, "Done"], ["PLN-75", false, "In flight"], ["PLN-81", false, "Plan"], ["PLN-100", true, "Done"]]);
@@ -94,7 +96,7 @@ test("every tile in the archive is done", () => {
 });
 
 test("related is every mention, either way, but the master, sub-stories and linked tiles", () => {
-  page.open("plans.md", PLANS, SERVER);
+  page.open("build.md", PLANS, SERVER);
   const index = page.tileIndex();
   const text = "PLN-75 **Theme auth.**\n  Part of PLN-70. Runs after PLN-41. Moves with PLN-74.";
   assert.deepEqual(page.relatedTo("PLN-75", text, index, ["PLN-74"]), ["PLN-41", "PLN-60"]);
@@ -126,7 +128,7 @@ const FOLDS = `# Plans
 const shape = items => items.map(i => i.ghost ? [i.ghost, ...i.cards.map(page.cardKey)] : page.cardKey(i.card));
 
 test("a column shows a master with its sub-stories folded in, and the rest under a ghost of their master", () => {
-  page.open("plans.md", FOLDS, SERVER);
+  page.open("build.md", FOLDS, SERVER);
   const todo = page.section("To do"), index = page.tileIndex();
   assert.deepEqual(shape(page.columnLayout(todo.cards, index)),
     ["PLN-01", "PLN-03", ["PLN-10", "PLN-06", "PLN-08"], ["PLN-81", "PLN-07"], "PLN-09"]);
@@ -134,14 +136,14 @@ test("a column shows a master with its sub-stories folded in, and the rest under
 });
 
 test("a sub-story whose master is filtered out of the column shows under its ghost", () => {
-  page.open("plans.md", FOLDS, SERVER);
+  page.open("build.md", FOLDS, SERVER);
   const todo = page.section("To do");
   const shown = todo.cards.filter(c => /Kid|Grandkid/.test(c.text));
   assert.deepEqual(shape(page.columnLayout(shown, page.tileIndex())), [["PLN-01", "PLN-02", "PLN-04"]]);
 });
 
 test("the tiles folded into a master are its sub-stories in the same column, and theirs", () => {
-  page.open("plans.md", FOLDS, SERVER);
+  page.open("build.md", FOLDS, SERVER);
   const todo = page.section("To do"), index = page.tileIndex(), card = k => todo.cards.find(c => page.cardKey(c) === k);
   assert.deepEqual(page.foldedTree(card("PLN-01"), todo.cards, index).map(page.cardKey), ["PLN-02", "PLN-04", "PLN-05"]);
   assert.deepEqual(page.foldedTree(card("PLN-04"), todo.cards, index).map(page.cardKey), ["PLN-05"]);
@@ -149,7 +151,7 @@ test("the tiles folded into a master are its sub-stories in the same column, and
 });
 
 test("two tiles that name each other as master: only one is the other's sub-story", () => {
-  page.open("plans.md", "## A\n\n- [ ] PLN-01 **One.** Part of PLN-02.\n- [ ] PLN-02 **Two.** Part of PLN-01.\n- [ ] PLN-03 **Three.** Part of PLN-01.\n", {});
+  page.open("build.md", "## A\n\n- [ ] PLN-01 **One.** Part of PLN-02.\n- [ ] PLN-02 **Two.** Part of PLN-01.\n- [ ] PLN-03 **Three.** Part of PLN-01.\n", {});
   const index = page.tileIndex();
   assert.deepEqual(["PLN-01", "PLN-02", "PLN-03"].map(k => index.get(k).parent), [null, "PLN-01", "PLN-01"]);
   assert.deepEqual(shape(page.columnLayout(page.section("A").cards, index)), ["PLN-01"]);
@@ -298,13 +300,13 @@ test("the session's note is cut at Now and Next", () => {
 
 test("the In flight column says why pickup is off, on the plans board only, until that sentence is hidden", () => {
   const why = 'Pickup is off for this store: set "pickup": true in its board.json to turn it on.';
-  assert.equal(page.pickupHintShows("plans.md", "In flight", why, ""), true);
-  assert.equal(page.pickupHintShows("plans.md", "In progress", why, null), true);
-  assert.equal(page.pickupHintShows("plans.md", "To do", why, ""), false);
-  assert.equal(page.pickupHintShows("backlog.md", "In flight", why, ""), false);
-  assert.equal(page.pickupHintShows("plans.md", "In flight", null, ""), false);  // pickup is on
-  assert.equal(page.pickupHintShows("plans.md", "In flight", why, why), false);  // hidden with its ×
-  assert.equal(page.pickupHintShows("plans.md", "In flight", "Pickup is off: `claude` isn't on your PATH.", why), true);  // a new reason shows again
+  assert.equal(page.pickupHintShows("build.md", "In flight", why, ""), true);
+  assert.equal(page.pickupHintShows("build.md", "In progress", why, null), true);
+  assert.equal(page.pickupHintShows("build.md", "To do", why, ""), false);
+  assert.equal(page.pickupHintShows("plan.md", "In flight", why, ""), false);
+  assert.equal(page.pickupHintShows("build.md", "In flight", null, ""), false);  // pickup is on
+  assert.equal(page.pickupHintShows("build.md", "In flight", why, why), false);  // hidden with its ×
+  assert.equal(page.pickupHintShows("build.md", "In flight", "Pickup is off: `claude` isn't on your PATH.", why), true);  // a new reason shows again
 });
 
 test("the store's pickup column is the only one picked up, by name in any case; unset, any In flight column is", () => {
@@ -316,8 +318,8 @@ test("the store's pickup column is the only one picked up, by name in any case; 
   try {
     assert.equal(page.isPickupColumn(" building "), true);
     assert.equal(page.isPickupColumn("In flight"), false);
-    assert.equal(page.pickupHintShows("plans.md", "BUILDING", "Pickup is off.", ""), true);
-    assert.equal(page.pickupHintShows("plans.md", "In flight", "Pickup is off.", ""), false);
+    assert.equal(page.pickupHintShows("build.md", "BUILDING", "Pickup is off.", ""), true);
+    assert.equal(page.pickupHintShows("build.md", "In flight", "Pickup is off.", ""), false);
   } finally { page.setPickupColumn(""); }
 });
 
@@ -381,7 +383,7 @@ test("kandalf check fails a board with two In flight or two Done columns", () =>
   const { spawnSync } = require("child_process"), os = require("os");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kandalf-check-"));
   const run = text => {
-    const f = path.join(dir, "plans.md");
+    const f = path.join(dir, "build.md");
     fs.writeFileSync(f, text);
     return spawnSync("node", [path.join(__dirname, "kandalf", "check.js"), f], { encoding: "utf8" });
   };
@@ -474,7 +476,7 @@ test("kandalf check passes a board that differs only in blank lines, and still f
   const { spawnSync } = require("child_process"), os = require("os");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kandalf-check-"));
   const run = text => {
-    const f = path.join(dir, "plans.md");
+    const f = path.join(dir, "build.md");
     fs.writeFileSync(f, text);
     return spawnSync("node", [path.join(__dirname, "kandalf", "check.js"), f], { encoding: "utf8" });
   };
@@ -590,7 +592,7 @@ const BUILD_JOBS = [
   { key: "PLN-22", state: "idle", waiting: "question", ready: true }, { key: "PLN-23", state: "lost", ready: true },
 ];
 test("the stats strip counts each build once, by what it needs", () => {
-  page.open("plans.md", BUILDS);
+  page.open("build.md", BUILDS);
   page.setPickups(BUILD_JOBS); page.setUnmerged({ "PLN-20": ["feat/pln-20"] });
   try {
     assert.deepEqual(page.buildStats(), {
@@ -650,28 +652,28 @@ test("a Tests line asks for the full suite on merge; withTests writes it only wh
 });
 
 test("a tile with no Tests line takes its nearest master's", () => {
-  page.open("plans.md", "## In flight\n- [ ] PLN-01 **Master.**\n  Tests: full\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n- [ ] PLN-03 **Grandkid.**\n  Part of PLN-02.\n- [ ] PLN-04 **Other.**\n");
+  page.open("build.md", "## In flight\n- [ ] PLN-01 **Master.**\n  Tests: full\n- [ ] PLN-02 **Kid.**\n  Part of PLN-01.\n- [ ] PLN-03 **Grandkid.**\n  Part of PLN-02.\n- [ ] PLN-04 **Other.**\n");
   assert.equal(page.inheritedTests("PLN-03 **Grandkid.**\n  Part of PLN-02."), "full");
   assert.equal(page.inheritedTests("PLN-04 **Other.**"), "");
 });
 
 test("a ring of masters never hands a tile its own Tests line back", () => {
-  page.open("plans.md", "## A\n\n- [ ] PLN-01 **First.** Part of PLN-02.\n  Tests: full\n- [ ] PLN-02 **Second.** Part of PLN-01.\n", {});
+  page.open("build.md", "## A\n\n- [ ] PLN-01 **First.** Part of PLN-02.\n  Tests: full\n- [ ] PLN-02 **Second.** Part of PLN-01.\n", {});
   assert.equal(page.inheritedTests("PLN-01 **First.** Part of PLN-02.\n  Tests: full"), "");  // PLN-01 stands as the master
   assert.equal(page.inheritedTests("PLN-02 **Second.** Part of PLN-01."), "full");
 });
 
 test("a tile with no Tests line takes a master on another board's, from the server's index", () => {
   const md = "- [ ] PLN-02 **Kid.**\n  Part of PLN-10.";
-  const server = tests => ({ "PLN-10": { title: "Master", file: "backlog.md", column: "Feature", done: false, parent: "PLN-11", mentions: [], tests },
+  const server = tests => ({ "PLN-10": { title: "Master", file: "plan.md", column: "Feature", done: false, parent: "PLN-11", mentions: [], tests },
                              "PLN-11": { title: "Grand", file: "archive/archived.md", column: "Archived", done: true, parent: null, mentions: [], tests: "affected" } });
-  page.open("plans.md", "## In flight\n\n" + md + "\n", server("full"));
+  page.open("build.md", "## In flight\n\n" + md + "\n", server("full"));
   assert.equal(page.inheritedTests(md), "full");
-  page.open("plans.md", "## In flight\n\n" + md + "\n", server(null));  // the master says nothing: its master does
+  page.open("build.md", "## In flight\n\n" + md + "\n", server(null));  // the master says nothing: its master does
   assert.equal(page.inheritedTests(md), "affected");
-  page.open("plans.md", "## In flight\n\n" + md + "\n- [ ] PLN-10 **Here now.**\n  Tests: full\n", server("affected"));  // the open board's own text is newer than the server's
+  page.open("build.md", "## In flight\n\n" + md + "\n- [ ] PLN-10 **Here now.**\n  Tests: full\n", server("affected"));  // the open board's own text is newer than the server's
   assert.equal(page.inheritedTests(md), "full");
-  page.open("plans.md", "## In flight\n\n" + md + "\n", {});  // an older server: no index, no line
+  page.open("build.md", "## In flight\n\n" + md + "\n", {});  // an older server: no index, no line
   assert.equal(page.inheritedTests(md), "");
 });
 
@@ -757,17 +759,17 @@ test("a text setting with suggestions gets its own pick list, with examples for 
 });
 
 // ---------- story map ----------
-const mapTile = (title, more = {}) => ({ title, file: "backlog.md", column: "Feature", done: false, parent: null, mentions: [], domain: null, ...more });
+const mapTile = (title, more = {}) => ({ title, file: "plan.md", column: "Feature", done: false, parent: null, mentions: [], domain: null, ...more });
 const MAP_INDEX = () => new Map([
   ["PLN-01", mapTile("Admin: shell")],
   ["PLN-02", mapTile("Admin: analytics", { parent: "PLN-01", mentions: ["PLN-01", "PLN-11"] })],
-  ["PLN-03", mapTile("Operator: one odd kid", { parent: "PLN-01", file: "plans.md", column: "In flight" })],
+  ["PLN-03", mapTile("Operator: one odd kid", { parent: "PLN-01", file: "build.md", column: "In flight" })],
   ["PLN-04", mapTile("Admin: settings")],
   ["PLN-05", mapTile("Admin: roles", { parent: "PLN-04" })],
   ["PLN-10", mapTile("Broker: foundations", { domain: "Sales" })],
   ["PLN-11", mapTile("Rates", { parent: "PLN-10", mentions: ["PLN-02"] })],
   ["PLN-12", mapTile("Shipped rates", { parent: "PLN-10", file: "archive/archived.md", column: "Archived", done: true })],
-  ["PLN-20", mapTile("Docs: one of a kind", { file: "plans.md", column: "To do" })],
+  ["PLN-20", mapTile("Docs: one of a kind", { file: "build.md", column: "To do" })],
   ["PLN-21", mapTile("Loose end", { mentions: ["PLN-99"] })],
 ]);
 
@@ -802,8 +804,8 @@ test("a story at work carries its agent's own mark: Claude's, Copilot's, or Gemi
 });
 
 test("the strip's keys for the map come from each story's state, and a Done tile not merged", () => {
-  const index = new Map([["A-1", mapTile("Work", { file: "plans.md", column: "In flight" })], ["A-2", mapTile("Wait", { file: "plans.md", column: "In flight" })],
-    ["A-3", mapTile("Done", { file: "plans.md", column: "Done", done: true })], ["A-4", mapTile("Quiet")]]);
+  const index = new Map([["A-1", mapTile("Work", { file: "build.md", column: "In flight" })], ["A-2", mapTile("Wait", { file: "build.md", column: "In flight" })],
+    ["A-3", mapTile("Done", { file: "build.md", column: "Done", done: true })], ["A-4", mapTile("Quiet")]]);
   page.setUnmerged({ "A-3": ["a-3-done"] });
   const stats = page.mapStats(page.mapGraph(index, new Map(), [{ key: "A-1", state: "started" }, { key: "A-2", state: "waiting" }]));
   page.setUnmerged({});
@@ -811,7 +813,7 @@ test("the strip's keys for the map come from each story's state, and a Done tile
 });
 
 test("a session's state shows on the map only for a story in flight", () => {
-  const index = new Map([["A-1", mapTile("Back in the backlog")], ["A-2", mapTile("In flight", { file: "plans.md", column: "In flight" })]]);
+  const index = new Map([["A-1", mapTile("Back in the backlog")], ["A-2", mapTile("In flight", { file: "build.md", column: "In flight" })]]);
   const g = page.mapGraph(index, new Map(), [{ key: "A-1", state: "lost" }, { key: "A-2", state: "started" }]);
   assert.deepEqual([g.nodes.get("A-1").state, g.nodes.get("A-1").next, g.nodes.get("A-2").state], ["", false, "work"]);
 });
@@ -825,13 +827,13 @@ test("the map joins a blocker to what it blocks, and not as a mention", () => {
 });
 
 test("a blocker no tile has is blocking but not on the map as a node", () => {
-  const index = new Map([["A-1", mapTile("Waits", { blockers: ["A-9"], file: "plans.md", column: "To do" })]]);
+  const index = new Map([["A-1", mapTile("Waits", { blockers: ["A-9"], file: "build.md", column: "To do" })]]);
   const n = page.mapGraph(index, new Map(), []).nodes.get("A-1");
   assert.deepEqual([n.blockedBy, n.blocked, n.next], [[], true, false]);
 });
 
 test("a blocked story is not one to pull next", () => {
-  const make = done => new Map([["A-1", mapTile("Waits", { file: "plans.md", column: "To do", blockers: ["A-2"] })], ["A-2", mapTile("Blocker", { done })]]);
+  const make = done => new Map([["A-1", mapTile("Waits", { file: "build.md", column: "To do", blockers: ["A-2"] })], ["A-2", mapTile("Blocker", { done })]]);
   const blocked = page.mapGraph(make(false), new Map(), []).nodes.get("A-1"), free = page.mapGraph(make(true), new Map(), []).nodes.get("A-1");
   assert.deepEqual([blocked.blocked, blocked.next, free.blocked, free.next], [true, false, false, true]);
 });
@@ -934,7 +936,7 @@ test("each options block in tile_cases.json reads as the case says", () => {
 
 test("each tile in tile_cases.json has the facts the case says", () => {
   for (const c of CASES.tiles) {
-    page.open("plans.md", `## ${c.column}\n\n${c.md}\n`);
+    page.open("build.md", `## ${c.column}\n\n${c.md}\n`);
     const card = page.section(c.column).cards[0], md = [card.text, ...card.body].join("\n");
     const split = page.splitCard(card.text), key = split.key || null;
     const facts = key ? page.tileIndex().get(key) : { ...page.tileFacts("", md), title: split.title.replace(/\*\*|`/g, ""), column: c.column, done: page.isDoneCol(c.column) };
@@ -947,7 +949,7 @@ test("each tile in tile_cases.json has the facts the case says", () => {
 
 test("each board in tile_cases.json has the tiles the case says", () => {
   for (const c of CASES.boards) {
-    page.open(c.file || "plans.md", c.text);
+    page.open(c.file || "build.md", c.text);
     const index = page.tileIndex();
     const got = page.cards().map(({ column, card }) => {
       const key = page.splitCard(card.text).key || null;
@@ -978,11 +980,11 @@ test("each family in tile_cases.json says what blocks each tile and what was dec
   for (const c of CASES.blocked) {
     const others = {};
     for (const [name, text] of Object.entries(c.files)) {
-      if (name === "plans.md") continue;
+      if (name === "build.md") continue;
       page.open(name, text);
       for (const [k, t] of page.tileIndex()) others[k] = t;
     }
-    page.open("plans.md", c.files["plans.md"], others);
+    page.open("build.md", c.files["build.md"], others);
     const index = page.tileIndex();
     for (const [key, want] of Object.entries(c.expect)) {
       assert.deepEqual(page.blocking(key, index).map(b => b.key), want.blocking, `${c.name}: ${key} blocking`);
@@ -993,12 +995,12 @@ test("each family in tile_cases.json says what blocks each tile and what was dec
 });
 
 test("a tile with a decision line in its body has that decision in its index entry", () => {
-  page.open("plans.md", "## Done\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n");
+  page.open("build.md", "## Done\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n");
   assert.deepEqual(page.tileIndex().get("PLN-30").decision, { date: "2026-11-23", text: "retire it." });
 });
 
 test("the page names a blocker no tile has and finds what a tile blocks", () => {
-  page.open("plans.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-99.\n- [ ] PLN-42 **Foot.** Blocked by PLN-41.\n");
+  page.open("build.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-99.\n- [ ] PLN-42 **Foot.** Blocked by PLN-41.\n");
   const index = page.tileIndex();
   assert.deepEqual(page.blocking("PLN-41", index), [{ key: "PLN-99", title: null, known: false }]);
   assert.deepEqual(page.blocking("PLN-42", index), [{ key: "PLN-41", title: "Nav", known: true }]);
@@ -1016,8 +1018,8 @@ test("a story ready for review looks ready even when its session has gone; red i
 });
 
 test("a tile's blocker lines say what it waits on, what was decided and what is missing", () => {
-  page.open("plans.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30, PLN-31, PLN-32 and PLN-99.\n", {
-    "PLN-30": { title: "Pro theme", file: "backlog.md", column: "Feature", done: false, parent: null, mentions: [], blockers: [] },
+  page.open("build.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30, PLN-31, PLN-32 and PLN-99.\n", {
+    "PLN-30": { title: "Pro theme", file: "plan.md", column: "Feature", done: false, parent: null, mentions: [], blockers: [] },
     "PLN-31": { title: "Old auth", file: "archive/archived.md", column: "Archived", done: true, parent: null, mentions: [], blockers: [], decision: { date: "2026-11-20", text: "retire it." } },
     "PLN-32": { title: "Old nav", file: "archive/archived.md", column: "Archived", done: true, parent: null, mentions: [], blockers: [], decision: null },
   });
@@ -1027,20 +1029,20 @@ test("a tile's blocker lines say what it waits on, what was decided and what is 
     { kind: "missing", key: "PLN-99", text: "PLN-99 not found" }]);
 });
 test("two tiles that block each other say so once", () => {
-  page.open("plans.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n- [ ] PLN-30 **Foot.** Blocked by PLN-41.\n");
+  page.open("build.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n- [ ] PLN-30 **Foot.** Blocked by PLN-41.\n");
   assert.deepEqual(page.blockerLines("PLN-41", page.tileIndex()),
     [{ kind: "ring", key: "PLN-30", text: "PLN-30 and PLN-41 block each other" }]);
 });
 test("a sub-story shows its master's blockers", () => {
-  page.open("plans.md", "## To do\n\n- [ ] PLN-70 **Master.** Blocked by PLN-30.\n- [ ] PLN-71 **Kid.** Part of PLN-70.\n- [ ] PLN-30 **Theme.**\n");
+  page.open("build.md", "## To do\n\n- [ ] PLN-70 **Master.** Blocked by PLN-30.\n- [ ] PLN-71 **Kid.** Part of PLN-70.\n- [ ] PLN-30 **Theme.**\n");
   assert.deepEqual(page.blockerLines("PLN-71", page.tileIndex()), [{ kind: "blocked", key: "PLN-30", text: "Blocked by PLN-30 · Theme" }]);
 });
 test("a tile with no blockers has no lines", () => {
-  page.open("plans.md", "## To do\n\n- [ ] PLN-70 **Plain.**\n");
+  page.open("build.md", "## To do\n\n- [ ] PLN-70 **Plain.**\n");
   assert.deepEqual(page.blockerLines("PLN-70", page.tileIndex()), []);
 });
 test("a blocked tile in flight says what it waits for", () => {
-  page.open("plans.md", "## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n\n## To do\n\n- [ ] PLN-42 **Foot.** Blocked by PLN-30.\n");
+  page.open("build.md", "## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n\n## To do\n\n- [ ] PLN-42 **Foot.** Blocked by PLN-30.\n");
   page.setPickups([], { "PLN-41": ["PLN-30", "PLN-31"], "PLN-42": ["PLN-30"] });
   try {
     assert.match(page.pickupTag("PLN-41", { name: "In flight" }, null), /waits for PLN-30 and PLN-31/);
@@ -1052,7 +1054,7 @@ test("a blocked tile in flight says what it waits for", () => {
 });
 
 test("a blocker row escapes a title, and a ring row links every key but the tile's own", () => {
-  page.open("plans.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n- [ ] PLN-30 **A <b>bold</b> one.** Blocked by PLN-41.\n- [ ] PLN-50 **Foot.** Blocked by PLN-51.\n- [ ] PLN-51 **A <b>bold</b> one.**\n");
+  page.open("build.md", "## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n- [ ] PLN-30 **A <b>bold</b> one.** Blocked by PLN-41.\n- [ ] PLN-50 **Foot.** Blocked by PLN-51.\n- [ ] PLN-51 **A <b>bold</b> one.**\n");
   const index = page.tileIndex();
   const ring = page.blockerRowsHTML("PLN-41", index);
   assert.match(ring, /data-key="PLN-30"/);
@@ -1086,7 +1088,7 @@ test("a draft is found by its key, and an older server has none", () => {
 });
 
 test("a tile's draft tag says where its draft stands", () => {
-  page.open("plans.md", "# Plans\n\n## Design decision\n\n" + OPTIONS_TILE + "\n- [ ] PLN-31 **Bare.** No block.\n");
+  page.open("build.md", "# Plans\n\n## Design decision\n\n" + OPTIONS_TILE + "\n- [ ] PLN-31 **Bare.** No block.\n");
   const tag = (state, extra = {}, now) => {
     page.setPickups([], null, true, [{ key: "PLN-30", state, ...extra }]);
     return page.draftTag("PLN-30", now);
@@ -1163,12 +1165,12 @@ test("a tile's sub-tasks are found at their lines as an options block above them
 });
 
 test("story messages and the offer to start in parallel run on the plans board and the map, drafts on any board with a decision column", () => {
-  assert.deepEqual(page.pollsFor("plans.md", false, false), { poll: true, stories: true });
-  assert.deepEqual(page.pollsFor("plans.md", false, true), { poll: true, stories: true });
-  assert.deepEqual(page.pollsFor("backlog.md", false, true), { poll: true, stories: false });
-  assert.deepEqual(page.pollsFor("backlog.md", true, true), { poll: true, stories: true });
-  assert.deepEqual(page.pollsFor("backlog.md", true, false), { poll: true, stories: true });
-  assert.deepEqual(page.pollsFor("backlog.md", false, false), { poll: false, stories: false });
+  assert.deepEqual(page.pollsFor("build.md", false, false), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("build.md", false, true), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("plan.md", false, true), { poll: true, stories: false });
+  assert.deepEqual(page.pollsFor("plan.md", true, true), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("plan.md", true, false), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("plan.md", false, false), { poll: false, stories: false });
 });
 
 test("a column's id in one parse of a board is matched to its id in another by name, and by order within one name", () => {
@@ -1410,7 +1412,6 @@ test("a drawing keeps only the selected stories it still shows", () => {
   assert.deepEqual([...sel], ["PLN-70", "PLN-71"]);
 });
 
-const NEW_NAMES = { build: "build.md", plan: "plan.md" }, OLD_NAMES = { build: "plans.md", plan: "backlog.md" };
 
 test("a files reply from a new server names the two boards", () => {
   assert.deepEqual(page.boardNames({ build: "1.3.0", boards: { build: "build.md", plan: "plan.md" } }), NEW_NAMES);
@@ -1460,8 +1461,8 @@ test("the harness's boards open under the new names when told them", () => {
     assert.equal(page.pickupHintShows("build.md", "In flight", "why", ""), true);
     assert.equal(page.whereLabel({ file: "plan.md", column: "Feature" }), "Plan");
     assert.equal(page.whereLabel({ file: "backlog.md", column: "Feature" }), "Feature");
-  } finally { page.setNames(OLD_NAMES); }
-  assert.equal(page.pollsFor("plans.md", false, false).poll, true);
+  } finally { page.setNames(NEW_NAMES); }
+  assert.equal(page.pollsFor("build.md", false, false).poll, true);
 });
 
 test("a store on the old names with its own plan.md keeps that file as a file of its own", () => {
@@ -1492,16 +1493,17 @@ test("the map puts a story on the plan board under backlog and an unstarted buil
     const g = page.mapGraph(index, new Map(), []);
     assert.equal(g.nodes.get("A-1").where, "backlog");
     assert.equal(g.nodes.get("A-2").where, "planned");
-  } finally { page.setNames(OLD_NAMES); }
+  } finally { page.setNames(NEW_NAMES); }
 });
 
 test("a board's label asked for with no names uses the page's current ones", () => {
-  assert.equal(page.boardLabel("plans.md"), "Build");
+  page.setNames(OLD_NAMES);
+  try { assert.equal(page.boardLabel("plans.md"), "Build"); } finally { page.setNames(NEW_NAMES); }
   page.setNames(NEW_NAMES);
   try {
     assert.equal(page.boardLabel("build.md"), "Build");
     assert.equal(page.boardLabel("plan.md"), "Plan");
-  } finally { page.setNames(OLD_NAMES); }
+  } finally { page.setNames(NEW_NAMES); }
 });
 
 test("a move that waits says what for, and the note can be hidden", () => {
@@ -1542,4 +1544,60 @@ test("a store on the old names with its own build.md keeps that file as a file o
   assert.equal(page.ownName("plans.md", OLD_NAMES, files), "plans.md");
   assert.deepEqual(page.pickable(files, OLD_NAMES), files);
   assert.deepEqual(page.boardOrder(files, OLD_NAMES).map(f => page.boardLabel(f, OLD_NAMES)), ["Plan", "Build", "Archive", "build.md"]);
+});
+
+const { describe, beforeEach, afterEach } = test;
+
+describe("OldNames", () => {
+  const PLANS_OLD = PLANS;
+  const SERVER_OLD = Object.fromEntries(Object.entries(SERVER).map(([k, t]) => [k, { ...t, file: t.file === "build.md" ? "plans.md" : t.file === "plan.md" ? "backlog.md" : t.file }]));
+  beforeEach(() => page.setNames(OLD_NAMES));
+  afterEach(() => page.setNames(NEW_NAMES));
+
+  test("the index of a store on the old names says plans.md and backlog.md for the files", () => {
+    page.open("plans.md", PLANS_OLD, SERVER_OLD);
+    const index = page.tileIndex();
+    assert.equal(index.get("PLN-74").file, "plans.md");
+    assert.equal(index.get("PLN-81").file, "backlog.md");
+  });
+
+  test("the In flight column says why pickup is off on plans.md only, on the old names", () => {
+    const why = 'Pickup is off for this store: set "pickup": true in its board.json to turn it on.';
+    assert.equal(page.pickupHintShows("plans.md", "In flight", why, ""), true);
+    assert.equal(page.pickupHintShows("plans.md", "To do", why, ""), false);
+    assert.equal(page.pickupHintShows("backlog.md", "In flight", why, ""), false);
+  });
+
+  test("story messages run on plans.md and the drafts on backlog.md, on the old names", () => {
+    assert.deepEqual(page.pollsFor("plans.md", false, false), { poll: true, stories: true });
+    assert.deepEqual(page.pollsFor("backlog.md", false, true), { poll: true, stories: false });
+    assert.deepEqual(page.pollsFor("backlog.md", true, false), { poll: true, stories: true });
+    assert.deepEqual(page.pollsFor("backlog.md", false, false), { poll: false, stories: false });
+  });
+
+  test("the page labels the two old files Plan and Build and treats plans.md as the pickup board", () => {
+    assert.equal(page.boardLabel("plans.md"), "Build");
+    assert.equal(page.boardLabel("backlog.md"), "Plan");
+    assert.equal(page.whereLabel({ file: "backlog.md", column: "Feature" }), "Plan");
+    page.open("plans.md", PLANS_OLD, {});
+    assert.equal(page.isPickupColumn("In flight"), true);
+  });
+
+  test("each family in tile_cases.json reads the same on the old names", () => {
+    const old = n => n === "build.md" ? "plans.md" : n === "plan.md" ? "backlog.md" : n;
+    for (const c of CASES.blocked) {
+      const others = {};
+      for (const [name, text] of Object.entries(c.files)) {
+        if (name === "build.md") continue;
+        page.open(old(name), text);
+        for (const [k, t] of page.tileIndex()) others[k] = t;
+      }
+      page.open("plans.md", c.files["build.md"], others);
+      const index = page.tileIndex();
+      for (const [key, want] of Object.entries(c.expect)) {
+        assert.deepEqual(page.blocking(key, index).map(b => b.key), want.blocking, `${c.name}: ${key} blocking`);
+        assert.deepEqual(page.decisionsFor(key, index).map(d => d.key), want.decisions, `${c.name}: ${key} decisions`);
+      }
+    }
+  });
 });

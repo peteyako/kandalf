@@ -28,7 +28,6 @@ from functools import lru_cache
 from . import store as stores
 
 ARCHIVE_LOG = stores.ARCHIVE_LOG  # the archive log's path in a store
-BACKLOG = stores.OLD_PLAN  # kept for the tests until they are renamed; no module reads it
 
 # The columns that mean under way, however they are spelt: In flight, in-flight, In progress (or a slip
 # of it, "In progrees"), Doing, WIP, Working, Underway, Ongoing, Active; never one that says "not".

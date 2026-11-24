@@ -44,7 +44,7 @@ class Decide(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp()).resolve()
         (self.dir / "active").mkdir()
-        self.board = self.dir / "plans.md"
+        self.board = self.dir / "build.md"
         self.board.write_text(PLANS)
         (self.dir / "active" / "2026-01-01-theme.md").write_text("# PLN-30: Theme\n")
         git(self.dir, "init", "-q")

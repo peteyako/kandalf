@@ -48,7 +48,7 @@ ARCHIVE = """# Archived plans
 - [ ] PLN-70 **A stale copy.**
 """
 
-FILES = {"plans.md": PLANS, "backlog.md": BACKLOG, "archive/archived.md": ARCHIVE}
+FILES = {"build.md": PLANS, "plan.md": BACKLOG, "archive/archived.md": ARCHIVE}
 
 
 class Index(unittest.TestCase):
@@ -59,7 +59,7 @@ class Index(unittest.TestCase):
     def test_every_keyed_tile_is_listed_with_where_it_is(self):
         self.assertEqual(sorted(self.tiles), ["PLN-41", "PLN-70", "PLN-74", "PLN-75", "PLN-81", "PLN-82"])
         self.assertEqual([(self.tiles[k]["file"], self.tiles[k]["column"]) for k in ("PLN-75", "PLN-81", "PLN-41")],
-                         [("plans.md", "In flight"), ("backlog.md", "Feature"), ("archive/archived.md", "Archived")])
+                         [("build.md", "In flight"), ("plan.md", "Feature"), ("archive/archived.md", "Archived")])
 
     def test_the_title_drops_the_key_priority_estimate_and_bold(self):
         self.assertEqual([self.tiles[k]["title"] for k in ("PLN-70", "PLN-74", "PLN-81")],
@@ -81,7 +81,7 @@ class Index(unittest.TestCase):
         self.assertEqual(self.tiles["PLN-70"]["mentions"], [])
 
     def test_a_key_on_two_boards_is_the_first_board_s_tile(self):
-        self.assertEqual(self.tiles["PLN-70"]["file"], "plans.md")
+        self.assertEqual(self.tiles["PLN-70"]["file"], "build.md")
 
 
 if __name__ == "__main__":

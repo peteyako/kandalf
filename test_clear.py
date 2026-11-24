@@ -52,14 +52,14 @@ class Clear(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp()).resolve()
         (self.dir / "active").mkdir()
-        (self.dir / "plans.md").write_text(PLANS)
+        (self.dir / "build.md").write_text(PLANS)
         (self.dir / "active" / "2026-01-01-big.md").write_text("# PLN-01: Big\n")
         (self.dir / "active" / "2026-01-02-small.md").write_text("# PLN-02: Small\n\nSee plans/active/2026-01-01-big.md.\n")
         git(self.dir, "init", "-q")
         git(self.dir, "add", "-A")
         git(self.dir, "commit", "-qm", "init")
         self.store = stores.Store(self.dir)
-        self.board = self.dir / "plans.md"
+        self.board = self.dir / "build.md"
 
     def clear(self, text=PLANS, keep=()):
         new, record, _ = serve.clear_column(self.store, self.board, text, "Done", keep)
@@ -197,7 +197,7 @@ class Requests(unittest.TestCase):
         def files(**cfg):
             folder = Path(tempfile.mkdtemp())
             (folder / "board.json").write_text(json.dumps(cfg))
-            for name in ("plans.md", "pickup.md"):
+            for name in ("build.md", "pickup.md"):
                 (folder / name).write_text("# x\n")
             srv = serve.ThreadingHTTPServer(("127.0.0.1", 0), type("Handler", (serve.Handler,), {"store": stores.Store(folder)}))
             threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -210,9 +210,9 @@ class Requests(unittest.TestCase):
                 srv.server_close()
 
         plain = files()
-        self.assertEqual((plain["pickupColumn"], plain["files"]), ("", ["pickup.md", "plans.md"]))  # pickup off: a board like any
+        self.assertEqual((plain["pickupColumn"], plain["files"]), ("", ["build.md", "pickup.md"]))  # pickup off: a board like any
         picked = files(pickup=True, pickupColumn=" Building ")
-        self.assertEqual((picked["pickupColumn"], picked["files"]), ("Building", ["plans.md"]))
+        self.assertEqual((picked["pickupColumn"], picked["files"]), ("Building", ["build.md"]))
 
 
 class Push(unittest.TestCase):
@@ -222,16 +222,16 @@ class Push(unittest.TestCase):
         top = Path(tempfile.mkdtemp()).resolve()
         self.dir, self.remote = top / "plans", top / "remote.git"
         self.dir.mkdir()
-        (self.dir / "plans.md").write_text("# Plans\n\n## To do\n")
+        (self.dir / "build.md").write_text("# Plans\n\n## To do\n")
         git(self.dir, "init", "-q", "-b", "main")
         git(self.dir, "add", "-A")
         git(self.dir, "commit", "-qm", "init")
 
     def flush(self, **cfg):
         (self.dir / "board.json").write_text(json.dumps(cfg))
-        (self.dir / "plans.md").write_text("# Plans\n\n## To do\n\n- [ ] PLN-01 **New.**\n")
+        (self.dir / "build.md").write_text("# Plans\n\n## To do\n\n- [ ] PLN-01 **New.**\n")
         st = stores.Store(self.dir)
-        q = {"paths": ["plans.md", "board.json"], "steps": ["12:00:00 a change"]}
+        q = {"paths": ["build.md", "board.json"], "steps": ["12:00:00 a change"]}
         with mock.patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                                           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
             self.assertTrue(gitlog.flush(st, q))

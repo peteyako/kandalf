@@ -56,7 +56,7 @@ class Domains(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp()).resolve()
         (self.dir / "archive").mkdir()
-        self.files = {"plans.md": PLANS, "backlog.md": BACKLOG, "archive/archived.md": ARCHIVE}
+        self.files = {"build.md": PLANS, "plan.md": BACKLOG, "archive/archived.md": ARCHIVE}
         for name, text in self.files.items():
             (self.dir / name).write_text(text)
         self.store = stores.Store(self.dir)
@@ -86,7 +86,7 @@ class Domains(unittest.TestCase):
         self.assertEqual([self.domain(k) for k in ("PLN-74", "PLN-81", "PLN-90")], ["Billing"] * 3)
         self.record.assert_called_once()
         self.assertEqual(self.subject(), "board: 3 stories → Billing")
-        self.assertEqual({p.name for p in self.record.call_args[0][1]}, {"plans.md", "backlog.md", "archived.md"})
+        self.assertEqual({p.name for p in self.record.call_args[0][1]}, {"build.md", "plan.md", "archived.md"})
 
     def test_a_sub_story_files_its_master_and_the_family_counts_once(self):
         status, reply = serve.set_domains(self.store, {"PLN-71": "Billing", "PLN-72": "Billing"})
@@ -98,7 +98,7 @@ class Domains(unittest.TestCase):
     def test_a_master_and_its_own_sub_story_together_are_one_write(self):
         status, reply = serve.set_domains(self.store, {"PLN-70": "Billing", "PLN-71": "Billing"})
         self.assertEqual(list(reply["filed"]), ["PLN-70"])
-        self.assertEqual(self.text("plans.md").count("Domain: Billing"), 2)  # PLN-70's and PLN-73's
+        self.assertEqual(self.text("build.md").count("Domain: Billing"), 2)  # PLN-70's and PLN-73's
         self.assertEqual(reply["unchanged"], [])
 
     def test_a_sub_story_with_its_own_domain_line_keeps_it(self):
@@ -111,7 +111,7 @@ class Domains(unittest.TestCase):
         self.assertEqual(reply["filed"], {"PLN-73": {"from": "Billing", "to": None},
                                            "PLN-80": {"from": "Reports", "to": None}})
         self.assertEqual(self.subject(), "board: 2 stories → no domain")
-        self.assertNotIn("Domain:", self.text("backlog.md"))
+        self.assertNotIn("Domain:", self.text("plan.md"))
 
     def test_a_story_with_no_line_dropped_on_no_domain_is_unchanged(self):
         status, reply = serve.set_domains(self.store, {"PLN-81": None})
@@ -159,13 +159,13 @@ class Domains(unittest.TestCase):
 
     def test_undo_is_the_same_call_with_what_each_was_before(self):
         status, reply = serve.set_domains(self.store, {"PLN-73": "Reports", "PLN-74": "Reports", "PLN-90": "Reports", "PLN-80": None})
-        self.assertNotEqual(self.text("plans.md"), PLANS)
+        self.assertNotEqual(self.text("build.md"), PLANS)
         back = {k: v["from"] for k, v in reply["filed"].items()}
         serve.set_domains(self.store, back)
         self.assert_untouched()
 
     def test_a_name_some_tile_already_carries_keeps_that_spelling(self):
-        (self.dir / "plans.md").write_text(PLANS.replace("Domain: Special", "Domain: billing"))
+        (self.dir / "build.md").write_text(PLANS.replace("Domain: Special", "Domain: billing"))
         status, reply = serve.set_domains(self.store, {"PLN-74": "Billing", "PLN-81": "BILLING"})
         self.assertEqual(reply["filed"]["PLN-74"]["to"], "Billing")
         self.assertEqual(reply["filed"]["PLN-81"]["to"], "billing")
@@ -186,8 +186,8 @@ class Domains(unittest.TestCase):
 
     def test_an_undo_after_a_backlog_tile_was_re_filed_is_refused_and_writes_nothing(self):
         status, reply = serve.set_domains(self.store, {"PLN-74": "Billing", "PLN-80": "Billing"})
-        edited = self.text("backlog.md").replace("Domain: Billing", "Domain: Payments")
-        (self.dir / "backlog.md").write_text(edited)
+        edited = self.text("plan.md").replace("Domain: Billing", "Domain: Payments")
+        (self.dir / "plan.md").write_text(edited)
         before = {name: self.text(name) for name in self.files}
         self.record.reset_mock()
         status, reply = serve.set_domains(self.store, {"PLN-74": None, "PLN-80": "Reports"},
@@ -238,24 +238,24 @@ class Domains(unittest.TestCase):
             srv.server_close()
 
     def test_the_route_files_stories_and_answers_with_the_board(self):
-        status, reply = self.post("/api/domain?file=plans.md", {"set": {"PLN-74": "Billing"}})
+        status, reply = self.post("/api/domain?file=build.md", {"set": {"PLN-74": "Billing"}})
         self.assertEqual(status, 200, reply)
         self.assertTrue({"mtime", "text", "tiles", "filed"} <= set(reply))
         self.assertEqual(reply["filed"], {"PLN-74": {"from": None, "to": "Billing"}})
         self.assertIn("Domain: Billing", reply["text"].split("PLN-74", 1)[1])
 
     def test_the_route_refuses_nothing_to_file_a_bad_name_and_an_unknown_board(self):
-        self.assertEqual(self.post("/api/domain?file=plans.md", {"set": {}}), (400, {"error": "nothing to file"}))
-        status, reply = self.post("/api/domain?file=plans.md", {"set": {"PLN-74": ".bad"}})
+        self.assertEqual(self.post("/api/domain?file=build.md", {"set": {}}), (400, {"error": "nothing to file"}))
+        status, reply = self.post("/api/domain?file=build.md", {"set": {"PLN-74": ".bad"}})
         self.assertEqual((status, reply), (400, {"error": "A domain's name starts with a letter or a digit."}))
         self.assertEqual(self.post("/api/domain?file=nope.md", {"set": {"PLN-74": "Billing"}})[0], 404)
         self.assert_untouched()
 
     def test_the_route_refuses_an_undo_whose_tiles_changed_since_and_ignores_an_expect_that_is_not_a_map(self):
-        status, reply = self.post("/api/domain?file=plans.md", {"set": {"PLN-73": None}, "expect": {"PLN-73": "Payments"}})
+        status, reply = self.post("/api/domain?file=build.md", {"set": {"PLN-73": None}, "expect": {"PLN-73": "Payments"}})
         self.assertEqual((status, reply), (409, {"error": "changed since", "changed": ["PLN-73"]}))
         self.assert_untouched()
-        status, reply = self.post("/api/domain?file=plans.md", {"set": {"PLN-74": "Billing"}, "expect": ["PLN-74"]})
+        status, reply = self.post("/api/domain?file=build.md", {"set": {"PLN-74": "Billing"}, "expect": ["PLN-74"]})
         self.assertEqual(status, 200, reply)
         self.assertEqual(reply["filed"], {"PLN-74": {"from": None, "to": "Billing"}})
 

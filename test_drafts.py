@@ -528,7 +528,7 @@ class Look(Repos):
         self.board = tiles.with_options(self.store, self.board, key, block)
 
     def snap(self):
-        files = {"plans.md": self.board}
+        files = {"build.md": self.board}
         if self.archive:
             files["archive/archived.md"] = self.archive
         return tiles.Snapshot(self.store, files)
@@ -1026,8 +1026,8 @@ class Server(Repos):
 
     def setUp(self):
         super().setUp()
-        (self.plans / "plans.md").write_text(PLANS_BOARD, encoding="utf-8")
-        (self.plans / "backlog.md").write_text(BACKLOG_BOARD, encoding="utf-8")
+        (self.plans / "build.md").write_text(PLANS_BOARD, encoding="utf-8")
+        (self.plans / "plan.md").write_text(BACKLOG_BOARD, encoding="utf-8")
         for target, name, value in ((serve, "SESSIONS", self.sessions), (drafts, "why_not", lambda store: None),
                                     (pickup, "why_off", lambda store: None)):
             p = mock.patch.object(target, name, value)
@@ -1041,36 +1041,36 @@ class Server(Repos):
         self.addCleanup(p.stop)
         self.addCleanup(serve.DRAFTS_ASKED.clear)
 
-    def board(self, name="plans.md"):
+    def board(self, name="build.md"):
         return (self.plans / name).read_text(encoding="utf-8")
 
-    def ask(self, data, name="plans.md"):
+    def ask(self, data, name="build.md"):
         return serve.draft_request(self.store, self.plans / name, data)
 
     def test_write_options_puts_the_block_on_a_backlog_tile_and_commits_it(self):
         serve.write_options(self.store, "PLN-50", OPTIONS, "board: PLN-50 options drafted")
-        self.assertEqual(tiles.options(self.board("backlog.md"))["recommends"], "A")
-        self.assertEqual(self.board("plans.md"), PLANS_BOARD)
-        self.record.assert_called_once_with(self.store, [self.plans / "backlog.md"], "board: PLN-50 options drafted")
+        self.assertEqual(tiles.options(self.board("plan.md"))["recommends"], "A")
+        self.assertEqual(self.board("build.md"), PLANS_BOARD)
+        self.record.assert_called_once_with(self.store, [self.plans / "plan.md"], "board: PLN-50 options drafted")
 
     def test_write_options_puts_the_block_on_a_plans_tile(self):
         serve.write_options(self.store, "PLN-30", OPTIONS, "board: PLN-30 options drafted")
         tile = tiles.Snapshot.read(self.store).tile("PLN-30")
         self.assertEqual(tiles.options(tile.text)["items"][0]["title"], "Restyle it")
-        self.assertEqual(self.board("backlog.md"), BACKLOG_BOARD)
-        self.record.assert_called_once_with(self.store, [self.plans / "plans.md"], "board: PLN-30 options drafted")
+        self.assertEqual(self.board("plan.md"), BACKLOG_BOARD)
+        self.record.assert_called_once_with(self.store, [self.plans / "build.md"], "board: PLN-30 options drafted")
 
     def test_write_options_leaves_the_boards_alone_for_a_key_on_neither(self):
         with self.assertRaises(KeyError):
             serve.write_options(self.store, "PLN-99", OPTIONS, "board: PLN-99 options drafted")
-        self.assertEqual((self.board("plans.md"), self.board("backlog.md")), (PLANS_BOARD, BACKLOG_BOARD))
+        self.assertEqual((self.board("build.md"), self.board("plan.md")), (PLANS_BOARD, BACKLOG_BOARD))
         self.record.assert_not_called()
 
     def test_write_options_writes_nothing_when_the_tile_has_the_block_already(self):
         serve.write_options(self.store, "PLN-30", OPTIONS, "board: PLN-30 options drafted")
-        before = (self.plans / "plans.md").stat().st_mtime_ns
+        before = (self.plans / "build.md").stat().st_mtime_ns
         serve.write_options(self.store, "PLN-30", OPTIONS, "board: PLN-30 options drafted")
-        self.assertEqual((self.plans / "plans.md").stat().st_mtime_ns, before)
+        self.assertEqual((self.plans / "build.md").stat().st_mtime_ns, before)
         self.assertEqual(self.record.call_count, 1)
 
     def test_a_draft_asked_for_is_queued_and_the_reply_carries_the_drafts(self):
@@ -1083,12 +1083,12 @@ class Server(Repos):
         self.assertTrue(serve.DRAFTS_ASKED.is_set())
 
     def test_a_backlog_decision_can_be_drafted(self):
-        status, reply = self.ask({"key": "PLN-50"}, "backlog.md")
+        status, reply = self.ask({"key": "PLN-50"}, "plan.md")
         self.assertEqual(status, 200, reply)
         self.assertEqual(drafts.of(self.store, "PLN-50")["state"], "queued")
 
     def test_a_tile_that_is_not_a_decision_on_that_board_is_refused(self):
-        for key, name in (("PLN-40", "plans.md"), ("PLN-50", "plans.md"), ("PLN-99", "plans.md"), ("", "plans.md")):
+        for key, name in (("PLN-40", "build.md"), ("PLN-50", "build.md"), ("PLN-99", "build.md"), ("", "build.md")):
             status, reply = self.ask({"key": key}, name)
             self.assertEqual((status, reply), (404, {"error": f"{key} is not a decision on this board"}))
         self.assertEqual(drafts.live(self.store), [])
@@ -1121,8 +1121,8 @@ class Server(Repos):
         text = self.board()
         tile = tiles.Snapshot.read(self.store).tile(key)
         rest, _ = tiles.take(self.store, text, [key])
-        data = {"mtime": serve.mtime(self.plans / "plans.md"), "text": rest, "tile": tile.text, "docs": [], "answer": "retire it."}
-        return serve.decide_tile(self.store, self.plans / "plans.md", data, "2026-11-23")
+        data = {"mtime": serve.mtime(self.plans / "build.md"), "text": rest, "tile": tile.text, "docs": [], "answer": "retire it."}
+        return serve.decide_tile(self.store, self.plans / "build.md", data, "2026-11-23")
 
     def test_deciding_a_tile_ends_its_draft(self):
         self.ask({"key": "PLN-30"})
@@ -1165,15 +1165,15 @@ class Server(Repos):
         said = [c.args[0] for c in self.log.call_args_list]
         self.assertEqual(failed, set())
         self.assertFalse([line for line in said if drafts.UNWRITTEN in line], said)
-        got = tiles.options(self.board("backlog.md"))
+        got = tiles.options(self.board("plan.md"))
         self.assertEqual(([it["letter"] for it in got["items"]], got["recommends"]), (["A", "B"], "B"))
         self.assertEqual(drafts.of(self.store, "PLN-50")["state"], "ready")
-        self.record.assert_called_once_with(self.store, [self.plans / "backlog.md"], "board: PLN-50 options drafted")
+        self.record.assert_called_once_with(self.store, [self.plans / "plan.md"], "board: PLN-50 options drafted")
         self.assertIn("PLN-50: options ready", said)
 
     def test_a_stop_works_for_a_tile_that_has_left_its_decision_column(self):
         self.ask({"key": "PLN-30"})
-        (self.plans / "plans.md").write_text(PLANS_BOARD.replace("## Decisions", "## Later"), encoding="utf-8")
+        (self.plans / "build.md").write_text(PLANS_BOARD.replace("## Decisions", "## Later"), encoding="utf-8")
         status, reply = self.ask({"key": "PLN-30", "stop": True})
         self.assertEqual((status, reply["drafts"]), (200, []))
         self.assertEqual(drafts.live(self.store), [])
@@ -1215,7 +1215,7 @@ class Server(Repos):
             srv.server_close()
 
     def clear(self):
-        return self.post("/api/clear?file=plans.md", {"mtime": serve.mtime(self.plans / "plans.md"),
+        return self.post("/api/clear?file=build.md", {"mtime": serve.mtime(self.plans / "build.md"),
                                                      "text": self.board(), "column": "Decisions"})
 
     def test_clearing_a_column_ends_the_drafts_of_the_tiles_it_archives(self):

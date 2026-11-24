@@ -55,10 +55,10 @@ def git(path, *args):
 
 
 def in_flight(store, text):
-    """The In flight tiles of a plans board's text, as pickup is given them: the store's backlog
-    and archive log, if it has them, are read from disk."""
-    files = {"plans.md": text}
-    files.update({n: (store.dir / n).read_text(encoding="utf-8") for n in (reader.BACKLOG, reader.ARCHIVE_LOG) if (store.dir / n).is_file()})
+    """The In flight tiles of a Build board's text, as pickup is given them: the store's Plan board
+    and archive log, if it has them, are read from disk. The boards have the store's own names."""
+    files = {store.build: text}
+    files.update({n: (store.dir / n).read_text(encoding="utf-8") for n in (store.plan, reader.ARCHIVE_LOG) if (store.dir / n).is_file()})
     return reader.Snapshot(store, files).in_flight()
 
 
@@ -865,7 +865,7 @@ class Queue(unittest.TestCase):
         told = pickup.reply_text(self.store, job, "", ["merge", "push"])
         self.assertNotIn("Full suite", told)
         told = pickup.reply_text(self.store, job, "", ["merge", "push"],
-                                 snap=reader.Snapshot(self.store, {"plans.md": "## In flight\n\n- [ ] PLN-01 **One.**\n  Tests: full\n"}))
+                                 snap=reader.Snapshot(self.store, {"build.md": "## In flight\n\n- [ ] PLN-01 **One.**\n  Tests: full\n"}))
         self.assertIn("Run the full suite on main, every test tier this repo has", told)
         self.assertIn("- [ ] **Full suite** on main", told)
         at = [told.index(w) for w in ("fast-forward main to it", "Run the full suite on main", "Then push main")]
@@ -944,7 +944,7 @@ class Queue(unittest.TestCase):
         self.tick(family)
         self.fake.idle.add("s1")
         self.tick(family)
-        snap = reader.Snapshot(self.store, {"plans.md": family.replace("**Master.**\n", "**Master.**\n  Tests: full\n")})
+        snap = reader.Snapshot(self.store, {"build.md": family.replace("**Master.**\n", "**Master.**\n  Tests: full\n")})
         self.assertIsNone(pickup.reply(self.store, "PLN-01", "", ["merge"], sessions=self.fake, snap=snap))
         self.assertIn("Run the full suite on main", self.fake.told[-1])
 
@@ -992,13 +992,13 @@ class Queue(unittest.TestCase):
 
     def test_the_sub_stories_still_to_merge_are_the_unfinished_ones_below_its_master_but_umbrellas(self):
         st = stores.Store(tempfile.mkdtemp())
-        snap = reader.Snapshot(st, {"plans.md": self.FAMILY_BOARD})
+        snap = reader.Snapshot(st, {"build.md": self.FAMILY_BOARD})
         job = {"key": "PLN-75", "master": "PLN-70"}
         self.assertEqual(pickup.still_to_merge(st, job, snap), ["PLN-76", "PLN-77", "PLN-79"])  # not PLN-74 (done) nor PLN-78 (an umbrella)
         last = ("## In flight\n\n- [ ] PLN-70 **Dark mode.**\n- [ ] PLN-75 **Switch.**\n  Part of PLN-70.\n- [ ] PLN-78 **Inner.**\n  Part of PLN-70.\n"
                 "\n## Done\n\n- [x] PLN-74 **C.** Part of PLN-70.\n- [x] PLN-76 **T.** Part of PLN-70.\n- [x] PLN-77 **D.** Part of PLN-70.\n"
                 "- [x] PLN-79 **I.** Part of PLN-78.\n")
-        self.assertEqual(pickup.still_to_merge(st, job, reader.Snapshot(st, {"plans.md": last})), [])
+        self.assertEqual(pickup.still_to_merge(st, job, reader.Snapshot(st, {"build.md": last})), [])
         self.assertIsNone(pickup.still_to_merge(st, {"key": "PLN-80"}, snap))  # not a sub-story
         self.assertIsNone(pickup.still_to_merge(st, job, None))  # no index to go by
 
@@ -1006,7 +1006,7 @@ class Queue(unittest.TestCase):
         st = stores.Store(tempfile.mkdtemp())
         job = {"key": "PLN-80", "of": "PLN-41", "branch": "b", "worktree": "/x/app", "ready": True}
         snap = reader.Snapshot(st, {
-            "plans.md": "## In flight\n\n- [ ] PLN-80 **S.**\n  Part of PLN-41.\n  Tests: full\n",
+            "build.md": "## In flight\n\n- [ ] PLN-80 **S.**\n  Part of PLN-41.\n  Tests: full\n",
             "archive/archived.md": "# Archived plans\n\n## Archived\n\n- [x] PLN-41 **M.**\n  Tests: full\n"})
         told = pickup.reply_text(st, job, "", ["merge"], snap=snap)
         self.assertIn("It is a sub-task on PLN-80's tile", told)
@@ -1016,9 +1016,9 @@ class Queue(unittest.TestCase):
         st = stores.Store(tempfile.mkdtemp())
         job = {"key": "PLN-80", "of": "PLN-41", "branch": "b", "worktree": "/x/app", "ready": True}
         board = ("## In flight\n\n- [ ] PLN-80 **S.**\n  Part of PLN-41.\n{more}\n## Done\n\n- [x] PLN-41 **M.**\n  Tests: full\n")
-        last = reader.Snapshot(st, {"plans.md": board.format(more="")})
+        last = reader.Snapshot(st, {"build.md": board.format(more="")})
         self.assertIn("It is a sub-task on PLN-41's tile", pickup.reply_text(st, job, "", ["merge"], snap=last))
-        early = reader.Snapshot(st, {"plans.md": board.format(more="- [ ] PLN-81 **T.**\n  Part of PLN-41.\n")})
+        early = reader.Snapshot(st, {"build.md": board.format(more="- [ ] PLN-81 **T.**\n  Part of PLN-41.\n")})
         self.assertIn("waits for the last of PLN-41's sub-stories to merge, and PLN-81 is still to",
                       pickup.reply_text(st, job, "", ["merge"], snap=early))
 
@@ -1028,13 +1028,13 @@ class Queue(unittest.TestCase):
         st = stores.Store(st.dir)
         job = {"key": "PLN-75", "master": "PLN-70", "branch": "b", "worktree": "/x/app", "ready": True}
         board = "## In flight\n\n- [ ] PLN-70 **M.**\n- [ ] PLN-75 **S.**\n  Part of PLN-70.\n{more}\n## Done\n\n- [x] PLN-74 **C.**\n  Part of PLN-70.\n"
-        done = reader.Snapshot(st, {"plans.md": board.format(more="")})
+        done = reader.Snapshot(st, {"build.md": board.format(more="")})
         told = pickup.reply_text(st, job, "", ["squash", "merge", "push"], snap=done)
         at = [told.index(w) for w in ("fast-forward main to it", "Run the full suite on main", "Then push main")]
         self.assertEqual(at, sorted(at))
         self.assertIn("add `- [ ] **Full suite** on main` there", told)  # a sub-task on PLN-70's tile
         self.assertIn("stop before any step after it", told)  # a red suite isn't pushed
-        left = reader.Snapshot(st, {"plans.md": board.format(more="- [ ] PLN-76 **T.**\n  Part of PLN-70.\n")})
+        left = reader.Snapshot(st, {"build.md": board.format(more="- [ ] PLN-76 **T.**\n  Part of PLN-70.\n")})
         told = pickup.reply_text(st, job, "", ["merge"], snap=left)
         self.assertNotIn("Run the full suite", told)
         self.assertIn("waits for the last of PLN-70's sub-stories to merge, and PLN-76 is still to", told)
@@ -1044,14 +1044,14 @@ class Queue(unittest.TestCase):
         off = stores.Store(tempfile.mkdtemp())  # neither the store nor the master's tile asks
         self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], snap=done))
         self.assertNotIn("uite", pickup.reply_text(off, job, "", ["merge"], snap=left))
-        asks = lambda more: reader.Snapshot(off, {"plans.md": board.format(more=more).replace("**M.**\n", "**M.**\n  Tests: full\n")})
+        asks = lambda more: reader.Snapshot(off, {"build.md": board.format(more=more).replace("**M.**\n", "**M.**\n  Tests: full\n")})
         self.assertIn("Run the full suite on main", pickup.reply_text(off, job, "", ["merge"], snap=asks("")))  # the tile asks
         self.assertIn("waits for the last", pickup.reply_text(off, job, "", ["merge"], snap=asks("- [ ] PLN-76 **T.**\n  Part of PLN-70.\n")))
 
     def test_the_nearest_tests_line_decides_and_the_store_s_setting_is_the_fallback(self):
         st = stores.Store(tempfile.mkdtemp())
         board = lambda master, sub: f"## In flight\n\n- [ ] PLN-70 **M.**\n{master}- [ ] PLN-75 **S.**\n  Part of PLN-70.\n{sub}"
-        snap = lambda store, master="", sub="": reader.Snapshot(store, {"plans.md": board(master, sub)})
+        snap = lambda store, master="", sub="": reader.Snapshot(store, {"build.md": board(master, sub)})
         full, affected = "  Tests: full\n", "  Tests: affected\n"
         self.assertTrue(pickup.full_suite_on_merge(st, "PLN-75", snap(st, master=full)))
         self.assertFalse(pickup.full_suite_on_merge(st, "PLN-75", snap(st, master=full, sub=affected)))
@@ -1067,7 +1067,7 @@ class Queue(unittest.TestCase):
         st = stores.Store(tempfile.mkdtemp())
         job = {"key": "PLN-01", "branch": "b", "ready": True,
                "repos": [{"name": "api", "worktree": "/x/api-wt", "trunk": "dev"}, {"name": "web", "worktree": "/x/web-wt", "trunk": "main"}]}
-        told = pickup.reply_text(st, job, "", ["merge"], snap=reader.Snapshot(st, {"plans.md": "## In flight\n\n- [ ] PLN-01 **A.**\n  Tests: full\n"}))
+        told = pickup.reply_text(st, job, "", ["merge"], snap=reader.Snapshot(st, {"build.md": "## In flight\n\n- [ ] PLN-01 **A.**\n  Tests: full\n"}))
         self.assertIn("- [ ] **Full suite** on api dev", told)
         self.assertIn("- [ ] **Full suite** on web main", told)
 
@@ -1215,7 +1215,7 @@ class Queue(unittest.TestCase):
 
     def test_a_sub_story_picked_up_alone_is_given_its_master_s_tile_from_wherever_it_sits(self):
         st = stores.Store(tempfile.mkdtemp())
-        (st.dir / "backlog.md").write_text("## Feature\n\n- [ ] PLN-01 **Grand plan.**\n  The [charter](https://example.com/charter).\n")
+        (st.dir / "plan.md").write_text("## Feature\n\n- [ ] PLN-01 **Grand plan.**\n  The [charter](https://example.com/charter).\n")
         board = ("## To do\n\n- [ ] PLN-02 **Ladder look.**\n  Part of PLN-01. From the [design canvas](https://example.com/canvas).\n  No pickup. Model: haiku\n"
                  "\n## In flight\n\n- [ ] PLN-03 **Session page.**\n  Part of PLN-02.\n- [ ] PLN-04 **On its own.**\n")
         tiles = in_flight(st, board)
@@ -1333,7 +1333,7 @@ class Blocked(unittest.TestCase):
     DONE_AUTH = "## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n"
 
     def test_a_blocked_tile_in_flight_is_left_alone(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         state = self.tick(self.BLOCKED)
         self.assertEqual(self.fake.started, [])
@@ -1341,7 +1341,7 @@ class Blocked(unittest.TestCase):
         self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
 
     def test_a_blocked_tile_is_logged_once_however_many_looks_pass(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         for _ in range(3):
             self.tick(self.BLOCKED)
@@ -1349,23 +1349,23 @@ class Blocked(unittest.TestCase):
         self.assertEqual(self.out.getvalue().count(want), 1)
 
     def test_the_log_names_several_blockers_and_says_they_are_done(self):
-        self.file("backlog.md", "## Ideas\n\n- [ ] PLN-30 **A.**\n- [ ] PLN-31 **B.**\n- [ ] PLN-32 **C.**\n")
+        self.file("plan.md", "## Ideas\n\n- [ ] PLN-30 **A.**\n- [ ] PLN-31 **B.**\n- [ ] PLN-32 **C.**\n")
         self.tick(self.EMPTY)
         self.tick(self.BLOCKED.replace("PLN-30.", "PLN-30, PLN-31, PLN-32."))
         self.assertIn("PLN-41 is in flight but blocked by PLN-30, PLN-31 and PLN-32: left alone until they are done", self.out.getvalue())
 
     def test_a_tile_is_picked_up_on_the_look_after_its_last_blocker_is_done(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(self.BLOCKED)
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         state = self.tick(self.BLOCKED)
         self.assertEqual(self.fake.started, ["PLN-41"])
         self.assertEqual(state["blocked"], {})
 
     def test_a_blocked_master_is_no_umbrella_and_its_sub_stories_wait_with_it(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         board = ("## In flight\n\n- [ ] PLN-70 **Dark mode.** Blocked by PLN-30.\n\n"
                  "- [ ] PLN-71 **Switch.** Part of PLN-70.\n\n## Done\n")
         self.tick(self.EMPTY)
@@ -1376,7 +1376,7 @@ class Blocked(unittest.TestCase):
 
     def test_a_tile_at_work_carries_on_when_a_blocker_is_added_and_is_not_listed_as_blocked(self):
         free = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(free)
         self.assertEqual(self.fake.started, ["PLN-41"])
@@ -1402,31 +1402,31 @@ class Blocked(unittest.TestCase):
         self.assertNotIn("These decisions were made", pickup.prompt(self.store, job, "b", Path("/x/wt")))
 
     def test_the_startup_report_says_a_tile_is_blocked(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         report = pickup.startup_report(self.store, in_flight(self.store, self.BLOCKED), sessions=pickup.Sessions(sessions=lambda: {}))
         self.assertIn('  PLN-41 "Nav": no session: blocked by PLN-30', report)
 
     def test_the_summary_lists_the_blocked_tiles(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.assertEqual(pickup.summary(self.store)["blocked"], {})
         self.tick(self.EMPTY)
         self.tick(self.BLOCKED)
         self.assertEqual(pickup.summary(self.store)["blocked"], {"PLN-41": ["PLN-30"]})
 
     def test_a_blocked_tile_is_not_adopted_when_the_server_starts(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.assertEqual(pickup.adopt(self.store, in_flight(self.store, self.BLOCKED)), [])
 
     MASTER = ("## In flight\n\n- [ ] PLN-70 **Dark mode.**{extra}\n\n"
               "- [ ] PLN-71 **Switch.** Part of PLN-70.\n\n## Done\n")
 
     def test_a_master_blocked_after_its_sub_story_started_stays_an_umbrella_once_unblocked(self):
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(self.MASTER.format(extra=""))
         self.assertEqual(self.fake.started, ["PLN-71"])
         self.tick(self.MASTER.format(extra=" Blocked by PLN-30."))
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         self.tick(self.MASTER.format(extra=" Blocked by PLN-30."))
         self.assertEqual(self.fake.started, ["PLN-71"])
@@ -1446,7 +1446,7 @@ class Blocked(unittest.TestCase):
     def paused_and_blocked(self):
         """PLN-41 started, paused, its tile out of In flight and back blocked by PLN-30."""
         free = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(free)
         self.fake.live.clear()
@@ -1460,14 +1460,14 @@ class Blocked(unittest.TestCase):
         self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
         self.assertEqual(self.out.getvalue().count("PLN-41 is in flight but blocked by PLN-30"), 1)
         self.assertEqual(self.jobs(), [("PLN-41", "paused")])
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         self.tick(self.BLOCKED)
         self.assertIn(self.jobs()[0][1], ("waiting", "started"))
 
     def test_a_requeued_job_carries_the_decisions_made_while_it_was_paused(self):
         self.paused_and_blocked()
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         self.tick(self.BLOCKED)
         job = pickup.load(self.store)["jobs"][0]
@@ -1477,7 +1477,7 @@ class Blocked(unittest.TestCase):
     def paused_in_place(self):
         """PLN-41 started, then paused by the Pause button with its tile still in In flight."""
         free = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(free)
         self.fake.live.clear()
@@ -1494,7 +1494,7 @@ class Blocked(unittest.TestCase):
     def test_a_story_paused_in_place_is_still_paused_on_the_look_after_its_blocker_is_done(self):
         self.paused_in_place()
         self.tick(self.BLOCKED)
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         self.tick(self.BLOCKED)
         self.assertEqual(self.jobs(), [("PLN-41", "paused")])
@@ -1503,7 +1503,7 @@ class Blocked(unittest.TestCase):
 
     def queued_behind(self):
         """PLN-40 at work and PLN-41 queued behind it (parallel 1)."""
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(self.TWO.format(extra=""))
         self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "waiting")])
@@ -1522,7 +1522,7 @@ class Blocked(unittest.TestCase):
     def test_a_queued_job_that_became_blocked_is_queued_again_on_the_look_after_its_blocker_is_done(self):
         self.queued_behind()
         self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         state = self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
         self.assertEqual(state["blocked"], {})
@@ -1531,7 +1531,7 @@ class Blocked(unittest.TestCase):
 
     def test_a_waiting_take_over_whose_tile_gains_a_blocker_comes_back_as_a_take_over(self):
         alone = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
-        self.file("backlog.md", self.AUTH)
+        self.file("plan.md", self.AUTH)
         self.tick(self.EMPTY)
         self.tick(alone)
         self.fake.live.clear()
@@ -1544,7 +1544,7 @@ class Blocked(unittest.TestCase):
         state = self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
         self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
         self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "paused")])
-        self.file("backlog.md", "## Ideas\n")
+        self.file("plan.md", "## Ideas\n")
         self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
         self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
         self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "waiting")])
@@ -1945,13 +1945,13 @@ class Tidy(unittest.TestCase):
             {"key": "PLN-07", "id": "", "state": "ended", "branch": self.branch, "worktree": str(self.path)}]})
         git(self.app, "merge", "-q", "--ff-only", self.branch)
         plans = self.store.dir
-        (plans / "plans.md").write_text("# Plans\n\n## Done\n\n- [x] PLN-07 **Small thing.**\n")
+        (plans / "build.md").write_text("# Plans\n\n## Done\n\n- [x] PLN-07 **Small thing.**\n")
         (plans / "archive").mkdir()
         (plans / "archive" / "archived.md").write_text("# Archived plans\n\n## Archived\n")
         told = set()
         serve.tidy_stragglers(self.store, told)  # still on the board: left alone
         self.assertTrue(self.path.exists())
-        (plans / "plans.md").write_text("# Plans\n\n## Done\n")
+        (plans / "build.md").write_text("# Plans\n\n## Done\n")
         (plans / "archive" / "archived.md").write_text("# Archived plans\n\n## Archived\n\n- [x] PLN-07 **Small thing.**\n")
         serve.tidy_stragglers(self.store, told)
         self.assertFalse(self.path.exists() or self.has_branch())
@@ -2048,6 +2048,67 @@ class Naming(unittest.TestCase):
         path, name = pickup.prepare(stores.Store(plans), job)
         (plans / "board.json").write_text(json.dumps({"app": "../app", "trunk": "dev", "worktree": "wt/{key}"}))
         self.assertEqual(pickup.prepare(stores.Store(plans), {**job, "worktree": str(path)}), (path, name))
+
+
+class OldNames(unittest.TestCase):
+    """A store still on plans.md and backlog.md picks up, prompts and promotes exactly as it did."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        (self.dir / "plans.md").write_text("## To do\n\n## In flight\n\n## Done\n", encoding="utf-8")
+        (self.dir / "backlog.md").write_text("## Feature\n\n- [ ] PLN-60 **Later.**\n\n- [ ] PLN-01 **Grand plan.**\n  The [charter](https://example.com/charter).\n", encoding="utf-8")
+        (self.dir / "board.json").write_text(json.dumps({"name": "Shop"}), encoding="utf-8")
+        self.store = stores.Store(self.dir)
+        self.clock = 1000
+        self.fake = Fake(now=lambda: self.clock, announce=lambda store, job: None)
+        quiet = contextlib.redirect_stdout(io.StringIO())
+        quiet.__enter__()
+        self.addCleanup(quiet.__exit__, None, None, None)
+
+    def test_the_store_s_boards_are_plans_md_and_backlog_md(self):
+        self.assertEqual((self.store.build, self.store.plan), ("plans.md", "backlog.md"))
+
+    def test_a_tile_that_lands_in_flight_on_plans_md_is_picked_up(self):
+        self.clock += 600
+        pickup.tick(self.store, in_flight(self.store, "## In flight\n\n## Done\n"), sessions=self.fake)
+        self.clock += 600
+        pickup.tick(self.store, in_flight(self.store, "## In flight\n\n- [ ] PLN-06 **Fresh.**\n"), sessions=self.fake)
+        self.assertEqual(self.fake.started, ["PLN-06"])
+
+    def test_a_session_started_on_the_old_names_is_told_plans_md(self):
+        job = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
+        for again in (False, True):
+            text = pickup.prompt(self.store, job, "b", Path("/x/wt"), again)
+            self.assertIn(str(self.dir / "plans.md"), text)
+            self.assertIn("header of plans.md", text)
+            self.assertNotIn("build.md", text)
+
+    def test_a_master_in_backlog_md_is_found_for_a_sub_story_in_flight(self):
+        board = "## In flight\n\n- [ ] PLN-03 **Session page.**\n  Part of PLN-01.\n"
+        tile = in_flight(self.store, board)[0]
+        self.assertEqual(tile["of"], "PLN-01")
+        self.assertIn("charter", tile["context"])
+
+    def test_a_tile_promoted_from_backlog_md_lands_in_plans_md_s_to_do(self):
+        import http.client
+        import threading
+        with mock.patch.object(serve.gitlog, "record"):
+            srv = serve.ThreadingHTTPServer(("127.0.0.1", 0), type("Handler", (serve.Handler,), {"store": self.store}))
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            self.addCleanup(srv.server_close)
+            self.addCleanup(srv.shutdown)
+            text = (self.dir / "backlog.md").read_text(encoding="utf-8")
+            rest, _ = reader.take(self.store, text, ["PLN-60"])
+            tile = next(t for t in reader.parse(self.store, text, file="backlog.md") if t.key == "PLN-60").text
+            body = json.dumps({"mtime": serve.mtime(self.dir / "backlog.md"), "text": rest, "tile": tile, "column": "To do"}).encode()
+            c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+            c.request("POST", "/api/move?file=backlog.md", body=body, headers={"Content-Type": "application/json"})
+            r = c.getresponse()
+            reply = json.loads(r.read())
+            c.close()
+        self.assertEqual(r.status, 200, reply)
+        self.assertNotIn("PLN-60", (self.dir / "backlog.md").read_text(encoding="utf-8"))
+        self.assertTrue((self.dir / "plans.md").read_text(encoding="utf-8").split("## To do\n\n", 1)[1].startswith("- [ ] PLN-60 **Later.**"))
 
 
 # What `claude --help` and `claude agents --help` print (Claude Code 2.1), cut down.

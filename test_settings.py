@@ -313,7 +313,7 @@ class Watch(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dir = Path(self.tmp.name)
-        (self.dir / "plans.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-80 **On its own.**\n", encoding="utf-8")
+        (self.dir / "build.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-80 **On its own.**\n", encoding="utf-8")
         self.ctx = {"seen": None, "last": 0.0, "told": set(), "before": None, "was_on": False}
         self.ticks, self.adopted, self.stopped = [], [], []
         for name, fake in (("why_off", lambda store, **kw: None),
@@ -331,7 +331,7 @@ class Watch(unittest.TestCase):
         aged(self.dir / "board.json")
         return Store(self.dir)
 
-    def turns(self, store, n=2):  # the first look waits for plans.md to settle
+    def turns(self, store, n=2):  # the first look waits for build.md to settle
         for _ in range(n):
             serve.watch_turn(store, self.ctx)
 
@@ -351,7 +351,7 @@ class Watch(unittest.TestCase):
         self.turns(st)
         self.assertEqual(len(self.ticks), 1)
         (self.dir / "board.json").write_text(json.dumps({"pickup": False}), encoding="utf-8")
-        (self.dir / "plans.md").write_text("# Plans\n\n## In flight\n\n", encoding="utf-8")
+        (self.dir / "build.md").write_text("# Plans\n\n## In flight\n\n", encoding="utf-8")
         self.turns(st, 3)
         self.assertIs(st.pickup, False)
         self.assertEqual(len(self.ticks), 1)
@@ -378,9 +378,9 @@ class Watch(unittest.TestCase):
 
     def test_a_blocker_filed_in_the_archive_log_starts_the_tile_it_blocked_though_plans_md_is_unchanged(self):
         from test_pickup import Fake
-        (self.dir / "plans.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", encoding="utf-8")
-        (self.dir / "backlog.md").write_text("# Backlog\n\n## Design decision\n\n- [ ] PLN-30 **Auth.**\n", encoding="utf-8")
-        for name in ("plans.md", "backlog.md"):
+        (self.dir / "build.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", encoding="utf-8")
+        (self.dir / "plan.md").write_text("# Backlog\n\n## Design decision\n\n- [ ] PLN-30 **Auth.**\n", encoding="utf-8")
+        for name in ("build.md", "plan.md"):
             aged(self.dir / name)
         st = self.store({"pickup": True})
         self.ctx["was_on"] = True
@@ -389,7 +389,7 @@ class Watch(unittest.TestCase):
                 mock.patch.object(pickup, "log"):
             self.turns(st, 3)
             self.assertEqual(fake.started, [])
-            (self.dir / "backlog.md").write_text("# Backlog\n\n## Design decision\n", encoding="utf-8")
+            (self.dir / "plan.md").write_text("# Backlog\n\n## Design decision\n", encoding="utf-8")
             (self.dir / "archive").mkdir()
             (self.dir / "archive" / "archived.md").write_text(
                 "# Archive\n\n## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n", encoding="utf-8")
@@ -467,7 +467,7 @@ class Watch(unittest.TestCase):
         serve.DRAFTS_ASKED.set()
         self.draft_turns(st)
         self.assertEqual(self.looks, [True])
-        (self.dir / "plans.md").write_text("# Plans\n\n## Decisions\n\n", encoding="utf-8")
+        (self.dir / "build.md").write_text("# Plans\n\n## Decisions\n\n", encoding="utf-8")
         serve.DRAFTS_ASKED.set()
         self.draft_turns(st)
         self.assertEqual(self.looks, [False])
@@ -495,7 +495,7 @@ class Watch(unittest.TestCase):
         self.assertEqual(self.logged, ["PLN-80: options read again from its research doc"])
 
     def decision(self, column="Decisions", tile=True):
-        board = self.dir / "plans.md"
+        board = self.dir / "build.md"
         board.write_text(f"# Plans\n\n## {column}\n\n" + ("- [ ] PLN-80 **On its own.**\n" if tile else ""), encoding="utf-8")
         if board.stat().st_mtime_ns == getattr(self, "board_at", None):
             os.utime(board, ns=(board.stat().st_atime_ns, board.stat().st_mtime_ns + 10**9))
@@ -611,19 +611,19 @@ class Watch(unittest.TestCase):
                 mock.patch.object(serve.time, "sleep", sleep), mock.patch.object(pickup, "log"):
             with self.assertRaises(Stop):
                 serve.watch_pickups(st)
-        self.assertEqual(order, [("move", "plans.md"),  # at the start: its session is busy
-                                 ("move", "plans.md"), ("drafts", "plans.md"), ("turn", "plans.md"),
-                                 ("move", "plans.md"), ("drafts", "build.md"), ("turn", "build.md")])
+        self.assertEqual(order, [("move", "build.md"),  # at the start: its session is busy
+                                 ("move", "build.md"), ("drafts", "build.md"), ("turn", "build.md"),
+                                 ("move", "build.md"), ("drafts", "build.md"), ("turn", "build.md")])
         self.assertEqual(st.boards, ("build.md", "plan.md"))
 
     def test_a_store_whose_board_changed_since_the_previous_turn_waits_a_turn(self):
         st = self.store({"pickup": False})
-        aged(self.dir / "plans.md")
+        aged(self.dir / "build.md")
         self.ctx["m_before"] = serve.old_board_mtimes(st)  # as the watch starts
-        (self.dir / "plans.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-80 **On its own.** Edited.\n", encoding="utf-8")
+        (self.dir / "build.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-80 **On its own.** Edited.\n", encoding="utf-8")
         with mock.patch.object(pickup, "log"):
             self.move_turns(st)
-            self.assertEqual(st.build, "plans.md")
+            self.assertEqual(st.build, "build.md")
             self.move_turns(st)
         self.assertEqual(st.build, "build.md")
         self.assertIn("Edited.", (self.dir / "build.md").read_text(encoding="utf-8"))

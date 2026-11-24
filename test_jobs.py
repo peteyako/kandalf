@@ -433,7 +433,7 @@ class OldFiles(unittest.TestCase):
         self.ledger.path.write_text(json.dumps(state), encoding="utf-8")
 
     def tick(self, board, sessions):
-        files = {"plans.md": board}
+        files = {"build.md": board}
         nothing = pickup.Sessions(start=lambda store, job, again=False: {"state": "failed"},
                                   sessions=lambda: sessions, why=lambda sid: None, now=lambda: 10_000,
                                   resume=lambda store, job, text=None: {"state": "failed"}, stop=lambda sid: None,
