@@ -111,6 +111,11 @@ def family_text(by_key: dict, key: str) -> str:
     return "\n".join(t["text"] for t in [by_key[key], *lineage(by_key, key)])
 
 
+def joined(keys: list) -> str:
+    """Keys read out as a list: "a", "a and b", "a, b and c"."""
+    return keys[0] if len(keys) == 1 else f"{', '.join(keys[:-1])} and {keys[-1]}"
+
+
 def entered(prev, tiles, sessions: int = 2) -> list:
     """The jobs for the tiles that are in flight now and weren't before. tiles: the In flight
     tiles, [{"key", "title", "text", "parent"}] (tiles.Snapshot.in_flight). A master that arrives
@@ -119,11 +124,11 @@ def entered(prev, tiles, sessions: int = 2) -> list:
     else sessions). A sub-story that joins a master already in flight is one of them too."""
     by_key = {t["key"]: t for t in tiles}
     new = {t["key"] for t in tiles if t["key"] not in prev}
-    masters = {by_key[k]["parent"] for k in new} & new  # arriving with a sub-story: the umbrella, not a job
+    masters = {t["parent"] for t in tiles if t.get("parent")} & new  # a sub-story in flight, whenever it arrived: the umbrella, not a job
     jobs = []
     for key in (t["key"] for t in tiles if t["key"] in new):
         above, text = lineage(by_key, key), family_text(by_key, key)
-        if key in masters or reader.opted_out(text):
+        if key in masters or reader.opted_out(text) or by_key[key].get("blocked"):
             continue
         job = {"key": key, "title": by_key[key]["title"], "with": [], "text": text}
         base = reader.base(text)
@@ -131,6 +136,8 @@ def entered(prev, tiles, sessions: int = 2) -> list:
             job["base"] = base
         if by_key[key].get("context"):  # its master isn't in flight: its tile is given to read, and nothing more
             job.update(of=by_key[key]["of"], context=by_key[key]["context"])
+        if by_key[key].get("decisions"):  # what was decided for the story, kept apart from its master's tile
+            job["decisions"] = by_key[key]["decisions"]
         if above:
             limit = reader.sessions(text)
             job.update(master=above[-1]["key"], limit=max(1, limit) if limit is not None else sessions)
@@ -360,6 +367,8 @@ def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str
         tiles = (f"this tile, a sub-story of {job['of']}, whose tile follows it for you to read: a design or a decision it "
                  f"links is yours to follow. Do only {job['key']}: {job['of']} isn't in flight")
     told = job.get("text", "") + ("\n" + job["context"] if job.get("context") else "")
+    if job.get("decisions"):
+        told += f"\n\nThese decisions were made before {job['key']} started. Follow them:\n{job['decisions']}"
     if again:
         why = ("was paused from the board, and wrote what it left on the tile's \"Handoff:\" line before it stopped; "
                "you carry on from there" if again == "paused" else "has closed; it can't be resumed, so you carry on from what it left")
@@ -721,8 +730,8 @@ def _begin(store, job, sessions, at):
 
 def tick(store, tiles, *, sessions: Sessions = SESSIONS) -> dict:
     """One look at the board. tiles: the In flight tiles now. Queues the ones that arrived (a
-    paused one, to be taken over from its handoff), drops a waiting one that left again (a
-    paused one goes back to paused), pauses a session at work whose tile left In flight, as
+    paused one, to be taken over from its handoff), drops a waiting one that left again or
+    became blocked (a paused one goes back to paused), pauses a session at work whose tile left In flight, as
     the Pause button does (not one told to merge, which moves its own tile to Done), notes each session as at work, idle or lost, moves a
     session whose tile changed model onto that model or repos onto those repos, and starts the oldest waiting job if
     no session is at work. sessions: what it does to them (Sessions; the server's announces each start on its tile).
@@ -738,7 +747,18 @@ def tick(store, tiles, *, sessions: Sessions = SESSIONS) -> dict:
             if k not in state.get("held", []):
                 log(f"{k} is in flight but says No pickup: left alone until those words go")
         state["held"] = held
-        keys = [k for k in by_key if k not in held]
+        # A tile blocked by tiles not yet done is left alone the same way, until they are.
+        # A paused job's tile that comes back blocked waits too, to be taken over once it is not.
+        # One paused in place (its tile never left In flight) stays paused until Continue, whatever blocks it.
+        # A queued job is not at work: its tile, once blocked, gives up its place in the queue (below).
+        seen = state["inflight"]
+        at_work = {j["key"] for j in jobs if j["state"] in TRACKED or (j["state"] == "paused" and (seen is None or j["key"] in seen))}
+        blocked = {k: by_key[k]["blocked"] for k in by_key if by_key[k].get("blocked") and k not in at_work and k not in held}
+        for k, by in blocked.items():
+            if k not in state.get("blocked", {}):
+                log(f"{k} is in flight but blocked by {joined(by)}: left alone until {'it is' if len(by) == 1 else 'they are'} done")
+        state["blocked"] = blocked
+        keys = [k for k in by_key if k not in held and k not in blocked]
         # A master with sub-stories in flight is an umbrella and gets no session (entered). Once
         # the last of them has left, it is picked up as if it had just landed, as at the server's start (adopt).
         parents = {t.get("parent") for t in tiles}
@@ -760,6 +780,11 @@ def tick(store, tiles, *, sessions: Sessions = SESSIONS) -> dict:
                 _say(ledger.queue(state, {**job, "model": model_for(store, job["text"]), **({"want": want} if want is not None else {})}, now()))
         for j in [j for j in jobs if j["state"] == "waiting" and j["key"] not in by_key]:
             _say(ledger.unqueue(state, j))
+        # A queued job whose tile became blocked leaves the queue as if its tile had left In
+        # flight (a take-over goes back to paused, and is queued again once unblocked); the
+        # blocked line above has said why.
+        for j in [j for j in jobs if j["state"] == "waiting" and j["key"] in blocked]:
+            ledger.unqueue(state, j)
         state["inflight"] = keys
         waiting = [j for j in jobs if j["state"] == "waiting"]
         latest = {j["key"]: j for j in jobs}
@@ -1348,7 +1373,7 @@ def adopt(store, tiles) -> list:
         had = {j["key"] for j in state["jobs"]}
         masters = {t["parent"] for t in tiles if t.get("parent")}
         fresh = [t["key"] for t in tiles if t["key"] not in had and t["key"] not in masters
-                 and reader.session(t["text"]) is None and not reader.opted_out(t["text"])]
+                 and reader.session(t["text"]) is None and not reader.opted_out(t["text"]) and not t.get("blocked")]
         seen = state["inflight"] if state["inflight"] is not None else [t["key"] for t in tiles]
         state["inflight"] = [k for k in seen if k not in fresh]
         return fresh
@@ -1384,7 +1409,8 @@ def startup_report(store, tiles, *, sessions: Sessions = SESSIONS) -> list:
         elif sid:
             what = doing(sid)
         else:
-            what = "no session: its tile says No pickup" if reader.opted_out(t["text"]) else "no session"
+            what = ("no session: its tile says No pickup" if reader.opted_out(t["text"])
+                    else f"no session: blocked by {joined(t['blocked'])}" if t.get("blocked") else "no session")
         if reader.ready(t["text"]) is not None:
             what += ", ready for review"
         lines.append(f"  {t['key']} \"{t['title']}\": {what}")
@@ -1534,11 +1560,12 @@ def summary(store) -> dict:
     why_off's sentence when it is off). A story ready for review whose session isn't at work
     carries "empty" when it has nothing to merge (nothing_to_merge): its review is Close. Each job
     carries its "view" (ledger.view): its label and the actions open to it."""
-    jobs = [{k: v for k, v in j.items() if k != "text"} for j in ledger.Ledger(store).read()["jobs"]]
+    state = ledger.Ledger(store).read()
+    jobs = [{k: v for k, v in j.items() if k != "text"} for j in state["jobs"]]
     for j in jobs:
         if j.get("ready") and j["state"] in ("idle", "lost") and nothing_to_merge(store, j):
             j["empty"] = True
     for j in jobs:
         j["view"] = ledger.view(j)
     why = why_off(store)
-    return {"enabled": why is None, "why": why, "jobs": jobs}
+    return {"enabled": why is None, "why": why, "jobs": jobs, "blocked": state.get("blocked", {})}

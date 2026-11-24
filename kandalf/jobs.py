@@ -200,7 +200,7 @@ def requeue(state: dict, job: dict, now: float, tile: dict = None) -> str:
     if job["state"] != "paused":
         _not_for(job, "only a paused job is queued again")
     if tile is not None:
-        for k in ("master", "limit", "of", "context", "base"):
+        for k in ("master", "limit", "of", "context", "base", "decisions"):
             job.pop(k, None)
         job.update(tile)
     job.update(state="waiting", again="paused", at=int(now))

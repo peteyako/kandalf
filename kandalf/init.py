@@ -319,7 +319,9 @@ This repo's stories live on a kandalf board, linked in at `docs/{link}`. When th
 rules, run `kandalf key next` for the key, write the plan doc in `docs/{link}/active/` and add
 the tile at the top of its column on `docs/{link}/backlog.md`. A master story with sub-stories,
 a story's domain and the other stories it names are what the board's map is drawn from: write
-the `Part of`, `Domain:` and key mentions as that header says. Commit with
+the `Part of`, `Domain:` and key mentions as that header says. A story that waits on other
+tiles says `Blocked by` and their keys; a tile in the Design decision column is answered on its
+card, not promoted. Commit with
 `git -C docs/{link} commit -- <paths>`, never in this repo.
 {AGENT_NOTES_END}
 """

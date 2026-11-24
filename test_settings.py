@@ -11,6 +11,8 @@ from unittest import mock
 from kandalf import agent, pickup, serve, settings
 from kandalf.store import Store
 
+REAL_TICK = pickup.tick  # the Watch tests fake it; one look needs the real one
+
 
 class Reload(unittest.TestCase):
     def setUp(self):
@@ -371,6 +373,27 @@ class Watch(unittest.TestCase):
         self.turns(st)
         self.assertEqual(self.adopted, [["PLN-80"]])
         self.assertEqual(self.ticks, [["PLN-80"]])
+
+    def test_a_blocker_filed_in_the_archive_log_starts_the_tile_it_blocked_though_plans_md_is_unchanged(self):
+        from test_pickup import Fake
+        (self.dir / "plans.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", encoding="utf-8")
+        (self.dir / "backlog.md").write_text("# Backlog\n\n## Design decision\n\n- [ ] PLN-30 **Auth.**\n", encoding="utf-8")
+        for name in ("plans.md", "backlog.md"):
+            aged(self.dir / name)
+        st = self.store({"pickup": True})
+        self.ctx["was_on"] = True
+        fake = Fake(announce=lambda store, job: None)
+        with mock.patch.object(pickup, "tick", REAL_TICK), mock.patch.object(serve, "SESSIONS", fake), \
+                mock.patch.object(pickup, "log"):
+            self.turns(st, 3)
+            self.assertEqual(fake.started, [])
+            (self.dir / "backlog.md").write_text("# Backlog\n\n## Design decision\n", encoding="utf-8")
+            (self.dir / "archive").mkdir()
+            (self.dir / "archive" / "archived.md").write_text(
+                "# Archive\n\n## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n", encoding="utf-8")
+            self.turns(st)
+        self.assertEqual(fake.started, ["PLN-41"])
+        self.assertEqual(pickup.load(st)["blocked"], {})
 
     def test_a_board_json_that_cannot_be_read_does_not_end_the_watch(self):
         st = self.store({"pickup": True})

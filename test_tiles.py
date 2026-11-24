@@ -136,6 +136,25 @@ class Edits(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())
 
+    def test_a_decision_is_the_tile_s_last_line_and_ticks_its_box(self):
+        md = "- [ ] PLN-30 **Pro theme.**\n  Keep or retire.\n  - [ ] **Decide.**"
+        self.assertEqual(tiles.with_decision(md, "retire it.", "2026-11-23"),
+                         "- [x] PLN-30 **Pro theme.**\n  Keep or retire.\n  - [ ] **Decide.**\n  **Decision 2026-11-23:** retire it.")
+
+    def test_an_answer_of_several_lines_is_folded_into_one(self):
+        out = tiles.with_decision("- [ ] PLN-30 **T.**", "retire it\n\n## Later\n- [ ] no", "2026-11-23")
+        self.assertEqual(out.split("\n")[1:], ["  **Decision 2026-11-23:** retire it ## Later - [ ] no"])
+
+    def test_a_second_decision_is_added_under_the_first(self):
+        once = tiles.with_decision("- [ ] PLN-30 **T.**", "keep it.", "2026-11-22")
+        twice = tiles.with_decision(once, "retire it.", "2026-11-23")
+        self.assertEqual(tiles.decision(twice), {"date": "2026-11-23", "text": "retire it."})
+        self.assertEqual(twice.count("**Decision "), 2)
+
+    def test_a_tile_with_no_box_gets_none(self):
+        self.assertEqual(tiles.with_decision("PLN-30 **T.**", "ok", "2026-11-23"),
+                         "PLN-30 **T.**\n  **Decision 2026-11-23:** ok")
+
     def test_taking_tiles_leaves_a_board_that_round_trips(self):
         for keys in ({"PLN-74"}, {"PLN-75"}, {"PLN-23"}, {"PLN-74", "PLN-23"}, {"PLN-74", "PLN-23", "PLN-75"}):
             rest, taken = tiles.take(self.store, LINKS, keys)
@@ -276,7 +295,8 @@ class SnapshotTests(unittest.TestCase):
     def test_the_index_says_where_each_keyed_tile_is_and_its_own_tests_line(self):
         index = self.snap.index()
         self.assertEqual(index["PLN-83"], {"title": "Master", "file": "plans.md", "column": "In flight", "done": False,
-                                           "parent": None, "mentions": [], "tests": "full", "domain": None})
+                                           "parent": None, "mentions": [], "blockers": [], "decision": None,
+                                           "tests": "full", "domain": None})
         self.assertEqual((index["PLN-41"]["file"], index["PLN-41"]["done"], index["PLN-41"]["tests"]),
                          (tiles.ARCHIVE_LOG, True, "affected"))
         self.assertIsNone(index["PLN-80"]["tests"])  # its own line only: the master's is for nearest()
@@ -344,9 +364,47 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(snap.linked(), {"PLN-74": ["PLN-75"], "PLN-75": ["PLN-74"]})
 
 
+BLOCKED_PLANS = "## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n"
+DECIDED = "- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n"
+
+
+class BlockedSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        self.store = stores.Store(tempfile.mkdtemp())
+
+    def snap(self, **files):
+        return tiles.Snapshot(self.store, {"plans.md": BLOCKED_PLANS, **files})
+
+    def test_the_index_carries_each_tile_s_blockers_and_its_decision(self):
+        index = self.snap(**{tiles.ARCHIVE_LOG: "## Archived\n\n" + DECIDED}).index()
+        self.assertEqual(index["PLN-41"]["blockers"], ["PLN-30"])
+        self.assertIsNone(index["PLN-41"]["decision"])
+        self.assertEqual(index["PLN-30"]["decision"], {"date": "2026-11-23", "text": "retire it."})
+        self.assertEqual(index["PLN-30"]["blockers"], [])
+
+    def test_the_index_decision_is_the_later_of_two_decision_lines(self):
+        two = "- [x] PLN-30 **Auth.**\n  **Decision 2026-11-20:** keep it.\n  **Decision 2026-11-23:** retire it.\n"
+        index = self.snap(**{tiles.ARCHIVE_LOG: "## Archived\n\n" + two}).index()
+        self.assertEqual(index["PLN-30"]["decision"]["text"], "retire it.")
+
+    def test_an_in_flight_tile_carries_what_still_blocks_it(self):
+        tile = self.snap(**{"backlog.md": "## Ideas\n\n- [ ] PLN-30 **Auth.**\n"}).in_flight()[0]
+        self.assertEqual(tile["blocked"], ["PLN-30"])
+        self.assertNotIn("decisions", tile)
+
+    def test_an_in_flight_tile_carries_the_decisions_made_for_it(self):
+        tile = self.snap(**{tiles.ARCHIVE_LOG: "## Archived\n\n" + DECIDED}).in_flight()[0]
+        self.assertNotIn("blocked", tile)
+        self.assertEqual(tile["decisions"], DECIDED.rstrip("\n"))
+
+    def test_a_decided_tile_put_back_on_the_backlog_blocks_again(self):
+        snap = self.snap(**{"backlog.md": "## Ideas\n\n" + DECIDED})
+        self.assertEqual(snap.blocking("PLN-41"), ["PLN-30"])
+
+
 CASES = json.loads((HERE / "tile_cases.json").read_text(encoding="utf-8"))  # test_page.js runs the same file
 READERS = {"model": tiles.model, "base": tiles.base, "tests": tiles.tests, "domain": tiles.domain, "repos": tiles.repos,
-           "sessions": tiles.sessions, "ready": tiles.ready}
+           "sessions": tiles.sessions, "ready": tiles.ready, "decision": tiles.decision}
 
 
 def seen_session(found):
@@ -379,7 +437,7 @@ class TileCases(unittest.TestCase):
                 self.assertEqual(len(got), 1)
                 tile = got[0]
                 facts = {"key": tile.key, "title": tile.title, "parent": tile.parent, "links": tile.links,
-                         "mentions": tile.mentions, "done": tile.done, "column": tile.column}
+                         "mentions": tile.mentions, "blockers": tile.blockers, "done": tile.done, "column": tile.column}
                 for name, found in facts.items():
                     if name in case:
                         self.assertEqual(found, case[name], name)
@@ -407,9 +465,20 @@ class TileCases(unittest.TestCase):
                 self.store.pickup_column = case.get("pickupColumn")
                 if "pickup" in case:
                     self.assertEqual(tiles.is_pickup_column(self.store, case["name"]), case["pickup"])
-                else:
+                if "inFlight" in case:
                     self.assertEqual(tiles.is_pickup_column(self.store, case["name"]), case["inFlight"])
+                if "done" in case:
                     self.assertEqual(bool(tiles.DONE_COL_RE.search(case["name"])), case["done"])
+                if "decision" in case:
+                    self.assertEqual(tiles.is_decision_column(case["name"]), case["decision"])
+
+    def test_each_family_says_what_blocks_each_tile(self):
+        for case in CASES["blocked"]:
+            snap = tiles.Snapshot(self.store, case["files"])
+            for key, want in case["expect"].items():
+                with self.subTest(case["name"], key=key):
+                    self.assertEqual(snap.blocking(key), want["blocking"])
+                    self.assertEqual([t.key for t in snap.decisions(key)], want["decisions"])
 
 
 if __name__ == "__main__":

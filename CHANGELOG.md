@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A tile that says `Blocked by PLN-30` (or `PLN-30, PLN-31 and PLN-32`) waits for those tiles. A blocker is done when it is in a Done column or archived; a key no tile has blocks too, and a sub-story takes its master's blockers. What is blocked is read from the board each time, never stored. Take the words off to start the story anyway.
+- A blocked tile shows a lock row for each open blocker (its key and title), a line for a key no tile has, and a check row with the answer once a blocker carries a decision. Clicking a key opens that tile on its board. Two tiles that block each other say so, and a blocked tile in flight says `waits for PLN-30`.
+- Pickup leaves a blocked tile in In flight alone and picks it up on the first look after its last blocker is done; the console and the startup list say what it waits for. Deciding a backlog tile starts what it blocked at once: a change to `backlog.md` or the archive log brings a look, as one to `plans.md` does. A story that already has a session carries on if a `Blocked by` line is added, and one paused in place stays paused. A story still queued gives up its place in the queue when it becomes blocked, and is queued again at the back once it is not. A story's session is given the tiles of its decided blockers to follow.
+- A master with any sub-story in flight gets no session of its own, whenever its sub-stories arrived. This now holds when `No pickup` is taken off such a master too.
+- A tile in a column named for decisions (Design decision, Decisions, Decide) has an Answer box on its card and a `Blocks …` line. **Decide** (`POST /api/decide`) writes the answer on the tile as a `**Decision <date>:**` line, folded to one line, ticks the tile and archives it in one step; the toast names the stories it unblocked. A decision is answered, not promoted or dragged to In flight.
+- On the map, a blocker is joined to the stories it blocks, the side panel lists what blocks a story and what it blocks, and a blocked story no longer pulses as one to pull next.
 - A tile's session line and its working tags show the agent's own mark too, in place of the ✦.
 - The stats strip (at work, need you, …) shows above the map too, and a pressed filter fades every story on the map that isn't in that state.
 - On the map, a story at work carries its agent's own mark (Claude's, Copilot's, or Gemini's for Antigravity) in place of the ✦, which read as Gemini's whatever the agent.

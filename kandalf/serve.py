@@ -367,9 +367,10 @@ def adopt_in_flight(store):
 
 def watch_turn(store, ctx: dict):
     """One turn of the pickup watch: read board.json again if it changed, and while pickup is
-    on and can run, look at plans.md when it changes (and now and then while a job waits or
-    runs) and hand what landed in In flight to pickup.tick. Pickup coming on adopts what is in
-    flight first; on but unable to run says why once. ctx carries the watch from turn to turn:
+    on and can run, look at plans.md when it, the backlog or the archive log changes (a blocker
+    done on those frees a tile in flight), and now and then while a job waits or runs, and hand
+    what landed in In flight to pickup.tick. Pickup coming on adopts what is in flight first; on
+    but unable to run says why once. ctx carries the watch from turn to turn:
     seen, last, told and before for the looks, was_on, mtime (board.json's, as last read), and
     why and problem, what was last said."""
     ctx.setdefault("why", None)
@@ -396,7 +397,11 @@ def watch_turn(store, ctx: dict):
         return
     board = store.dir / PICKUP_BOARD
     try:
-        at = board.stat().st_mtime_ns if board.is_file() else None
+        # What a look reads: plans.md, and the backlog and archive log its tiles' blockers may
+        # be on (a decision archived from the backlog writes no plans.md). A file not there
+        # counts as None.
+        at = tuple((store.dir / n).stat().st_mtime_ns if (store.dir / n).is_file() else None
+                   for n in reader.FAMILY) if board.is_file() else None
         # A file still being written is left for the next look: half a board reads as
         # tiles that left In flight, and then as the same tiles arriving.
         settled, ctx["before"] = at == ctx["before"], at
@@ -584,6 +589,59 @@ def first_committed(store, board: Path) -> dict:
     return first
 
 
+def archive_tile(store, board: Path, text: str, tile: str, docs: list, subject: str | None = None) -> dict:
+    """File a tile in the archive log and move its plan docs: write the board as the page has it
+    (text, without the tile), relinked, then commit. subject replaces the commit's default
+    subject. The reply carries what the page needs afterwards. Raises what archive_docs raises."""
+    moved, touched = archive_docs(store, docs)
+    # The board on disk may now carry rewritten paths too, so relink the page's text and write it.
+    write_atomic(board, relink(text, moved, store.link))
+    tile = relink(tile.rstrip("\n"), moved, store.link)
+    file_in_archive_log(store.dir / ARCHIVE_LOG, rebase_into_archive(tile, board.name))
+    key = store.key_re.search(tile.split("\n", 1)[0])
+    gitlog.record(store, [board, store.dir / ARCHIVE_LOG, *touched],
+                  subject or f"board: archive {key.group(0) if key else 'a tile'}" + (f" ({len(moved)} docs)" if moved else ""))
+    name = board.relative_to(store.dir).as_posix()
+    snap = reader.Snapshot.read(store, reader.FAMILY if name in reader.FAMILY else [name])
+    links = list(MOVES) if board.parent == store.dir and board.name in MOVES else [name]
+    return {"mtime": mtime(board), "text": board.read_text(encoding="utf-8"), "moved": moved,
+            "tidied": tidy_archived(store, [tile]),
+            "maxKey": pln.highest(store, *pln.keyed_files(store)),
+            "linked": reader.Snapshot.read(store, links).linked(),
+            "tiles": snap.index()}
+
+
+def unblocked_by(store, key: str) -> list:
+    """The keys of the open tiles whose own or inherited blockers name this key and that
+    nothing blocks any longer (Snapshot.blocking is empty), in key order."""
+    snap = reader.Snapshot.read(store)
+    found = [k for k, t in snap.texts().items()
+             if k != key and not snap.tile(k).done and key in snap._blockers_of(k) and not snap.blocking(k)]
+    return sorted(found, key=lambda k: (k.rpartition("-")[0], int(k.rpartition("-")[2]) if k.rpartition("-")[2].isdigit() else 0))
+
+
+def decide_tile(store, board: Path, data: dict, today: str) -> tuple:
+    """The status and reply for an answered decision. Body: {mtime, text: the board without the
+    tile, tile: its markdown, docs, answer}. The board's mtime is checked first (409, nothing
+    written); an empty answer and an unkeyed tile are refused (400). The tile gets its decision
+    line and is filed as Archive files it; the reply is Archive's and "unblocked", the keys that
+    nothing blocks any longer."""
+    if data.get("mtime") != mtime(board):
+        return 409, {"error": "changed on disk", "text": board.read_text(encoding="utf-8"), "mtime": mtime(board)}
+    answer = " ".join(str(data.get("answer") or "").split())  # any value is taken as its text, on one line
+    if not answer:
+        return 400, {"error": "an answer is needed"}
+    key = store.key_re.search(data["tile"].split("\n", 1)[0])
+    if not key:
+        return 400, {"error": "a decision needs a key"}
+    tile = reader.with_decision(data["tile"], answer, today)
+    try:
+        reply = archive_tile(store, board, data["text"], tile, data.get("docs") or [], f"board: {key.group(0)} decided")
+    except (FileExistsError, subprocess.CalledProcessError) as e:
+        return 409, {"error": str(e)}
+    return 200, {**reply, "unblocked": unblocked_by(store, key.group(0))}
+
+
 def refused(method: str, host, origin, port: int):
     """Why the server won't answer a request, or None when it will. Host must be the board's
     own address, 127.0.0.1:<port> or localhost:<port>, so a page of another site can't reach
@@ -756,20 +814,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(409, {"error": "changed on disk",
                                         "text": board.read_text(encoding="utf-8"), "mtime": mtime(board)})
         try:
-            moved, touched = archive_docs(self.store, data.get("docs") or [])
+            reply = archive_tile(self.store, board, data["text"], data["tile"], data.get("docs") or [])
         except (FileExistsError, subprocess.CalledProcessError) as e:
             return self.send_json(409, {"error": str(e)})
-        # The board on disk may now carry rewritten paths too, so relink the page's text and write it.
-        write_atomic(board, relink(data["text"], moved, self.store.link))
-        tile = relink(data["tile"].rstrip("\n"), moved, self.store.link)
-        file_in_archive_log(self.plans / ARCHIVE_LOG, rebase_into_archive(tile, board.name))
-        key = self.store.key_re.search(tile.split("\n", 1)[0])
-        self.commit([board, self.plans / ARCHIVE_LOG, *touched],
-                    f"board: archive {key.group(0) if key else 'a tile'}" + (f" ({len(moved)} docs)" if moved else ""))
-        self.send_json(200, {"mtime": mtime(board), "text": board.read_text(encoding="utf-8"), "moved": moved,
-                             "tidied": tidy_archived(self.store, [tile]),
-                             "maxKey": self.max_key(), "linked": self.linked(board),
-                             "tiles": self.tiles(board)})
+        self.send_json(200, reply)
+
+    def decide(self, board: Path):
+        """Body: {mtime, text, tile, docs, answer}: see decide_tile."""
+        status, reply = decide_tile(self.store, board, self.read_body(), datetime.date.today().isoformat())
+        self.send_json(status, reply)
 
     def refresh_status(self, key: str):
         board = self.plans / PICKUP_BOARD
@@ -949,6 +1002,11 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             return self.archive(p)
+        if u.path == "/api/decide":
+            p = self.target(parse_qs(u.query))
+            if p is None or not p.is_file() or p.parent != self.plans:
+                return self.send_json(404, {"error": "no such board"})
+            return self.decide(p)
         if u.path == "/api/settings":  # {mtime, changes}: the settings panel's Save
             return self.save_settings(self.read_body())
         self.send_json(404, {"error": "not found"})

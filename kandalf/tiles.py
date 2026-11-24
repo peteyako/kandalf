@@ -7,14 +7,17 @@ wording (`parse`, `splitCard`, `tileFacts` there), so each rule that is written 
 holds both readers to the same cases (test_tiles.TileCases, test_page.js).
 
     parse(store, text)      every tile of a board file, as Tile
-    model(md), base(md), tests(md), repos(md), sessions(md), ready(md), opted_out(md)
+    model(md), base(md), tests(md), repos(md), sessions(md), ready(md), decision(md), opted_out(md)
                             what one attribute line of a tile says
+    is_pickup_column, is_decision_column
+                            whether a column's name says it is the pickup column or a decision column
     session(md)             the tile's session line, as SessionLine
-    take, without, insert_after, with_session, with_status, with_key
+    take, without, insert_after, with_session, with_status, with_decision, with_key
                             edits that return the board's text
     Snapshot                plans, backlog and the archive log read once: the tile index, the
-                            texts, the In flight tiles, a tile's lineage and the nearest line
-                            of a kind up its family
+                            texts, the In flight tiles, a tile's lineage, the nearest line
+                            of a kind up its family, what still blocks a tile and the
+                            decisions made for it
 """
 
 import re
@@ -30,6 +33,8 @@ FAMILY = (PLANS, BACKLOG, ARCHIVE_LOG)  # the files a tile's master or sub-stori
 # of it, "In progrees"), Doing, WIP, Working, Underway, Ongoing, Active; never one that says "not".
 IN_FLIGHT_RE = re.compile(r"^(?!.*\bnot\b).*\b(?:in[\s_-]*flight|progre\w*|doing|wip|working|under[\s_-]*way|ongoing|active)\b", re.I)  # same in board.html (IN_FLIGHT_RE there)
 DONE_COL_RE = re.compile(r"^(?!.*\bnot\b).*\b(?:done|shipped|completed?|finished|closed|merged|released|deployed|delivered|resolved)\b", re.I)  # same in board.html (DONE_COL_RE there): Done, Shipped, Merged...; never "Not done"
+# The columns that hold decisions to make: Decisions, Design decision, Decide; never "Not a decision".
+DECISION_COL_RE = re.compile(r"^(?!.*\bnot\b).*\b(?:decisions?|decide)\b", re.I)  # same in board.html (DECISION_COL_RE there)
 TILE_HEAD_RE = re.compile(r"^(?:P[1-4] )?(?:~\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw] )?(.*)$")  # priority and estimate before a title
 
 OPT_OUT_RE = re.compile(r"\bno pickup\b", re.I)
@@ -55,6 +60,8 @@ SESSION_BRANCH_RE = re.compile(r"Branch `([^`]+)`, worktree `([^`]+)`")
 SESSION_REPOS_RE = re.compile(r"Branch `([^`]+)`, worktrees ([^`,]+? `[^`]+`(?:, [^`,]+? `[^`]+`)*)\.")
 SESSION_ANY_BRANCH_RE = re.compile(r"Branch `([^`]+)`")
 STATUS_LINE_RE = re.compile(r"^[ \t]+\*\*Status \d{4}-\d\d-\d\d \d\d:\d\d:\*\*(?:[ \t]|$)")  # same in board.html (STATUS_RE there)
+# A decision answered in place: an indented "**Decision 2026-11-23:** text" line. The last one is the answer.
+DECISION_LINE_RE = re.compile(r"^[ \t]+\*\*Decision (\d{4}-\d\d-\d\d):\*\*(?:[ \t]+(.*))?$", re.M)  # same in board.html (DECISION_RE there)
 
 
 @dataclass(frozen=True)
@@ -62,7 +69,8 @@ class Tile:
     """One tile of a board file. start and end are its line range, without the blank lines
     after it; text is those lines. parent is the first master its text says it is part of
     that is not itself, links the keys it says it moves with, mentions the other keys its
-    text names (sorted), done whether it is in a Done column or on the archive log."""
+    text names (sorted), blockers the keys it says it is blocked by (in the order written, each
+    once), done whether it is in a Done column or on the archive log."""
     key: str | None
     column: str | None
     start: int
@@ -72,6 +80,7 @@ class Tile:
     parent: str | None
     links: list = field(default_factory=list)
     mentions: list = field(default_factory=list)
+    blockers: list = field(default_factory=list)
     done: bool = False
 
 
@@ -97,7 +106,9 @@ def _patterns(key: str) -> tuple:
     # Master tiles: "Part of PLN-70" makes a tile a sub-story of PLN-70. Only the first counts.
     part = re.compile(rf"\bpart of\s+({k}-\d+)\b", re.I)  # same in board.html (PART_RE there)
     number = re.compile(rf"^[-*] (?:\[[ xX]\] )?{k}-(\d+) ", re.M)  # the number of a key opening a tile line, anywhere in a file
-    return head, keys, keyed, link, part, number
+    # Blocked tiles: "Blocked by PLN-30" (or "PLN-30, PLN-31 and PLN-32") waits on those tiles.
+    blocked = re.compile(rf"\bblocked by\s+({k}-\d+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+){k}-\d+)*)", re.I)  # same in board.html (BLOCKED_RE there)
+    return head, keys, keyed, link, part, number, blocked
 
 
 def _title(store, md: str) -> str:
@@ -115,7 +126,7 @@ def parse(store, text: str, *, file: str = "plans.md") -> list:
     """Every tile of a board file, in order. A tile line starts "- " or "* ", and its key is
     read the same way in both. file is the board's path in the store: the archive log's
     tiles are done."""
-    head, keys, _, link, part, _ = _patterns(store.key)
+    head, keys, _, link, part, _, blocked = _patterns(store.key)
     lines, out, column, i = text.replace("\r\n", "\n").split("\n"), [], None, 0  # a CRLF file reads as the page reads it
     while i < len(lines):
         line = lines[i]
@@ -136,10 +147,18 @@ def parse(store, text: str, *, file: str = "plans.md") -> list:
                 for other in keys.finditer(found.group(1)):
                     if other.group(0) != key and other.group(0) not in moves:
                         moves.append(other.group(0))
+            # The session, Status, Ready for review and decision lines quote other tiles' words, not this tile's.
+            own = "\n".join(x for x in md.split("\n") if not (
+                SESSION_LINE_RE.match(x) or STATUS_LINE_RE.match(x) or READY_RE.match(x) or DECISION_LINE_RE.match(x)))
+            blocking = []
+            for found in blocked.finditer(own):
+                for other in keys.finditer(found.group(1)):
+                    if other.group(0) != key and other.group(0) not in blocking:
+                        blocking.append(other.group(0))
             out.append(Tile(
                 key=key, column=column, start=i, end=end, text=md, title=_title(store, md),
                 parent=next((p.group(1) for p in part.finditer(md) if p.group(1) != key), None),
-                links=moves, mentions=sorted(others, key=store.num),
+                links=moves, mentions=sorted(others, key=store.num), blockers=blocking,
                 done=file == ARCHIVE_LOG or bool(DONE_COL_RE.search(column))))
             i = end
             continue
@@ -257,6 +276,13 @@ def ready(md: str):
     return found.group(1).strip() if found else None
 
 
+def decision(md: str):
+    """What a tile's last "Decision <date>:" line says, as {"date", "text"} (text "" if the line
+    says nothing more), None if the tile has no such line."""
+    found = DECISION_LINE_RE.findall(md or "")
+    return {"date": found[-1][0], "text": found[-1][1].strip()} if found else None
+
+
 def opted_out(md: str) -> bool:
     """Whether the text says "No pickup"."""
     return bool(OPT_OUT_RE.search(md or ""))
@@ -269,6 +295,12 @@ def is_pickup_column(store, name: str) -> bool:
     if store.pickup_column:
         return name.strip().lower() == store.pickup_column.lower()
     return bool(IN_FLIGHT_RE.search(name))
+
+
+def is_decision_column(name: str) -> bool:
+    """Whether a column holds decisions to make (DECISION_COL_RE). board.html asks the same
+    (isDecisionCol)."""
+    return bool(DECISION_COL_RE.search(name))
 
 
 # ---------- the session line ----------
@@ -356,6 +388,17 @@ def with_status(store, text: str, key: str, line: str) -> str:
     return "\n".join(lines)
 
 
+def with_decision(md: str, answer: str, date: str) -> str:
+    """A tile's markdown with its answer as the last line, "  **Decision <date>:** <answer>", and
+    its opening "[ ]" ticked (a tile with no box keeps none). The answer is folded to one line:
+    every run of whitespace, newlines included, becomes one space. An earlier decision stays above."""
+    folded = " ".join((answer or "").split())
+    lines = md.rstrip("\n").split("\n")
+    lines[0] = re.sub(r"^(\s*[-*+] )\[ \]", r"\1[x]", lines[0], count=1)
+    lines.append(f"  **Decision {date}:** {folded}")
+    return "\n".join(lines)
+
+
 # ---------- a snapshot across the boards ----------
 class Snapshot:
     """The tiles of plans.md, backlog.md and the archive log, read once, with what the whole
@@ -403,13 +446,15 @@ class Snapshot:
         return self._parent.get(key)
 
     def index(self) -> dict:
-        """{"KEY-NN": {"title", "file", "column", "done", "parent", "mentions", "tests", "domain"}}
-        for every keyed tile. done: in a Done column, or in the archive log. parent: the master
-        it says it is part of, or None. mentions: the other keys its text names, sorted.
-        tests: its own "Tests:" value. domain: its own "Domain:" value."""
+        """{"KEY-NN": {"title", "file", "column", "done", "parent", "mentions", "blockers",
+        "decision", "tests", "domain"}} for every keyed tile. done: in a Done column, or in the
+        archive log. parent: the master it says it is part of, or None. mentions: the other keys
+        its text names, sorted. blockers: the keys its own text says block it. decision: its
+        last decision line, as {"date", "text"}, or None. tests: its own "Tests:" value.
+        domain: its own "Domain:" value."""
         return {k: {"title": t.title, "file": name, "column": t.column, "done": t.done,
-                    "parent": self._parent[k], "mentions": t.mentions, "tests": tests(t.text),
-                    "domain": domain(t.text)}
+                    "parent": self._parent[k], "mentions": t.mentions, "blockers": t.blockers,
+                    "decision": decision(t.text), "tests": tests(t.text), "domain": domain(t.text)}
                 for k, (name, t) in self._at.items()}
 
     def texts(self) -> dict:
@@ -433,12 +478,36 @@ class Snapshot:
                 return found
         return None
 
+    def _blockers_of(self, key: str) -> list:
+        """The blocker keys of a tile and of each master up its lineage, nearest first, each
+        once, never the tile's own key. Same in board.html (`blockerKeys` there)."""
+        out = []
+        for t in [self.tile(key), *self.lineage(key)]:
+            for b in (t.blockers if t else []):
+                if b != key and b not in out:
+                    out.append(b)
+        return out
+
+    def blocking(self, key: str) -> list:
+        """The keys still blocking a tile: its own blockers, then each master's up the lineage,
+        each once, never its own key. A blocker blocks until its tile is done (Tile.done); a key
+        with no tile (tile(k) is None) is unknown, and blocks. Same in board.html (`blocking` there)."""
+        return [b for b in self._blockers_of(key) if not (self.tile(b) and self.tile(b).done)]
+
+    def decisions(self, key: str) -> list:
+        """The done blockers of a tile and its masters whose text has a decision line, as Tile,
+        in the order blocking lists blockers. Same in board.html (`decisionsFor` there)."""
+        found = (self.tile(b) for b in self._blockers_of(key))
+        return [t for t in found if t and t.done and decision(t.text)]
+
     def in_flight(self) -> list:
         """The keyed tiles in the plans board's pickup column (is_pickup_column), for
         pickup.py: [{"key", "title", "text", "parent"}]. A tile whose master isn't in flight
         (it sits in another column, on the backlog or in the archive) also carries "of", that
         master's key, and "context", the tiles of the masters above it, for its session to
-        read: a design or a decision is often linked from the master alone."""
+        read: a design or a decision is often linked from the master alone. A tile with keys
+        still blocking it carries "blocked", those keys, and one with decisions made for it
+        carries "decisions", those tiles' markdown joined by a newline."""
         flying = [t for t in self.tiles(PLANS) if t.key and is_pickup_column(self.store, t.column)]
         in_flight = {t.key for t in flying}
         out = []
@@ -451,5 +520,10 @@ class Snapshot:
                 above.append(self._at[k][1])
             if above:
                 tile.update(of=above[0].key, context="\n".join(a.text for a in above))
+            blocked, decided = self.blocking(t.key), self.decisions(t.key)
+            if blocked:
+                tile["blocked"] = blocked
+            if decided:
+                tile["decisions"] = "\n".join(d.text for d in decided)
             out.append(tile)
         return out

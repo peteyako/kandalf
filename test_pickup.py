@@ -1294,6 +1294,253 @@ class Queue(unittest.TestCase):
         self.assertEqual(self.jobs(), [("PLN-01", "failed"), ("PLN-02", "started")])
 
 
+class Blocked(unittest.TestCase):
+    """A tile in flight that is blocked by tiles not yet done waits, and a done blocker's decision reaches the session."""
+    def setUp(self):
+        self.store = stores.Store(tempfile.mkdtemp())
+        self.clock = 1000
+        self.fake = Fake(now=lambda: self.clock, announce=lambda store, job: None)
+        self.out = io.StringIO()
+        quiet = contextlib.redirect_stdout(self.out)
+        quiet.__enter__()
+        self.addCleanup(quiet.__exit__, None, None, None)
+
+    def file(self, name, text):
+        path = self.store.dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def tick(self, text, later=600):
+        self.clock += later
+        return pickup.tick(self.store, in_flight(self.store, text), sessions=self.fake)
+
+    EMPTY = "## In flight\n\n## Done\n"
+    BLOCKED = "## In flight\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n\n## Done\n"
+    AUTH = "## Ideas\n\n- [ ] PLN-30 **Auth.**\n"
+    DONE_AUTH = "## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n"
+
+    def test_a_blocked_tile_in_flight_is_left_alone(self):
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        state = self.tick(self.BLOCKED)
+        self.assertEqual(self.fake.started, [])
+        self.assertEqual(pickup.load(self.store)["jobs"], [])
+        self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
+
+    def test_a_blocked_tile_is_logged_once_however_many_looks_pass(self):
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        for _ in range(3):
+            self.tick(self.BLOCKED)
+        want = "PLN-41 is in flight but blocked by PLN-30: left alone until it is done"
+        self.assertEqual(self.out.getvalue().count(want), 1)
+
+    def test_the_log_names_several_blockers_and_says_they_are_done(self):
+        self.file("backlog.md", "## Ideas\n\n- [ ] PLN-30 **A.**\n- [ ] PLN-31 **B.**\n- [ ] PLN-32 **C.**\n")
+        self.tick(self.EMPTY)
+        self.tick(self.BLOCKED.replace("PLN-30.", "PLN-30, PLN-31, PLN-32."))
+        self.assertIn("PLN-41 is in flight but blocked by PLN-30, PLN-31 and PLN-32: left alone until they are done", self.out.getvalue())
+
+    def test_a_tile_is_picked_up_on_the_look_after_its_last_blocker_is_done(self):
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(self.BLOCKED)
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        state = self.tick(self.BLOCKED)
+        self.assertEqual(self.fake.started, ["PLN-41"])
+        self.assertEqual(state["blocked"], {})
+
+    def test_a_blocked_master_is_no_umbrella_and_its_sub_stories_wait_with_it(self):
+        self.file("backlog.md", self.AUTH)
+        board = ("## In flight\n\n- [ ] PLN-70 **Dark mode.** Blocked by PLN-30.\n\n"
+                 "- [ ] PLN-71 **Switch.** Part of PLN-70.\n\n## Done\n")
+        self.tick(self.EMPTY)
+        state = self.tick(board)
+        self.assertEqual(self.fake.started, [])
+        self.assertEqual(state["umbrellas"], [])
+        self.assertEqual(state["blocked"], {"PLN-70": ["PLN-30"], "PLN-71": ["PLN-30"]})
+
+    def test_a_tile_at_work_carries_on_when_a_blocker_is_added_and_is_not_listed_as_blocked(self):
+        free = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(free)
+        self.assertEqual(self.fake.started, ["PLN-41"])
+        state = self.tick(self.BLOCKED)
+        self.assertEqual(state["blocked"], {})
+        self.assertEqual(self.fake.started, ["PLN-41"])
+        self.assertNotIn("left alone until", self.out.getvalue())
+
+    def job(self, archive):
+        self.file(reader.ARCHIVE_LOG, archive)
+        return pickup.entered([], in_flight(self.store, self.BLOCKED))[0]
+
+    def test_the_prompt_gives_the_decisions_made_for_the_story(self):
+        job = self.job(self.DONE_AUTH)
+        self.assertIn("**Decision 2026-11-23:** retire it.", job["decisions"])
+        text = pickup.prompt(self.store, job, "b", Path("/x/wt"))
+        self.assertIn("\n\nThese decisions were made before PLN-41 started. Follow them:\n", text)
+        self.assertIn("retire it.", text)
+
+    def test_a_plain_blocker_that_is_done_adds_nothing_to_the_prompt(self):
+        job = self.job("## Archived\n\n- [x] PLN-30 **Auth.**\n")
+        self.assertNotIn("decisions", job)
+        self.assertNotIn("These decisions were made", pickup.prompt(self.store, job, "b", Path("/x/wt")))
+
+    def test_the_startup_report_says_a_tile_is_blocked(self):
+        self.file("backlog.md", self.AUTH)
+        report = pickup.startup_report(self.store, in_flight(self.store, self.BLOCKED), sessions=pickup.Sessions(sessions=lambda: {}))
+        self.assertIn('  PLN-41 "Nav": no session: blocked by PLN-30', report)
+
+    def test_the_summary_lists_the_blocked_tiles(self):
+        self.file("backlog.md", self.AUTH)
+        self.assertEqual(pickup.summary(self.store)["blocked"], {})
+        self.tick(self.EMPTY)
+        self.tick(self.BLOCKED)
+        self.assertEqual(pickup.summary(self.store)["blocked"], {"PLN-41": ["PLN-30"]})
+
+    def test_a_blocked_tile_is_not_adopted_when_the_server_starts(self):
+        self.file("backlog.md", self.AUTH)
+        self.assertEqual(pickup.adopt(self.store, in_flight(self.store, self.BLOCKED)), [])
+
+    MASTER = ("## In flight\n\n- [ ] PLN-70 **Dark mode.**{extra}\n\n"
+              "- [ ] PLN-71 **Switch.** Part of PLN-70.\n\n## Done\n")
+
+    def test_a_master_blocked_after_its_sub_story_started_stays_an_umbrella_once_unblocked(self):
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(self.MASTER.format(extra=""))
+        self.assertEqual(self.fake.started, ["PLN-71"])
+        self.tick(self.MASTER.format(extra=" Blocked by PLN-30."))
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        self.tick(self.MASTER.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(self.fake.started, ["PLN-71"])
+        self.assertEqual([k for k, _ in self.jobs()], ["PLN-71"])
+
+    def test_a_master_that_loses_no_pickup_while_a_sub_story_is_in_flight_stays_an_umbrella(self):
+        sub = "## To do\n\n- [ ] PLN-70 **Dark mode.** No pickup.\n\n## In flight\n\n- [ ] PLN-71 **Switch.** Part of PLN-70.\n\n## Done\n"
+        self.tick(self.EMPTY)
+        self.tick(sub)
+        self.tick(self.MASTER.format(extra=" No pickup."))
+        self.tick(self.MASTER.format(extra=""))
+        self.assertEqual([k for k, _ in self.jobs()], ["PLN-71"])
+
+    def jobs(self):
+        return [(j["key"], j["state"]) for j in pickup.load(self.store)["jobs"]]
+
+    def paused_and_blocked(self):
+        """PLN-41 started, paused, its tile out of In flight and back blocked by PLN-30."""
+        free = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(free)
+        self.fake.live.clear()
+        with pickup.ledger.Ledger(self.store).change() as state:
+            state["jobs"][0]["state"] = "paused"
+        self.tick(self.EMPTY)
+        return self.tick(self.BLOCKED)
+
+    def test_a_paused_job_whose_tile_comes_back_blocked_waits_and_is_requeued_once_unblocked(self):
+        state = self.paused_and_blocked()
+        self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
+        self.assertEqual(self.out.getvalue().count("PLN-41 is in flight but blocked by PLN-30"), 1)
+        self.assertEqual(self.jobs(), [("PLN-41", "paused")])
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        self.tick(self.BLOCKED)
+        self.assertIn(self.jobs()[0][1], ("waiting", "started"))
+
+    def test_a_requeued_job_carries_the_decisions_made_while_it_was_paused(self):
+        self.paused_and_blocked()
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        self.tick(self.BLOCKED)
+        job = pickup.load(self.store)["jobs"][0]
+        self.assertIn("retire it.", job["decisions"])
+        self.assertIn("These decisions were made before PLN-41 started. Follow them:", pickup.prompt(self.store, job, "b", Path("/x/wt"), again="paused"))
+
+    def paused_in_place(self):
+        """PLN-41 started, then paused by the Pause button with its tile still in In flight."""
+        free = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(free)
+        self.fake.live.clear()
+        with pickup.ledger.Ledger(self.store).change() as state:
+            state["jobs"][0]["state"] = "paused"
+
+    def test_a_story_paused_in_place_stays_paused_when_it_gains_a_blocker(self):
+        self.paused_in_place()
+        state = self.tick(self.BLOCKED)
+        self.assertEqual(state["blocked"], {})
+        self.assertEqual(self.jobs(), [("PLN-41", "paused")])
+        self.assertNotIn("left alone until", self.out.getvalue())
+
+    def test_a_story_paused_in_place_is_still_paused_on_the_look_after_its_blocker_is_done(self):
+        self.paused_in_place()
+        self.tick(self.BLOCKED)
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        self.tick(self.BLOCKED)
+        self.assertEqual(self.jobs(), [("PLN-41", "paused")])
+
+    TWO = "## In flight\n\n- [ ] PLN-40 **Menu.**\n\n- [ ] PLN-41 **Nav.**{extra}\n\n## Done\n"
+
+    def queued_behind(self):
+        """PLN-40 at work and PLN-41 queued behind it (parallel 1)."""
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(self.TWO.format(extra=""))
+        self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "waiting")])
+
+    def test_a_queued_job_whose_tile_gains_a_blocker_does_not_start_when_its_turn_comes(self):
+        self.queued_behind()
+        state = self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
+        self.assertEqual(self.out.getvalue().count("PLN-41 is in flight but blocked by PLN-30: left alone until it is done"), 1)
+        self.fake.live.clear()  # PLN-40's session ends: it would be PLN-41's turn
+        state = self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(self.fake.started, ["PLN-40"])
+        self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
+        self.assertNotIn("PLN-41", [k for k, _ in self.jobs()])
+
+    def test_a_queued_job_that_became_blocked_is_queued_again_on_the_look_after_its_blocker_is_done(self):
+        self.queued_behind()
+        self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        state = self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(state["blocked"], {})
+        self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "waiting")])
+        self.assertIn("retire it.", pickup.load(self.store)["jobs"][1]["decisions"])
+
+    def test_a_waiting_take_over_whose_tile_gains_a_blocker_comes_back_as_a_take_over(self):
+        alone = "## In flight\n\n- [ ] PLN-41 **Nav.**\n\n## Done\n"
+        self.file("backlog.md", self.AUTH)
+        self.tick(self.EMPTY)
+        self.tick(alone)
+        self.fake.live.clear()
+        with pickup.ledger.Ledger(self.store).change() as state:
+            state["jobs"][0]["state"] = "paused"
+        self.tick(self.EMPTY)
+        self.tick(self.TWO.format(extra=""))  # PLN-40 starts; PLN-41, back, waits to be taken over
+        self.assertEqual(self.fake.started, ["PLN-41", "PLN-40"])
+        self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "waiting")])
+        state = self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(state["blocked"], {"PLN-41": ["PLN-30"]})
+        self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "paused")])
+        self.file("backlog.md", "## Ideas\n")
+        self.file(reader.ARCHIVE_LOG, self.DONE_AUTH)
+        self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(self.jobs(), [("PLN-40", "started"), ("PLN-41", "waiting")])
+        self.assertEqual(pickup.load(self.store)["jobs"][1]["again"], "paused")
+        self.fake.live.clear()  # PLN-40's session ends: PLN-41's turn
+        self.tick(self.TWO.format(extra=" Blocked by PLN-30."))
+        self.assertEqual(self.fake.started, ["PLN-41", "PLN-40", "PLN-41*"])
+
+
 class Startup(unittest.TestCase):
     """What the server prints about In flight when it starts."""
 

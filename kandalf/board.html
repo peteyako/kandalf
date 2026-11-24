@@ -179,6 +179,13 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] .ghost-head em { margin-left: auto; font-style: normal; font-weight: 400; font-size: 11px; white-space: nowrap; }
 :root[data-theme="classic"] .tv-family { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 10px; }
 :root[data-theme="classic"] .tv-family .subs { border-top: 0; margin: 0 0 10px; padding: 0; }
+:root[data-theme="classic"] .bl-blocked, :root[data-theme="classic"] .bl-ring { color: var(--p2); }
+:root[data-theme="classic"] .bl-missing { color: var(--warn); }
+:root[data-theme="classic"] .bl-decided { color: var(--done); }
+:root[data-theme="classic"] .bl-row a.keyref { color: inherit; text-decoration: underline; cursor: pointer; }
+:root[data-theme="classic"] .pickup.waits { color: var(--warn); }
+:root[data-theme="classic"] .tv-decide { border-top: 1px solid var(--line); }
+:root[data-theme="classic"] .dlg .tv-decide textarea { min-height: 64px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; }
 :root[data-theme="classic"] .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
 :root[data-theme="classic"] #cardEst::placeholder, :root[data-theme="classic"] #cardBase::placeholder { color: var(--muted); font-style: italic; opacity: .7; }
 :root[data-theme="classic"] #cardEst.bad, :root[data-theme="classic"] #cardBase.bad { border-color: var(--warn); outline-color: var(--warn); }
@@ -906,6 +913,14 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root:not([data-theme="classic"]) .tv-status .tv-status-at { display: block; margin-bottom: 2px; font: 11px var(--mono); color: var(--muted); }
 :root:not([data-theme="classic"]) .tv-family { border-top: var(--rule); margin-top: 4px; padding-top: 10px; }
 :root:not([data-theme="classic"]) .tv-family .subs { border-top: 0; margin: 0 0 10px; padding: 0; }
+:root:not([data-theme="classic"]) .bl-blocked, :root:not([data-theme="classic"]) .bl-ring { color: var(--st-wait); }
+:root:not([data-theme="classic"]) .bl-missing { color: var(--st-gone); }
+:root:not([data-theme="classic"]) .bl-decided { color: var(--ok); }
+:root:not([data-theme="classic"]) .bl-row { font-size: 13px; font-weight: 600; }
+:root:not([data-theme="classic"]) .bl-row a.keyref { color: inherit; text-decoration: underline; cursor: pointer; }
+:root:not([data-theme="classic"]) .pickup.waits { --sb: var(--st-wait); border-style: dashed; border-color: var(--check-bc); }
+:root:not([data-theme="classic"]) .tv-decide { border-top: var(--rule); }
+:root:not([data-theme="classic"]) .dlg .tv-decide textarea { min-height: 64px; resize: vertical; background: var(--card); border: var(--bw) solid var(--input-bc); border-radius: var(--ctl-radius); }
 :root:not([data-theme="classic"]) .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 14px; }
 :root:not([data-theme="classic"]) .hint { font-size: 13px; color: var(--muted); }
 
@@ -968,6 +983,15 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 /* The tagline under the board, in the two themes that have one. */
 :root[data-theme="realm"] #tagline { font-style: italic; font-size: 15px; }
 :root[data-theme="sticker"] #tagline { font-family: var(--head); }
+:root .bl-row { display: flex; align-items: flex-start; gap: 5px; margin-top: 3px; font-size: 12px; line-height: 1.35; }
+:root .bl-row .bl-icon { flex: none; margin-top: 2px; }
+:root .bl-row .bl-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root .pickup.waits .bl-icon { vertical-align: -1px; margin-right: 2px; }
+:root .tv-decide { margin-top: 4px; padding-top: 10px; }
+:root .tv-decide .blocks { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+:root .tv-decide textarea { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; font: inherit; font-size: 13px; padding: 6px 8px; }
+:root .tv-decide .reply-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+:root .tv-decide button[disabled] { opacity: .5; cursor: default; }
 :root .session-reply { margin-top: 8px; cursor: auto; }
 :root .session-reply > summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
 /* The stats strip under the header: a count for each state of the builds, full width. A count
@@ -1298,6 +1322,8 @@ function readsAsBoard(text, d) {
 const IN_FLIGHT_RE = /^(?!.*\bnot\b).*\b(?:in[\s_-]*flight|progre\w*|doing|wip|working|under[\s_-]*way|ongoing|active)\b/i;  // tiles.py: IN_FLIGHT_RE
 const DONE_COL_RE = /^(?!.*\bnot\b).*\b(?:done|shipped|completed?|finished|closed|merged|released|deployed|delivered|resolved)\b/i;  // tiles.py: DONE_COL_RE
 const isDoneCol = name => DONE_COL_RE.test(name);
+const DECISION_COL_RE = /^(?!.*\bnot\b).*\b(?:decisions?|decide)\b/i;  // tiles.py: DECISION_COL_RE
+const isDecisionCol = name => DECISION_COL_RE.test(name);
 function columnKind(name) {
   if (IN_FLIGHT_RE.test(name)) return "In flight";
   if (DONE_COL_RE.test(name)) return "Done";
@@ -1338,10 +1364,13 @@ let STORE_FULL_SUITE = false;  // board.json's fullSuiteOnMerge
 let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_BRANCHES = [], STORE_ATTACH = "kandalf attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
-let HEAD_RE, KEY_NUM_RE, LINK_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
+let HEAD_RE, KEY_NUM_RE, LINK_RE, BLOCKED_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
 // Linked tiles: a tile whose text says "Moves with PLN-74" (or "PLN-74, PLN-75 and PLN-76")
 // moves with those tiles. tiles.py reads the same wording (the "link" pattern in its _patterns).
 const linkRe = k => new RegExp(String.raw`\bmoves with\s+(${reEsc(k)}-\d+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)${reEsc(k)}-\d+)*)`, "gi");
+// Blocked tiles: "Blocked by PLN-30" (or "PLN-30, PLN-31 and PLN-32") waits on those tiles.
+// tiles.py reads the same wording (the "blocked" pattern in its _patterns).
+const blockedRe = k => new RegExp(String.raw`\bblocked by\s+(${reEsc(k)}-\d+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)${reEsc(k)}-\d+)*)`, "gi");
 const keyAnyRe = k => new RegExp(String.raw`\b${reEsc(k)}-\d+\b`, "g");
 // Master tiles: a tile whose text says "Part of PLN-70" is a sub-story of PLN-70; only the
 // first one counts. tiles.py reads the same wording (the "part" pattern in its _patterns).
@@ -1349,7 +1378,7 @@ const partRe = k => new RegExp(String.raw`\bpart of\s+(${reEsc(k)}-\d+)\b`, "gi"
 const keyLinkRe = k => new RegExp(String.raw`(<a\b[^>]*>.*?</a>|<code>.*?</code>|<[^>]+>)|(?<![\w-])${reEsc(k)}-\d+\b`, "g");
 function setKey(k) {
   KEY = k; HEAD_RE = headRe(k); KEY_NUM_RE = new RegExp(`^${reEsc(k)}-(\\d+) `);
-  LINK_RE = linkRe(k); KEY_ANY_RE = keyAnyRe(k); KEY_LINK_RE = keyLinkRe(k); PART_RE = partRe(k);
+  LINK_RE = linkRe(k); BLOCKED_RE = blockedRe(k); KEY_ANY_RE = keyAnyRe(k); KEY_LINK_RE = keyLinkRe(k); PART_RE = partRe(k);
 }
 setKey(KEY);
 function splitCard(text) {
@@ -1385,6 +1414,14 @@ function movesWith(key, text) {
   for (const m of text.matchAll(LINK_RE)) for (const o of m[1].match(KEY_ANY_RE)) if (o !== key && !out.includes(o)) out.push(o);
   return out;
 }
+// The keys a tile's own text says it is blocked by, in order, each once, never itself (tiles.py:
+// Tile.blockers). The session, Status, Ready for review and decision lines are not read.
+function blockedBy(key, text) {
+  const own = text.split("\n").filter(x => !(SESSION_RE.test(x) || STATUS_RE.test(x) || READY_RE.test(x) || DECISION_RE.test(x))).join("\n");
+  const out = [];
+  for (const m of own.matchAll(BLOCKED_RE)) for (const o of m[1].match(KEY_ANY_RE) || []) if (o !== key && !out.includes(o)) out.push(o);
+  return out;
+}
 function linkEdges() {
   const edges = new Map();
   const oneWay = (a, b) => { if (!edges.has(a)) edges.set(a, new Set()); edges.get(a).add(b); };
@@ -1414,12 +1451,12 @@ const keyList = keys => keys.length > 1 ? keys.slice(0, -1).join(", ") + " and "
 // ---------- master tiles, sub-stories and related tiles ----------
 // None of this moves a tile. The index holds every keyed tile: the ones on this board as
 // they read right now, and the server's word (serverTiles) on the other boards' tiles.
-let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions, tests, domain}} (tiles.py: Snapshot.index)
+let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions, blockers, decision, tests, domain}} (tiles.py: Snapshot.index)
 const byKeyOrder = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 // What a tile's own text says: its master, and the other keys it names.
 function tileFacts(key, text) {
   const parent = [...text.matchAll(PART_RE)].map(m => m[1]).find(k => k !== key) ?? null;
-  return { parent, mentions: [...new Set(text.match(KEY_ANY_RE) || [])].filter(k => k !== key).sort(byKeyOrder) };
+  return { parent, mentions: [...new Set(text.match(KEY_ANY_RE) || [])].filter(k => k !== key).sort(byKeyOrder), blockers: blockedBy(key, text) };
 }
 function tileIndex() {
   const index = new Map();
@@ -1427,7 +1464,7 @@ function tileIndex() {
     const k = cardKey(c); if (!k || index.has(k)) continue;
     const text = [c.text, ...c.body].join("\n");
     index.set(k, { title: splitCard(c.text).title.replace(/\*\*|`/g, ""), file, column: s.name,
-      done: file === ARCHIVE_LOG || isDoneCol(s.name), ...tileFacts(k, text), domain: domainOf(text) || null });
+      done: file === ARCHIVE_LOG || isDoneCol(s.name), ...tileFacts(k, text), decision: decisionOf(text), domain: domainOf(text) || null });
   }
   // The server's word on this board's own tiles is as old as the last save.
   for (const [k, t] of Object.entries(serverTiles)) if (t.file !== file && !index.has(k)) index.set(k, { ...t });
@@ -1443,6 +1480,64 @@ function tileIndex() {
 }
 // A master's sub-stories: the tiles that say they are part of it, in key order.
 const kidsOf = (key, index) => !key ? [] : [...index].filter(([, t]) => t.parent === key).map(([k, t]) => ({ key: k, ...t })).sort((a, b) => byKeyOrder(a.key, b.key));
+// What a tile's own blockers and its masters' are, nearest first, each once, never the tile's own key (tiles.py: Snapshot._blockers_of).
+function blockerKeys(key, index) {
+  const out = [], seen = new Set();
+  for (let k = key; k && !seen.has(k); k = index.get(k)?.parent) {
+    seen.add(k);
+    for (const b of index.get(k)?.blockers || []) if (b !== key && !out.includes(b)) out.push(b);
+  }
+  return out;
+}
+// The keys still blocking a tile (tiles.py: Snapshot.blocking): a blocker blocks until its tile is done, and a key
+// no tile has blocks, with a null title and known false.
+const blocking = (key, index) => blockerKeys(key, index).filter(b => !index.get(b)?.done)
+  .map(b => ({ key: b, title: index.get(b)?.title ?? null, known: index.has(b) }));
+// The decisions made for a tile (tiles.py: Snapshot.decisions): its done blockers, and its masters', with a decision line.
+const decisionsFor = (key, index) => blockerKeys(key, index).filter(b => index.get(b)?.done && index.get(b).decision)
+  .map(b => ({ key: b, ...index.get(b).decision }));
+// The tiles whose own blockers name this key, in key order.
+const blocksOf = (key, index) => [...index].filter(([, t]) => (t.blockers || []).includes(key)).map(([k]) => k).sort(byKeyOrder);
+// The other keys on a ring of open blockers through this tile (A blocked by B, B blocked by A), in key order.
+function inRing(key, index) {
+  const open = k => (index.get(k)?.blockers || []).filter(b => index.has(b) && !index.get(b).done);
+  const reach = from => { const seen = new Set(); const todo = [from]; while (todo.length) for (const n of open(todo.pop())) if (!seen.has(n)) { seen.add(n); todo.push(n); } return seen; };
+  return [...reach(key)].filter(k => k !== key && reach(k).has(key)).sort(byKeyOrder);
+}
+// Small line icons for the blocker rows, drawn like agentIcon: a padlock and a check mark in the text colour.
+const lockIcon = () => `<svg class="bl-icon" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
+const checkIcon = () => `<svg class="bl-icon" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// The rows a tile shows for what blocks it, in the order it names its blockers: {kind, key, text} with kind
+// "blocked", "missing" (no tile has the key), "ring" (one row, at the first of them, for the keys on a ring with
+// this tile) or "decided" (a done blocker with a decision line; one without gives no row).
+function blockerLines(key, index) {
+  const ring = inRing(key, index), open = new Map(blocking(key, index).map(b => [b.key, b]));
+  const decided = new Map(decisionsFor(key, index).map(d => [d.key, d]));
+  const out = [];
+  for (const b of blockerKeys(key, index)) {
+    if (ring.includes(b)) {
+      if (!out.some(l => l.kind === "ring")) {
+        const all = [key, ...ring].sort(byKeyOrder);
+        out.push({ kind: "ring", key: all[0], text: `${keyList(all)} block each other` });
+      }
+    } else if (decided.has(b)) out.push({ kind: "decided", key: b, text: `${b} decided: ${decided.get(b).text}` });
+    else if (open.has(b)) out.push(open.get(b).known ? { kind: "blocked", key: b, text: `Blocked by ${b} · ${open.get(b).title}` } : { kind: "missing", key: b, text: `${b} not found` });
+  }
+  return out;
+}
+// The blocker rows under a tile's title: a lock for what blocks it, a check for what was decided, each key a link.
+function blockerRowsHTML(key, index) {
+  if (!key) return "";
+  return blockerLines(key, index).map(l => {
+    // Every key a row names is a link, except the tile's own; a ring row names them all, any other row its one key.
+    const named = l.kind === "ring" ? l.text.replace(/ block each other$/, "").split(/, | and /) : [l.key];
+    let text = esc(l.text);
+    for (const k of named.filter(k => k !== key)) text = text.replace(k, keyRef(k));
+    return `<div class="bl-row bl-${l.kind}" title="${esc(l.text)}">${l.kind === "decided" ? checkIcon() : lockIcon()}<span class="bl-text">${text}</span></div>`;
+  }).join("");
+}
+// The key an answer's draft is kept under: the tile's key, else its first line (ids change whenever the board is read again).
+const answerKey = card => cardKey(card) || card.text.split("\n")[0];
 // The tiles a tile mentions or is mentioned by, other than its master, its sub-stories and
 // the tiles it moves with (linked): those show in their own ways.
 function relatedTo(key, text, index, linked) {
@@ -1512,7 +1607,7 @@ let STORE_PICKUP_COLUMN = "";  // the store's "pickupColumn" (/api/files); "": a
 // Whether a column's tiles are picked up: the store's pickupColumn by name, in any case, else
 // any In flight column (pickup.is_pickup_column).
 const isPickupColumn = name => STORE_PICKUP_COLUMN ? name.trim().toLowerCase() === STORE_PICKUP_COLUMN.trim().toLowerCase() : IN_FLIGHT_RE.test(name);
-let pickups = { enabled: false, why: null, jobs: [] };  // /api/pickup: why pickup is off (null: on), and jobs of {key, title, with, state, behind, id, branch, error}
+let pickups = { enabled: false, why: null, jobs: [] };  // /api/pickup: why pickup is off (null: on), blocked ({key: [blockers]}, absent from an older server), and jobs of {key, title, with, state, behind, id, branch, error}
 // The line at the top of the plans board's In flight column saying why pickup is off, unless
 // this browser hid that very sentence (× on it; a new reason shows again).
 const pickupHintShows = (board, colName, why, hidden) => board === PICKUP_BOARD && isPickupColumn(colName) && !!why && why !== hidden;
@@ -1677,6 +1772,10 @@ function sessionHTML(session, key) {
 // Where a pickup stands, for a tile whose text doesn't show it in a session block.
 function pickupTag(key, sec, session) {
   const job = pickupFor(key);
+  // A blocked tile in flight has no session to start: it waits for what blocks it (pickups.blocked: from the server, absent from an older one).
+  // With pickup off nothing waits: the list is the last look's.
+  const waits = key && pickups.enabled && pickups.blocked?.[key];
+  if (!job && waits?.length && isPickupColumn(sec.name)) return `<span class="pickup waits" title="${esc(`Blocked: ${AGENT} starts this when ${keyList(waits)} ${waits.length > 1 ? "are" : "is"} done or decided.`)}">${lockIcon()} waits for ${esc(keyList(waits))}</span>`;
   // A queued job is said beside the key even when the tile still has a session line (a paused story queued again).
   if (!job || (sessionJob(session, key) && job.state !== "waiting")) return "";
   const inFlight = isPickupColumn(sec.name);
@@ -1857,6 +1956,14 @@ function statusLine(line) {
   const m = line.match(STATUS_RE);
   return m ? { at: m[1], text: m[2] || "" } : null;
 }
+// A decision is answered in place on an indented line "**Decision 2026-11-23:** text"; the
+// last one is the answer (tiles.py: DECISION_LINE_RE, decision).
+const DECISION_RE = /^[ \t]+\*\*Decision (\d{4}-\d\d-\d\d):\*\*(?:[ \t]+(.*))?$/;  // tiles.py: DECISION_LINE_RE
+function decisionLine(line) {
+  const m = line.match(DECISION_RE);
+  return m ? { date: m[1], text: (m[2] || "").trim() } : null;
+}
+const decisionOf = md => md.split("\n").map(decisionLine).filter(Boolean).pop() ?? null;
 // A story that is finished and waiting for review says so on a line of its own that starts
 // "Ready for review" (its session writes "**Ready for review:** <gate results>"; tiles.py:
 // READY_RE, ready). The tile is outlined until it moves to Done.
@@ -2052,15 +2159,19 @@ function mapState(job) {
 // where its story is (backlog, planned, flight, done; an archived one is done), its session's
 // state, its domain, its master and sub-stories, and whether it is one to pull next: it needs
 // you or is ready, or it hasn't started and its master is already moving, or it is planned and
-// stands alone. An edge is "linked" (tiles that move together) or "mention"; a master and its
-// own sub-story are joined already and get neither.
+// stands alone, and isn't blocked. An edge is "linked" (tiles that move together), "blocks"
+// (a blocker and the tile it blocks, drawn as a mention is, and left out of both mentions) or
+// "mention"; a master and its own sub-story are joined already and get none. A node's blockedBy
+// and blocks are its own blocker keys and the keys it blocks, those that have nodes; blocked is
+// true while anything blocks it, a master's open blocker or a key no tile has included.
 function mapGraph(index, links, jobs) {
   const domains = tileDomains(index), nodes = new Map();
   for (const [key, t] of index) {
     const where = t.done ? "done" : t.file !== PICKUP_BOARD ? "backlog" : isPickupColumn(t.column) ? "flight" : "planned";
     nodes.set(key, { key, title: t.title, file: t.file, column: t.column, where, domain: domains.get(key),
       state: where === "flight" ? mapState(jobs.findLast(j => j.key === key)) : "",  // as buildState: only in the pickup column
-      parent: t.parent && index.has(t.parent) ? t.parent : null, kids: [], mentions: [], linked: [], next: false });
+      parent: t.parent && index.has(t.parent) ? t.parent : null, kids: [], mentions: [], linked: [], blockedBy: [], blocks: [],
+      blocked: blocking(key, index).length > 0, next: false });
   }
   for (const n of nodes.values()) if (n.parent) nodes.get(n.parent).kids.push(n.key);
   const edges = new Map(), pair = (a, b) => byKeyOrder(a, b) < 0 ? [a, b] : [b, a];
@@ -2070,22 +2181,26 @@ function mapGraph(index, links, jobs) {
     edges.set(id, { a, b, kind });
   };
   for (const [a, others] of links) for (const b of others) join(a, b, "linked");
+  for (const [key, t] of index) for (const b of t.blockers || []) join(b, key, "blocks");
   for (const [key, t] of index) for (const m of t.mentions) join(key, m, "mention");
   for (const { a, b, kind } of edges.values()) {
+    if (kind === "blocks") continue;
     const list = kind === "linked" ? "linked" : "mentions";
     nodes.get(a)[list].push(b); nodes.get(b)[list].push(a);
   }
+  for (const [key, t] of index) for (const b of t.blockers || [])
+    if (nodes.has(b) && b !== key && !nodes.get(key).blockedBy.includes(b)) { nodes.get(key).blockedBy.push(b); nodes.get(b).blocks.push(key); }
   const started = n => n.where !== "backlog" || !!n.state;
   for (const n of nodes.values()) {
-    n.kids.sort(byKeyOrder); n.mentions.sort(byKeyOrder); n.linked.sort(byKeyOrder);
+    n.kids.sort(byKeyOrder); n.mentions.sort(byKeyOrder); n.linked.sort(byKeyOrder); n.blockedBy.sort(byKeyOrder); n.blocks.sort(byKeyOrder);
     n.doneKids = n.kids.filter(k => nodes.get(k).where === "done").length;
     n.moving = n.kids.length > 0 && (started(n) || n.kids.some(k => started(nodes.get(k))));
   }
   for (const n of nodes.values()) {
     const waiting = n.where !== "done" && n.where !== "flight" && !n.state;
-    n.next = ["need", "ready"].includes(n.state)
+    n.next = !n.blocked && (["need", "ready"].includes(n.state)
       || (waiting && !!n.parent && nodes.get(n.parent).moving)
-      || (waiting && !n.parent && !n.kids.length && n.where === "planned");
+      || (waiting && !n.parent && !n.kids.length && n.where === "planned"));
   }
   return { nodes, edges: [...edges.values()] };
 }
@@ -2162,7 +2277,7 @@ function mapLayout(graph) {
     const facing = n => {
       let sx = 0, sy = 0;
       const family = k => [k, ...N.get(k).kids.flatMap(family)];
-      for (const k of family(n.key)) for (const o of [...N.get(k).mentions, ...N.get(k).linked]) {
+      for (const k of family(n.key)) for (const o of [...N.get(k).mentions, ...N.get(k).linked, ...N.get(k).blockedBy, ...N.get(k).blocks]) {
         const other = hub.get(rootOf(N.get(o)).key);
         if (other !== h) { sx += other.x - h.x; sy += other.y - h.y; }
       }
@@ -2385,7 +2500,8 @@ function renderCard(c, sec) {
     const body = trimBlank(c.body).filter(line => !sessionLine(line) && !MODEL_RE.test(line) && !REPOS_RE.test(line) && !BASE_RE.test(line) && !TESTS_RE.test(line) && !statusLine(line) && readyLine(line) === null);
     let about = desc;
     if (!about && body.length && /^ {2}\S/.test(body[0])) about = body.shift().trim();
-    el.innerHTML = `<div class="title">${inline(title)}</div>${about ? `<div class="desc">${inline(about)}</div>` : ""}
+    const blockRows = blockerRowsHTML(key, renderIndex);
+    el.innerHTML = `<div class="title">${inline(title)}</div>${blockRows}${about ? `<div class="desc">${inline(about)}</div>` : ""}
       ${readyHTML}${sessionHTML(session, key)}
       <div class="meta">${check}${keyTag}${body.length ? `<span>+${body.length} line${body.length > 1 ? "s" : ""}</span>` : ""}</div>`;
     return el;
@@ -2398,7 +2514,7 @@ function renderCard(c, sec) {
   // until the tile has its Ready for review line.
   const gates = !kids.length && session && subs.length && done === subs.length && !readyHTML && isPickupColumn(sec.name);
   const counts = [kids.length ? kidCount(kids) : "", subs.length ? `${done}/${subs.length} sub-tasks` : "", gates ? "tests and review to go" : forReview ? "ready for review" : ""].filter(Boolean).join(" · ");
-  el.innerHTML = `<div class="kind">${kids.length ? "Master story" : "Story"}</div><div class="title">${inline(title)}</div>
+  el.innerHTML = `<div class="kind">${kids.length ? "Master story" : "Story"}</div><div class="title">${inline(title)}</div>${blockerRowsHTML(key, renderIndex)}
     ${about ? `<div class="desc">${inline(about)}</div>` : ""}
     ${readyHTML}${sessionHTML(session, key)}
     <div class="progress${gates ? " gates" : forReview ? " review" : ""}" data-count="${bar.n}/${bar.of}" title="${bar.n} of ${bar.of} ${bar.what} done${gates ? ", but not ready for review yet: its tests and review are still to finish" : forReview ? ", and ready for review" : ""}"><span style="width:${(100 * bar.n / bar.of).toFixed(0)}%"></span></div>
@@ -2814,6 +2930,43 @@ async function archiveCard(id) {
   } catch (err) { flash("Archive failed: server down?"); }
   saving = false;
 }
+// Decide: answer a tile in a decision column. The server archives it with the answer written under it and says
+// which tiles that unblocked. A tile with no key gets the next one first, as Promote gives one.
+async function decideCard(id, answer) {
+  const f = findCard(id), text = answer.trim();
+  if (!f || !text) return;
+  const draftKey = answerKey(f.c);
+  if (saving) return flash("Still saving; try again in a moment.");
+  if (dlg.open) {
+    if ($("#cardText").value !== editing?.original && !await ask({ title: "Decide without saving?", body: "Your changes to this tile aren't saved, and deciding drops them.", ok: "Decide", danger: true })) return;
+    dlg.close("cancel");
+  }
+  const links = [f.c.text, ...f.c.body].join("\n").match(/\]\(((?:active\/)?[\w.-]+\.md)\)/g) || [];
+  const docs = [...new Set(links.map(m => m.slice(2, -1)))].filter(n => n !== file);
+  clearTimeout(saveTimer);
+  if (!cardKey(f.c)) f.c.text = nextKey() + " " + f.c.text;
+  const key = cardKey(f.c), tile = cardMarkdown(f.c);
+  f.s.cards.splice(f.i, 1);
+  saving = true; setStatus("Deciding…");
+  try {
+    const r = await fetch(`/api/decide?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mtime, text: serialize(doc), tile, docs, answer: text }) });
+    const j = await r.json();
+    if (r.ok) {
+      delete answerDrafts[draftKey];
+      adopt(j); render();
+      setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+      const open = j.unblocked || [];
+      flash(`${key} decided` + (open.length ? `: ${keyList(open)} ${open.length > 1 ? "are" : "is"} unblocked` : "") + tidiedNote(j));
+    } else if (j.text) {
+      adopt(j); render(); setStatus("Reloaded", true);
+      flash(`${file} changed on disk, so nothing was decided. Reloaded it; try again.`);
+    } else {
+      flash("Decide failed: " + (j.error || r.status)); await reloadQuiet();
+    }
+  } catch (err) { flash("Decide failed: server down?"); await reloadQuiet().catch(() => {}); }
+  saving = false;
+}
 boardEl.addEventListener("dragend", endDrag);
 
 // Jump to a tile by key: on this board, or on the board the index says it is on. Used by
@@ -2966,7 +3119,7 @@ function mapSaved() { try { return JSON.parse(localStorage.getItem(mapSavedKey()
 function renderMap(q) {
   if (sm.drag?.items) return;  // not under a cluster being dragged
   const graph = mapGraph(renderIndex, renderEdges, pickups.jobs), nodes = [...graph.nodes.values()];
-  const laySig = JSON.stringify(nodes.map(n => [n.key, n.parent, n.domain, n.mentions, n.linked]));
+  const laySig = JSON.stringify(nodes.map(n => [n.key, n.parent, n.domain, n.mentions, n.linked, n.blockedBy, n.blocks]));
   if (laySig !== sm.laySig) { sm.lay = mapLayout(graph); sm.laySig = laySig; }
   // The strip counts what the board would on the plans board; from the backlog, what the map shows.
   const stats = file === PICKUP_BOARD ? buildStats() : mapStats(graph), only = statsShown() && statFilter ? new Set(stats[statFilter]) : null;
@@ -3112,7 +3265,7 @@ function mapGo(key, { remember = true, move = true } = {}) {
   if (!key) { sm.trail = []; mapPanel.hidden = true; return mapFrame(mapWhole()); }
   const n = mapNode(key);
   if (!mapInScope(n)) mapScope("", false);
-  const near = new Set([key, ...n.kids, ...n.mentions, ...n.linked, ...(n.parent ? [n.parent] : [])]);
+  const near = new Set([key, ...n.kids, ...n.mentions, ...n.linked, ...n.blockedBy, ...n.blocks, ...(n.parent ? [n.parent] : [])]);
   for (const k of near) sm.els.get(k).classList.add("lit");
   sm.els.get(key).classList.add("focus");
   for (const x of sm.edges) if ((x.a === key && near.has(x.b)) || (x.b === key && near.has(x.a))) x.e.classList.add("lit");
@@ -3128,6 +3281,8 @@ function mapGo(key, { remember = true, move = true } = {}) {
     ${n.parent ? `<h2>Part of</h2>${mapHop(mapNode(n.parent))}` : ""}
     ${n.kids.length ? `<h2>Sub-stories</h2>${list(n.kids)}` : ""}
     ${n.linked.length ? `<h2>Moves with</h2>${list(n.linked)}` : ""}
+    ${n.blockedBy.length ? `<h2>Blocked by</h2>${list(n.blockedBy)}` : ""}
+    ${n.blocks.length ? `<h2>Blocks</h2>${list(n.blocks)}` : ""}
     ${n.mentions.length ? `<h2>Mentions and mentioned by</h2>${list(n.mentions)}` : ""}
     ${sibs.length ? `<h2>Alongside it in ${n.parent}</h2>${list(sibs)}` : ""}
     ${last ? `<h2>Came from</h2>${mapHop(mapNode(last), "<em>Esc</em>")}` : ""}`;
@@ -3378,14 +3533,37 @@ function familyHTML(md) {
   return `<div class="tv-family">${kids.length ? `<p>Sub-stories, ${kidsDone(kids)}/${kids.length} done</p><ul class="subs kids">${kidsHTML(kids)}</ul>` : ""}
     ${related.length ? `<p>Related: ${related.map(name).join(" · ")}</p>` : ""}</div>`;
 }
+// What a tile in a decision column shows in its view: the tiles it blocks, and the box to answer it in.
+// answerDrafts keeps what is typed, by answerKey, while the view is drawn again.
+const answerDrafts = {};
+function decideHTML() {
+  const card = editing?.card, sec = editing?.sec;
+  if (!card || !sec || !isDecisionCol(sec.name) || readonly || !doc || isDocFile() || file === ARCHIVE_LOG) return "";
+  const key = cardKey(card), blocks = key ? blocksOf(key, renderIndex) : [], draft = answerDrafts[answerKey(card)] || "";
+  return `<div class="tv-decide">${blocks.length ? `<p class="blocks">Blocks ${blocks.map(k => keyRef(k)).join(", ")}</p>` : ""}
+    <textarea data-answer="${card.id}" data-draft="${esc(answerKey(card))}" rows="3" placeholder="The answer: what was decided, and why (⌘↵ decides)">${esc(draft)}</textarea>
+    <div class="reply-row"><button type="button" data-act="decide" data-id="${card.id}"${draft.trim() ? "" : " disabled"} title="Archive this tile with the answer, and unblock the tiles waiting on it">Decide</button></div></div>`;
+}
 function setCardMode(mode) {
   dlg.dataset.mode = mode;
   $("#cardMode").textContent = mode === "view" ? "Edit" : "Preview";
-  if (mode === "view") $("#cardView").innerHTML = tileViewHTML($("#cardText").value) + familyHTML($("#cardText").value);
+  if (mode === "view") $("#cardView").innerHTML = tileViewHTML($("#cardText").value) + familyHTML($("#cardText").value) + decideHTML();
   else { const ta = $("#cardText"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
 $("#cardMode").addEventListener("click", () => setCardMode(dlg.dataset.mode === "view" ? "edit" : "view"));
+$("#cardView").addEventListener("input", e => {
+  const box = e.target.closest?.("textarea[data-answer]");
+  if (!box) return;
+  answerDrafts[box.dataset.draft] = box.value;
+  box.closest(".tv-decide").querySelector("[data-act=decide]").disabled = !box.value.trim();
+});
+$("#cardView").addEventListener("keydown", e => {
+  const box = e.target.closest?.("textarea[data-answer]");
+  if (box && e.key === "Enter" && (e.metaKey || e.ctrlKey) && box.value.trim()) { e.preventDefault(); decideCard(+box.dataset.answer, box.value); }
+});
 $("#cardView").addEventListener("click", e => {
+  const decide = e.target.closest("[data-act=decide]");
+  if (decide) return decideCard(+decide.dataset.id, decide.closest(".tv-decide").querySelector("textarea").value);
   const ref = e.target.closest("[data-act=jump]");
   if (ref) return jumpTo(ref.dataset.key);
   const copy = e.target.closest("[data-act=copy]"), again = e.target.closest("[data-act=restart]"), nudge = e.target.closest("[data-act=continue]");
@@ -3729,7 +3907,7 @@ const pickupId = job => `${job.key}@${job.at}`;
 async function postPickup(body, failed = `${AGENT} wasn't started`) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
-  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs }; render(); }
+  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked }; render(); }
   return r.ok ? j : (flash(`${failed}: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });

@@ -79,10 +79,16 @@
     {"kind": "session", "line": "  Claude session `abc12`: `kandalf attach ab12cd34`.", "value": null},
     {"kind": "session", "line": "  Claude session `AB12CD34`: `kandalf attach ab12cd34`.", "value": null},
     {"kind": "session", "line": "  Claude session `ab12cd34`: not an attach command.", "value": null},
-    {"kind": "session", "line": "  claude session `ab12cd34`: `kandalf attach ab12cd34`.", "value": null}
+    {"kind": "session", "line": "  claude session `ab12cd34`: `kandalf attach ab12cd34`.", "value": null},
+    {"kind": "decision", "line": "  **Decision 2026-11-23:** retire it.", "value": {"date": "2026-11-23", "text": "retire it."}},
+    {"kind": "decision", "line": "  **Decision 2026-11-23:**", "value": {"date": "2026-11-23", "text": ""}},
+    {"kind": "decision", "line": "  **Decision 2026-11-20:** keep it.\n  **Decision 2026-11-23:** retire it.", "value": {"date": "2026-11-23", "text": "retire it."}},
+    {"kind": "decision", "line": "**Decision 2026-11-23:** not indented.", "value": null},
+    {"kind": "decision", "line": "  Decision 2026-11-23: no bold.", "value": null},
+    {"kind": "decision", "line": "  The **Decision 2026-11-23:** mid-line.", "value": null}
   ],
   "tiles": [
-    {"md": "- [ ] PLN-70 P2 ~2-3d **Dark mode.** The master story.\n  - [ ] **Agree the scope.**", "column": "To do", "key": "PLN-70", "title": "Dark mode", "parent": null, "links": [], "mentions": []},
+    {"md": "- [ ] PLN-70 P2 ~2-3d **Dark mode.** The master story.\n  - [ ] **Agree the scope.**", "column": "To do", "key": "PLN-70", "title": "Dark mode", "parent": null, "links": [], "mentions": [], "blockers": []},
     {"md": "* [ ] PLN-07 **Starred.**", "column": "To do", "key": "PLN-07", "title": "Starred"},
     {"md": "- PLN-08 **No box.**", "column": "To do", "key": "PLN-08", "title": "No box"},
     {"md": "- [x] PLN-09 ~1.5d **Ticked.** words", "column": "To do", "key": "PLN-09", "title": "Ticked"},
@@ -117,7 +123,13 @@
     {"md": "- [ ] PLN-27 **Two. Sentences.** then words.", "column": "To do", "key": "PLN-27", "title": "Two. Sentences"},
     {"md": "- [ ] P2 ~2d **No key.**", "column": "To do", "key": null, "title": "No key"},
     {"md": "- [ ] PLN-28 **Mixed.** Moves with PLN-02 and PLN-03, PLN-04, and PLN-05.", "column": "To do", "key": "PLN-28", "links": ["PLN-02", "PLN-03", "PLN-04", "PLN-05"]},
-    {"md": "- [ ] PLN-29 **Lower.** After pln-41 and Pln-42.", "column": "To do", "key": "PLN-29", "mentions": []}
+    {"md": "- [ ] PLN-29 **Lower.** After pln-41 and Pln-42.", "column": "To do", "key": "PLN-29", "mentions": []},
+    {"md": "- [ ] PLN-41 **Nav.** Blocked by PLN-30.", "column": "To do", "key": "PLN-41", "blockers": ["PLN-30"], "mentions": ["PLN-30"]},
+    {"md": "- [ ] PLN-41 **Nav.**\n  blocked by PLN-30, PLN-31 and PLN-32. Blocked by PLN-30 and PLN-33.", "column": "To do", "key": "PLN-41", "blockers": ["PLN-30", "PLN-31", "PLN-32", "PLN-33"]},
+    {"md": "- [ ] PLN-41 **Nav.** Blocked by PLN-41 and PLN-30.", "column": "To do", "key": "PLN-41", "blockers": ["PLN-30"]},
+    {"md": "- [ ] PLN-41 **Nav.** blocked by pln-30 and Blocked by ABC-30.", "column": "To do", "key": "PLN-41", "blockers": []},
+    {"md": "- [ ] PLN-41 **Nav.**\n  **Status 2026-11-23 10:00:** not Blocked by PLN-9 now.\n  **Ready for review:** was Blocked by PLN-8.\n  **Decision 2026-11-23:** Blocked by PLN-7 no more.", "column": "To do", "key": "PLN-41", "blockers": []},
+    {"md": "- [ ] PLN-41 **Nav.**\n  Claude session `ab12cd34`: `kandalf attach ab12cd34`. Blocked by PLN-6.", "column": "To do", "key": "PLN-41", "blockers": []}
   ],
   "boards": [
     {"name": "CRLF line endings", "text": "# Plans\r\n\r\n## To do\r\n\r\n* [ ] PLN-07 **Starred.**\r\n  Model: sonnet\r\n  - [ ] **Step.**\r\n- [ ] PLN-08 **Two.** Part of PLN-07.\r\n\r\n## Done\r\n\r\n- [x] PLN-09 **Old.**\r\n", "tiles": [{"key": "PLN-07", "column": "To do", "done": false, "md": "* [ ] PLN-07 **Starred.**\n  Model: sonnet\n  - [ ] **Step.**", "model": "sonnet"}, {"key": "PLN-08", "column": "To do", "done": false, "md": "- [ ] PLN-08 **Two.** Part of PLN-07.", "parent": "PLN-07"}, {"key": "PLN-09", "column": "Done", "done": true, "md": "- [x] PLN-09 **Old.**"}]},
@@ -171,6 +183,26 @@
     {"name": "Building", "pickupColumn": "Building", "pickup": true},
     {"name": "building ", "pickupColumn": "Building", "pickup": true},
     {"name": "In flight", "pickupColumn": "Building", "pickup": false},
-    {"name": "To do", "pickupColumn": "Building", "pickup": false}
+    {"name": "To do", "pickupColumn": "Building", "pickup": false},
+    {"name": "Design decision", "decision": true},
+    {"name": "Decisions", "decision": true},
+    {"name": "Decide", "decision": true},
+    {"name": "Not a decision", "decision": false},
+    {"name": "Decided", "decision": false},
+    {"name": "To do", "decision": false}
+  ],
+  "blocked": [
+    {"name": "a blocker on the backlog that is not done still blocks", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", "backlog.md": "# Backlog\n\n## Ideas\n\n- [ ] PLN-30 **Auth.**\n"}, "expect": {"PLN-41": {"blocking": ["PLN-30"], "decisions": [], "ring": []}}},
+    {"name": "a blocker in a Done column stops blocking though its box is unticked", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n\n## Done\n\n- [ ] PLN-30 **Auth.**\n"}, "expect": {"PLN-41": {"blocking": [], "decisions": [], "ring": []}}},
+    {"name": "a blocker ticked in To do still blocks", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n- [x] PLN-30 **Auth.**\n"}, "expect": {"PLN-41": {"blocking": ["PLN-30"], "decisions": [], "ring": []}}},
+    {"name": "an archived blocker with a decision line stops blocking and has decided", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", "archive/archived.md": "# Archived plans\n\n## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-23:** retire it.\n"}, "expect": {"PLN-41": {"blocking": [], "decisions": ["PLN-30"], "ring": []}}},
+    {"name": "an archived blocker with no decision line stops blocking and has decided nothing", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", "archive/archived.md": "# Archived plans\n\n## Archived\n\n- [x] PLN-30 **Auth.**\n"}, "expect": {"PLN-41": {"blocking": [], "decisions": [], "ring": []}}},
+    {"name": "a key no tile has blocks", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-99.\n"}, "expect": {"PLN-41": {"blocking": ["PLN-99"], "decisions": [], "ring": []}}},
+    {"name": "a sub-story is blocked by what blocks its master", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-42 **Kid.** Part of PLN-41.\n", "backlog.md": "# Backlog\n\n## Ideas\n\n- [ ] PLN-41 **Master.** Blocked by PLN-30.\n- [ ] PLN-30 **Auth.**\n"}, "expect": {"PLN-42": {"blocking": ["PLN-30"], "decisions": [], "ring": []}, "PLN-41": {"blocking": ["PLN-30"], "decisions": [], "ring": []}}},
+    {"name": "a master blocked by its own sub-story is blocked but the sub-story is not", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Master.** Blocked by PLN-42.\n- [ ] PLN-42 **Kid.** Part of PLN-41.\n"}, "expect": {"PLN-42": {"blocking": [], "decisions": [], "ring": []}, "PLN-41": {"blocking": ["PLN-42"], "decisions": [], "ring": []}}},
+    {"name": "two tiles blocked by each other block each other and form a ring", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **A.** Blocked by PLN-42.\n- [ ] PLN-42 **B.** Blocked by PLN-41.\n"}, "expect": {"PLN-41": {"blocking": ["PLN-42"], "decisions": [], "ring": ["PLN-42"]}, "PLN-42": {"blocking": ["PLN-41"], "decisions": [], "ring": ["PLN-41"]}}},
+    {"name": "two decision lines on an archived blocker still make it one decision", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", "archive/archived.md": "# Archived plans\n\n## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-20:** keep it.\n  **Decision 2026-11-23:** retire it.\n"}, "expect": {"PLN-41": {"blocking": [], "decisions": ["PLN-30"], "ring": []}}}
+,
+    {"name": "a sub-story's blockers come first, then its master's, each once", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-42 **Kid.** Part of PLN-41. Blocked by PLN-31 and PLN-30.\n- [ ] PLN-41 **Master.** Blocked by PLN-30 and PLN-32.\n- [ ] PLN-30 **A.**\n- [ ] PLN-31 **B.**\n- [ ] PLN-32 **C.**\n"}, "expect": {"PLN-42": {"blocking": ["PLN-31", "PLN-30", "PLN-32"], "decisions": [], "ring": []}}}
   ]
 }
