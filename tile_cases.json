@@ -88,6 +88,7 @@
     {"kind": "decision", "line": "  The **Decision 2026-11-23:** mid-line.", "value": null}
   ],
   "tiles": [
+    {"md": "- [ ] PLN-01 **T.**\n  **Options 2026-11-23:** recommends A.\n  - **A. Go.** Part of PLN-70, Moves with PLN-71 and Blocked by PLN-72", "column": "To do", "key": "PLN-01", "parent": null, "links": [], "mentions": ["PLN-70", "PLN-71", "PLN-72"], "blockers": []},
     {"md": "- [ ] PLN-70 P2 ~2-3d **Dark mode.** The master story.\n  - [ ] **Agree the scope.**", "column": "To do", "key": "PLN-70", "title": "Dark mode", "parent": null, "links": [], "mentions": [], "blockers": []},
     {"md": "* [ ] PLN-07 **Starred.**", "column": "To do", "key": "PLN-07", "title": "Starred"},
     {"md": "- PLN-08 **No box.**", "column": "To do", "key": "PLN-08", "title": "No box"},
@@ -204,5 +205,16 @@
     {"name": "two decision lines on an archived blocker still make it one decision", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-41 **Nav.** Blocked by PLN-30.\n", "archive/archived.md": "# Archived plans\n\n## Archived\n\n- [x] PLN-30 **Auth.**\n  **Decision 2026-11-20:** keep it.\n  **Decision 2026-11-23:** retire it.\n"}, "expect": {"PLN-41": {"blocking": [], "decisions": ["PLN-30"], "ring": []}}}
 ,
     {"name": "a sub-story's blockers come first, then its master's, each once", "files": {"plans.md": "# Plans\n\n## To do\n\n- [ ] PLN-42 **Kid.** Part of PLN-41. Blocked by PLN-31 and PLN-30.\n- [ ] PLN-41 **Master.** Blocked by PLN-30 and PLN-32.\n- [ ] PLN-30 **A.**\n- [ ] PLN-31 **B.**\n- [ ] PLN-32 **C.**\n"}, "expect": {"PLN-42": {"blocking": ["PLN-31", "PLN-30", "PLN-32"], "decisions": [], "ring": []}}}
+  ],
+  "options": [
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:** recommends B. [Research](active/pln-30-research.md) Asked: keep the adapter half\n  - **A. Keep adapters.** Smallest change.\n  - **B. Split the package.** Cleaner layering.\n  - [ ] **Decide.**", "options": {"date": "2026-11-23", "recommends": "B", "doc": "active/pln-30-research.md", "asked": "keep the adapter half", "items": [{"letter": "A", "title": "Keep adapters", "summary": "Smallest change."}, {"letter": "B", "title": "Split the package", "summary": "Cleaner layering."}]}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:** the draft gave no options. [Research](active/r.md)", "options": {"date": "2026-11-23", "recommends": null, "doc": "active/r.md", "asked": null, "items": []}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:**", "options": {"date": "2026-11-23", "recommends": null, "doc": null, "asked": null, "items": []}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:** [Research](r.md) Asked: more on B\n  - **A. One.** First.", "options": {"date": "2026-11-23", "recommends": null, "doc": "r.md", "asked": "more on B", "items": [{"letter": "A", "title": "One", "summary": "First."}]}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:** recommends A.\n  * **A. One.** First.\n  * **C. Three.**", "options": {"date": "2026-11-23", "recommends": "A", "doc": null, "asked": null, "items": [{"letter": "A", "title": "One", "summary": "First."}, {"letter": "C", "title": "Three", "summary": ""}]}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:** recommends A.\n  - **A. One.** First.\n  - [ ] **Do it.**\n  - **B. Not an option.** After a sub-task.", "options": {"date": "2026-11-23", "recommends": "A", "doc": null, "asked": null, "items": [{"letter": "A", "title": "One", "summary": "First."}]}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:**\n  - **A. Why?** Because.", "options": {"date": "2026-11-23", "recommends": null, "doc": null, "asked": null, "items": [{"letter": "A", "title": "Why?", "summary": "Because."}]}},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  Nothing drafted yet.", "options": null},
+    {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  - **A. One.** First.", "options": null}
   ]
 }

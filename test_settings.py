@@ -4,14 +4,16 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from kandalf import agent, pickup, serve, settings
+from kandalf import agent, drafts, jobs, pickup, serve, settings
 from kandalf.store import Store
 
 REAL_TICK = pickup.tick  # the Watch tests fake it; one look needs the real one
+REAL_LOOK = drafts.look  # the same for the drafts' look
 
 
 class Reload(unittest.TestCase):
@@ -405,6 +407,182 @@ class Watch(unittest.TestCase):
         self.assertIn("could not be read", st.config_problem)
         self.assertEqual(len(self.ticks), 1)
 
+    def drafted(self, st, state, doc="active/2026-11-23-pln-80-options.md"):
+        with jobs.Ledger(st).change() as held:
+            held.setdefault("drafts", []).append({"key": "PLN-80", "state": state, "title": "On its own", "note": None,
+                                                  "doc": doc, "asked_at": 1})
+
+    def draft_turns(self, st, n=1, said=(), real=False):
+        """n drafts' turns with drafts.look recorded (self.looks: whether each look's boards had
+        PLN-80) and the console recorded (self.logged). The look gives the lines said, or is the
+        real one (real). The number of looks."""
+        self.looks = []
+        def look(store, snap, **kw):
+            self.looks.append(snap.tile("PLN-80") is not None)
+            return REAL_LOOK(store, snap, **kw) if real else list(said)
+        self.addCleanup(serve.DRAFTS_ASKED.clear)
+        with mock.patch.object(drafts, "look", look), mock.patch.object(pickup, "log") as log:
+            for _ in range(n):
+                serve.watch_drafts_turn(st, self.ctx)
+        self.logged = [c.args[0] for c in log.call_args_list]
+        return len(self.looks)
+
+    def test_a_draft_asked_for_is_looked_at_on_the_next_turn_with_pickup_off(self):
+        st = self.store({"pickup": False})
+        self.assertEqual(self.draft_turns(st, 2), 0)
+        self.ctx["d_last"] = time.time()  # a look just now: the recheck isn't due
+        self.drafted(st, "queued")
+        serve.DRAFTS_ASKED.set()  # as /api/draft does
+        self.assertEqual(self.draft_turns(st), 1)
+        self.assertFalse(serve.DRAFTS_ASKED.is_set())
+        self.assertEqual(self.draft_turns(st, 3), 0)
+
+    def test_a_working_draft_is_looked_at_again_only_after_the_recheck_interval(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "working")
+        self.assertEqual(self.draft_turns(st, 3), 1)
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.assertEqual(self.draft_turns(st, 3), 1)
+
+    def test_a_changed_doc_is_looked_at_once_it_has_settled(self):
+        st = self.store({"pickup": False})
+        doc = self.dir / "active" / "2026-11-23-pln-80-options.md"
+        doc.parent.mkdir()
+        doc.write_text("# PLN-80 options\n", encoding="utf-8")
+        self.drafted(st, "ready")
+        self.assertEqual(self.draft_turns(st, 4), 1)  # the first sight of it, once it held for a turn
+        doc.write_text("# PLN-80 options\n\n## A. Do it\n", encoding="utf-8")
+        os.utime(doc, ns=(doc.stat().st_atime_ns, doc.stat().st_mtime_ns + 10**9))
+        self.assertEqual(self.draft_turns(st), 0)
+        self.assertEqual(self.draft_turns(st), 1)
+        self.assertEqual(self.draft_turns(st, 3), 0)
+
+    def test_no_draft_no_look(self):
+        st = self.store({"pickup": True})
+        self.assertEqual(self.draft_turns(st, 4), 0)
+
+    def test_a_look_reads_the_boards_as_they_are_then(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "queued")
+        serve.DRAFTS_ASKED.set()
+        self.draft_turns(st)
+        self.assertEqual(self.looks, [True])
+        (self.dir / "plans.md").write_text("# Plans\n\n## Decisions\n\n", encoding="utf-8")
+        serve.DRAFTS_ASKED.set()
+        self.draft_turns(st)
+        self.assertEqual(self.looks, [False])
+
+    def test_a_line_a_look_keeps_giving_is_said_once(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "working")
+        self.draft_turns(st, said=["PLN-80: the options could not be written: no board"])
+        self.assertEqual(self.logged, ["PLN-80: the options could not be written: no board"])
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.draft_turns(st, said=["PLN-80: the options could not be written: no board"])
+        self.assertEqual(self.logged, [])
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.draft_turns(st, said=[])
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.draft_turns(st, said=["PLN-80: the options could not be written: no board"])
+        self.assertEqual(self.logged, ["PLN-80: the options could not be written: no board"])
+
+    def test_a_line_two_looks_in_a_row_give_for_two_events_is_said_twice(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "working")
+        self.draft_turns(st, said=["PLN-80: options read again from its research doc"])
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.draft_turns(st, said=["PLN-80: options read again from its research doc"])
+        self.assertEqual(self.logged, ["PLN-80: options read again from its research doc"])
+
+    def decision(self, column="Decisions", tile=True):
+        board = self.dir / "plans.md"
+        board.write_text(f"# Plans\n\n## {column}\n\n" + ("- [ ] PLN-80 **On its own.**\n" if tile else ""), encoding="utf-8")
+        if board.stat().st_mtime_ns == getattr(self, "board_at", None):
+            os.utime(board, ns=(board.stat().st_atime_ns, board.stat().st_mtime_ns + 10**9))
+        self.board_at = board.stat().st_mtime_ns
+
+    def test_a_ready_draft_whose_tile_is_dragged_out_of_its_column_is_ended_once_the_board_settles(self):
+        self.decision()
+        st = self.store({"pickup": False})
+        self.drafted(st, "ready")
+        self.assertEqual(self.draft_turns(st, 3, real=True), 1)  # the first sight of it
+        self.assertEqual([d["state"] for d in drafts.live(st)], ["ready"])
+        self.decision("To do")
+        self.assertEqual(self.draft_turns(st, real=True), 0)  # not settled yet
+        self.assertEqual(self.draft_turns(st, real=True), 1)
+        self.assertEqual(drafts.live(st), [])
+        self.assertEqual(self.logged, ["PLN-80: draft ended, its tile is no longer a decision"])
+        self.assertEqual(self.draft_turns(st, 3, real=True), 0)
+
+    def test_a_ready_draft_whose_tile_is_deleted_is_ended_once_the_board_settles(self):
+        self.decision()
+        st = self.store({"pickup": False})
+        self.drafted(st, "ready")
+        self.draft_turns(st, 3, real=True)
+        self.decision(tile=False)
+        self.assertEqual(self.draft_turns(st, 2, real=True), 1)
+        self.assertEqual(drafts.live(st), [])
+        self.assertEqual(self.logged, ["PLN-80: draft ended, its tile is gone"])
+
+    def test_with_no_draft_a_turn_reads_the_ledger_once_and_looks_at_no_board(self):
+        st = self.store({"pickup": False})
+        with mock.patch.object(serve, "board_mtimes", side_effect=AssertionError("a board was looked at")), \
+                mock.patch.object(drafts, "live", wraps=drafts.live) as live, \
+                mock.patch.object(serve.reader.Snapshot, "read", side_effect=AssertionError("the boards were read")):
+            self.assertEqual(self.draft_turns(st, 3), 0)
+        self.assertEqual(live.call_count, 3)
+
+    def test_a_draft_left_ending_brings_a_look_after_the_recheck_interval_and_not_before(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "ending")
+        self.ctx["d_last"] = time.time()
+        self.assertEqual(self.draft_turns(st, 3), 0)
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.assertEqual(self.draft_turns(st, 3), 1)
+
+    def test_a_ready_draft_is_not_looked_at_again_while_nothing_changes(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "ready")
+        self.assertEqual(self.draft_turns(st, 3), 1)
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.assertEqual(self.draft_turns(st, 3), 0)
+
+    def test_a_doc_changed_while_its_session_was_busy_is_read_once_the_session_is_idle(self):
+        self.decision()
+        st = self.store({"pickup": False})
+        doc = self.dir / "active" / "2026-11-23-pln-80-options.md"
+        doc.parent.mkdir()
+        doc.write_text("# PLN-80 options\n\n## A. Do it\n", encoding="utf-8")
+        aged(doc)
+        self.drafted(st, "ready")
+        with jobs.Ledger(st).change() as held:
+            held["drafts"][0].update(id="s1", read=doc.stat().st_mtime_ns)
+        listing, wrote = {"s1": "busy"}, []
+        fake = pickup.Sessions(sessions=lambda: dict(listing), now=time.time)
+        with mock.patch.object(serve, "SESSIONS", fake), \
+                mock.patch.object(serve, "write_options", lambda store, key, block, subject: wrote.append(key)):
+            self.assertEqual(self.draft_turns(st, 3, real=True), 1)  # the first sight of it
+            doc.write_text("# PLN-80 options\n\n## A. Do it\n\n## B. Leave it\n", encoding="utf-8")
+            self.assertEqual(self.draft_turns(st, 2, real=True), 1)  # settled, but its session is busy
+            self.assertEqual(wrote, [])
+            listing["s1"] = "idle"
+            self.assertEqual(self.draft_turns(st, 3, real=True), 0)  # not before the recheck interval
+            self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+            self.assertEqual(self.draft_turns(st, real=True), 1)
+            self.assertEqual(wrote, ["PLN-80"])
+            self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+            self.assertEqual(self.draft_turns(st, 3, real=True), 0)  # read now: nothing more to look at
+
+    def test_a_block_that_could_not_be_written_is_tried_again_after_the_recheck_interval(self):
+        st = self.store({"pickup": False})
+        self.drafted(st, "ready")
+        failed = ["PLN-80: the options could not be written: no board"]
+        self.assertEqual(self.draft_turns(st, 3, said=failed), 1)
+        self.assertEqual(self.draft_turns(st, 3, said=failed), 0)  # not before the recheck interval
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.assertEqual(self.draft_turns(st, 3), 1)  # this one writes it
+        self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
+        self.assertEqual(self.draft_turns(st, 3), 0)
 
 if __name__ == "__main__":
     unittest.main()

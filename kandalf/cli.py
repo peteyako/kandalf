@@ -57,18 +57,22 @@ def pick_store(args):
 
 def session_of(args):
     """The session id kandalf attach is given: an id as it is, or a tile key (CAS-01) looked
-    up in the store's pickup jobs. None, said on stderr, when a key has no session."""
+    up in the store's pickup jobs, else its draft's (one not being ended). None, said on stderr,
+    when a key has neither."""
     want = args[0]
     if all(c in "0123456789abcdef" for c in want):
         return want
-    from . import jobs
+    from . import drafts, jobs
     st, rest = pick_store(args)
     key = rest[0].upper()
     job = jobs.Ledger(st).latest(key, "id")
-    if job is None:
-        print(f"{key} has no session", file=sys.stderr)
-        return None
-    return job["id"]
+    if job is not None:
+        return job["id"]
+    draft = next((d for d in drafts.summary(st) if d["key"] == key and d["id"]), None)
+    if draft is not None:
+        return draft["id"]
+    print(f"{key} has no session", file=sys.stderr)
+    return None
 
 
 def main(argv=None):

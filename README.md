@@ -57,13 +57,13 @@ Pickup needs [Claude Code](https://claude.com/claude-code) (the default), the [G
 Claude Code is the default: `kandalf init` picks it when `claude` is on your PATH, and `"agent": "claude"` in `board.json` (or no `agent` at all) keeps it.
 
 - **It runs as a Claude Code background session**, `claude --bg`, so Claude Code keeps it and lists it in `claude agents`.
-- **Attaching opens it.** `kandalf attach ab12cd34` runs `claude attach ab12cd34`: the session's own screen, to watch it or carry on.
+- **Attaching opens it.** `kandalf attach ab12cd34` runs `claude attach ab12cd34`: the session's own screen, to watch it or carry on. A key finds a draft's session too.
 - **It can stop to ask.** When it asks a question or is interrupted, status and the tile say it's waiting for your input.
 - **It gets the hooks with `--settings`**, pointing at the store's `.claude/settings.json`, so the worktree needs no file of its own.
 - **It reaches the store through `docs/plans`**, the link in its worktree. The other repos a `Repos:` line names come with `--add-dir`.
 - **Models** are `opus` (the default), `sonnet`, `haiku` and `fable`, or a full model id.
 
-The `permission` setting goes to Claude Code as it is, as `--permission-mode`: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions`.
+The `permission` setting goes to Claude Code as it is, as `--permission-mode`: `auto`, `acceptEdits`, `manual`, `dontAsk`, `plan` or `bypassPermissions`. A store set to `plan` cannot draft options, and in `manual` a draft stops at its first write prompt and shows as needing you.
 
 ### Using the Copilot CLI
 
@@ -87,6 +87,8 @@ The `permission` setting maps onto Copilot's flags:
 | `plan` | `--mode plan` |
 | anything else | nothing, so it denies whatever isn't pre-approved |
 
+A store set to `plan` cannot draft options.
+
 ### Using the Antigravity CLI
 
 Pick Antigravity when `kandalf init` asks (or pass `--agent agy`), set `"agent": "agy"` in `board.json`, or switch an existing store with `kandalf agent agy`.
@@ -108,6 +110,8 @@ The `permission` setting maps onto Antigravity's flags:
 | `bypassPermissions` | `--dangerously-skip-permissions` |
 | `plan` | `--mode plan` |
 | anything else | nothing (default prompts) |
+
+A store set to `plan` cannot draft options.
 
 ## What a session does with a story
 
@@ -229,6 +233,13 @@ Leave pickup off and it's a markdown kanban.
 - **Columns and tiles.** `plans.md` is the board: one `## ` column per status, one `- ` tile per plan. Drag a tile to change its status, or edit it in place. A tile can have a priority, an estimate and tick-box sub-tasks. If the file changed on disk since your page loaded it, the server refuses to save over it and reloads it instead.
 - **Plan docs.** Longer plans live in `active/` (`YYYY-MM-DD-slug.md`), linked from the tile. A key written anywhere in a tile's text ("after PLN-41") jumps to that tile, and a tile's dialog lists what it's Related to.
 - **Backlog and Promote.** `backlog.md` is a second board of unscheduled tiles, one column per kind of work. Drop a tile on Promote and it moves to the top of To do, with a key if it had none. On the plans board, Back to backlog lists the backlog's columns. A tile in a column whose name says decision (Design decision, Decisions, Decide) is answered, not promoted: its card has an Answer box, and **Decide** writes the answer on the tile as a `**Decision <date>:**` line (folded to one line), ticks the tile and archives it, then names the stories it unblocked. A story that waits on a decision says `Blocked by` and its key.
+- **Draft options.** A tile in a decision column, on plans or backlog, has a **Draft options** button on its card, with an optional one-line note saying what to look at. It cuts a throwaway detached worktree (no branch) of each repo the tile's `Repos:` line names, else of the main repo, and starts one background session of the store's agent in the first, which researches the question and writes one research doc, `active/<date>-<key>-options.md`, in the store. When the session finishes, the board reads the doc and writes an options block onto the tile: an `**Options <date>:**` line (which option is recommended, a link to the research doc, and `Asked: <note>` when a note was given) and up to four `- **A. Title.** summary` lines. The card lists them above the Answer box, each with **Use**, which copies the option into the Answer box to edit (it asks first if you typed something else). Nothing is decided until **Decide**. A hand-written options block in the same shape is listed the same way, with no draft.
+  - **Draft again** takes a note and replaces the draft: the new session is told the note and to revise the last draft. **Stop** ends a draft. `kandalf attach KEY` opens a draft's session in a terminal (a story's session wins when the key has both). When the research doc changes later, because an attached session revises it or you edit it by hand, the tile's options follow.
+  - The tile's tag says where a draft stands: `queued to draft`, `drafting options · 12m`, `options ready`, `draft needs you`, `draft gave no options` or `draft lost`. A draft needs you when its session stopped on a question, a permission prompt or an error, or when a redraft finished without changing the research doc.
+  - One draft works at a time and the others queue. Drafts are apart from the story queue: they don't count against `sessions` or `parallel`, and stories don't wait for them.
+  - It works with `"pickup": false`, since it is an explicit press, but needs what pickup needs: an app repo that is there and the agent's CLI installed. A store whose `permission` is `plan` cannot draft.
+  - The session's code changes are discarded, not prevented. Its worktrees are removed when the draft ends: when the tile is decided, archived, deleted or leaves its decision column, when you press Stop, or when Draft again replaces it. Only the draft's own worktrees are removed: the one at its `draft-<key>` path (the store's `worktree` pattern, with `draft-<key>` for the key), or one git lists as detached; any other worktree on a branch is left alone. Deciding or archiving the tile moves the research doc to `archive/` with it.
+  - The research doc is read as follows: an optional `Recommends: B` line before the first option; each option a heading `## A. Title` (`## Option A: Title` and similar are accepted) followed by a first paragraph that becomes the summary. Headings inside code blocks are ignored.
 - **Archive.** Drop a tile on Archive: its plan docs move from `active/` to `archive/`, links to them are rewritten, and the tile is filed at the top of `archive/archived.md`. **Clear** in Done's header archives every tile there at once, except a tile whose branch isn't merged. **Undo** brings the last clear back, until the page reloads.
 - **Keys and sort.** Every tile has a key (`PLN-07`). The Sort menu orders every column by priority, estimate, or when the tile was first committed. It only changes the display; the file keeps its order. Cmd/Ctrl+Enter saves a tile's dialog.
 - **Looks.** The header's Theme menu picks the board's look (Clean and light, Classic, Aqua bubble, Sticker pop, Realm ledger, Soft and sunny), the swatches pick an accent colour, and the button beside them picks light or dark: ◐ System follows your computer, ☀ Light and ☾ Dark stay put. Every theme has a dark palette. All three choices are kept in this browser only.
@@ -269,6 +280,7 @@ Write these in a tile and the board acts on them.
 | `No pickup` | Never pick this tile up. Use it on a tile one of your own sessions is already working on. |
 | `Blocked by PLN-30` (or `PLN-30, PLN-31 and PLN-32`) | The story waits for those tiles: it shows a lock, and pickup leaves it alone in In flight until each is in Done or archived. A key no tile has blocks too. A sub-story takes its master's. Take the words off to start it anyway. |
 | `**Decision 2026-11-23:** retire it.` (own line) | The answer to a decision. The board writes it when you answer a tile in a decision column, and archives the tile. Stories it blocked show the answer, and their sessions are given the tile to follow. |
+| `**Options 2026-11-24:** recommends B. [Research](active/…-options.md)` and `- **A. Title.** summary` lines under it | The options drafted for a decision. The board writes them when a draft's research doc is ready and lists them on the tile's card, each with **Use**. Write the block yourself in the same shape and the card lists it too. |
 | `Model: sonnet` (own line) | The model for this story's session: an alias or a full model id. |
 | `Base: feature-x` (own line) | The branch this story is cut from and merged into, instead of the trunk, in each repo that has it. The dialog's Base field writes it. A sub-story takes its master's. |
 | `Domain: Admin` (own line) | The part of the product the story is in. The map groups stories by it. A sub-story takes its master's. |
@@ -337,7 +349,7 @@ kandalf commit status       what's queued, and when it will commit
 kandalf commit now          commit and push the queue right away
 kandalf check FILE...       would the board open this file view-only? names the first bad line, and a second In flight or Done column
 kandalf where               which store, its key, port, app and repo
-kandalf attach ID|KEY       open a story's session (for Claude, `claude attach`; for Copilot or Antigravity, follow it, then `copilot --resume` or `agy --conversation`)
+kandalf attach ID|KEY       open a story's session, or a draft's when the key has no story session (for Claude, `claude attach`; for Copilot or Antigravity, follow it, then `copilot --resume` or `agy --conversation`)
 kandalf status KEY          the Status line for a story's session, as the tile's Status button writes it
 kandalf agent [NAME]        the agent pickup hands stories to; or switch to claude, copilot or agy (--force)
 kandalf repo add PATH       another repo stories can work in (--name NAME, --trunk BRANCH)
@@ -417,6 +429,7 @@ kandalf/
   tiles.py                reads and edits board markdown: tiles, their attribute lines, the session line, and a
                           snapshot of plans, backlog and the archive log (index, lineage, In flight tiles)
   pickup.py               hands a tile in In flight to an agent
+  drafts.py               drafts a decision's options: the research doc's reading, the draft's session and worktree
   jobs.py                 the job ledger: board-pickup.json, locked across processes, and its queries
   agent.py                the agent in use (board.json "agent")
   settings.py             the settings panel's editable board.json keys, checked and written

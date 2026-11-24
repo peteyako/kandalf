@@ -15,5 +15,15 @@
     {"job": {"state": "waiting"}, "label": "", "actions": ["startnow"]},
     {"job": {"state": "failed"}, "label": "", "actions": ["restart"]},
     {"job": {"state": "ended"}, "label": "", "actions": []}
+  ],
+  "drafts": [
+    {"draft": {"state": "queued"}, "label": "queued to draft", "actions": ["stop"]},
+    {"draft": {"state": "working"}, "label": "drafting options", "actions": ["stop"]},
+    {"draft": {"state": "ready"}, "label": "options ready", "actions": ["again"]},
+    {"draft": {"state": "empty"}, "label": "draft gave no options", "actions": ["again"]},
+    {"draft": {"state": "need"}, "label": "draft needs you", "actions": ["again", "stop"]},
+    {"draft": {"state": "lost"}, "label": "draft lost", "actions": ["again"]},
+    {"draft": {"state": "ending"}, "label": "", "actions": []},
+    {"draft": {"state": "nonsense"}, "label": "", "actions": []}
   ]
 }

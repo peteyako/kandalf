@@ -321,7 +321,8 @@ the tile at the top of its column on `docs/{link}/backlog.md`. A master story wi
 a story's domain and the other stories it names are what the board's map is drawn from: write
 the `Part of`, `Domain:` and key mentions as that header says. A story that waits on other
 tiles says `Blocked by` and their keys; a tile in the Design decision column is answered on its
-card, not promoted. Commit with
+card, not promoted, and its card can draft options for the answer. The `**Options …**` block on a
+tile is the board's to write: leave it as it is. Commit with
 `git -C docs/{link} commit -- <paths>`, never in this repo.
 {AGENT_NOTES_END}
 """

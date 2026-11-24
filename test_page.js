@@ -20,13 +20,13 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, tileDomains, mapGraph, mapLayout, mapStats, agentMark, columnKind, kindTaken, doubledKinds,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, tileDomains, mapGraph, mapLayout, mapStats, agentMark, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setFullSuite: on => { STORE_FULL_SUITE = on; },
             setPickupColumn: name => { STORE_PICKUP_COLUMN = name; },
             setUnmerged: map => { unmerged = map; },
-            setPickups: (jobs, blocked, enabled = true) => { pickups = { enabled, why: null, jobs, ...(blocked ? { blocked } : {}) }; },
+            setPickups: (jobs, blocked, enabled = true, drafts, draftsOff = null) => { pickups = { enabled, why: null, jobs, ...(blocked ? { blocked } : {}), ...(drafts ? { drafts, draftsOff } : {}) }; },
             cards: () => doc.sections.flatMap(s => s.cards.map(c => ({ column: s.name, card: c }))),
             section: name => doc.sections.find(s => s.name === name),
             open(name, text, tiles) { file = name; doc = parse(text); serverTiles = tiles || {}; } };`
@@ -412,6 +412,14 @@ test("a job with no view from the server is shown by the page's own table, the s
   for (const { job, label, actions } of VIEWS)
     assert.deepEqual(page.jobView(job), { label, actions }, JSON.stringify(job));
   assert.deepEqual(page.jobView(undefined), { label: "", actions: [] });
+});
+
+// view_cases.json "drafts": the cases test_drafts.py runs through drafts.view, here through draftView.
+const DRAFT_VIEWS = JSON.parse(fs.readFileSync(path.join(__dirname, "view_cases.json"), "utf8")).drafts;
+
+test("a draft is shown by the page's table, the same as the server's", () => {
+  for (const { draft, label, actions } of DRAFT_VIEWS)
+    assert.deepEqual(page.draftView(draft), { label, actions }, JSON.stringify(draft));
 });
 
 test("a job that comes with a view is shown by it, whatever its state says", () => {
@@ -915,6 +923,10 @@ test("each line in tile_cases.json says what the case says", () => {
   }
 });
 
+test("each options block in tile_cases.json reads as the case says", () => {
+  for (const c of CASES.options) assert.deepEqual(page.optionsOf(c.md), c.options, c.md);
+});
+
 test("each tile in tile_cases.json has the facts the case says", () => {
   for (const c of CASES.tiles) {
     page.open("plans.md", `## ${c.column}\n\n${c.md}\n`);
@@ -1047,4 +1059,128 @@ test("a blocker row escapes a title, and a ring row links every key but the tile
 test("an answer's draft is kept under the tile's key, else its first line", () => {
   assert.equal(page.answerKey({ text: "PLN-30 **Auth?**" }), "PLN-30");
   assert.equal(page.answerKey({ text: "**Unkeyed?**", body: [] }), "**Unkeyed?**");
+});
+
+// A decision tile with an options block, as the page reads it.
+const OPTIONS_TILE = [
+  "- [ ] PLN-30 **Old theme.** Restyle or retire?",
+  "  **Options 2026-11-24:** recommends B. [Research](active/2026-11-24-pln-30-options.md) Asked: look at the sidebar.",
+  "  - **A. Restyle it?** Sidebar card, profile box.",
+  "  - **B. Retire it.** Delete the app-shell rules.",
+  "  - [ ] a sub-task after the block",
+].join("\n");
+
+test("a draft is found by its key, and an older server has none", () => {
+  try {
+    page.setPickups([], null, true, [{ key: "PLN-30", state: "working", started: 1000 }]);
+    assert.equal(page.draftOf("PLN-30").state, "working");
+    assert.equal(page.draftOf("PLN-31"), null);
+    page.setPickups([]);
+    assert.equal(page.draftOf("PLN-30"), null);
+  } finally { page.setPickups([]); }
+});
+
+test("a tile's draft tag says where its draft stands", () => {
+  page.open("plans.md", "# Plans\n\n## Design decision\n\n" + OPTIONS_TILE + "\n- [ ] PLN-31 **Bare.** No block.\n");
+  const tag = (state, extra = {}, now) => {
+    page.setPickups([], null, true, [{ key: "PLN-30", state, ...extra }]);
+    return page.draftTag("PLN-30", now);
+  };
+  try {
+    assert.equal(tag("queued"), "queued to draft");
+    assert.equal(tag("working", { started: 1000 }, 1000 + 12 * 60), "drafting options · 12m");
+    assert.equal(tag("working", { started: 1000 }, 1000 + 30), "drafting options");
+    assert.equal(tag("working", {}, 5000), "drafting options");
+    assert.equal(tag("ready"), "options ready");
+    assert.equal(tag("empty"), "draft gave no options");
+    assert.equal(tag("need"), "draft needs you");
+    assert.equal(tag("lost"), "draft lost");
+    // no draft: a tile with a block is "options ready", one without says nothing
+    page.setPickups([], null, true, []);
+    assert.equal(page.draftTag("PLN-30"), "options ready");
+    assert.equal(page.draftTag("PLN-31"), "");
+    // an older server sends no drafts at all: a tile's block still says so, one without says nothing
+    page.setPickups([]);
+    assert.equal(page.draftTag("PLN-30"), "options ready");
+    assert.equal(page.draftTag("PLN-31"), "");
+  } finally { page.setPickups([]); }
+});
+
+test("option rows mark the recommended one, and a tile with no block has none", () => {
+  const rows = page.optionRows(OPTIONS_TILE);
+  assert.deepEqual(rows.map(r => [r.letter, r.title, r.recommended]), [["A", "Restyle it?", false], ["B", "Retire it", true]]);
+  assert.equal(rows[1].summary, "Delete the app-shell rules.");
+  assert.deepEqual(page.optionRows("- [ ] PLN-31 **Bare.** No block."), []);
+});
+
+test("an option's text for the Answer box has no doubled full stop", () => {
+  assert.equal(page.useText({ letter: "A", title: "Restyle it?", summary: "Sidebar card." }), "A. Restyle it? Sidebar card.");
+  assert.equal(page.useText({ letter: "B", title: "Retire it", summary: "Delete the rules." }), "B. Retire it. Delete the rules.");
+  assert.equal(page.useText({ letter: "C", title: "Leave it", summary: "" }), "C. Leave it.");
+  assert.equal(page.useText({ letter: "D", title: "Stop?", summary: "" }), "D. Stop?");
+});
+
+test("a tile's face body leaves out the options block and keeps what follows it", () => {
+  const lines = OPTIONS_TILE.split("\n").slice(1);
+  assert.deepEqual(page.faceBody(lines, "Design decision"), ["  - [ ] a sub-task after the block"]);
+  assert.deepEqual(page.faceBody(["  plain line"], "Design decision"), ["  plain line"]);
+  // outside a decision column nothing replaces the lines, so they stay as body text
+  assert.deepEqual(page.faceBody(lines, "To do"), lines);
+});
+
+test("a tile that differs only in its options block is told apart from one that differs elsewhere", () => {
+  const other = OPTIONS_TILE.replace("B. Retire it.", "B. Retire it now.").replace("recommends B", "recommends A");
+  assert.equal(page.onlyOptionsDiffer(OPTIONS_TILE, other), true);
+  assert.equal(page.onlyOptionsDiffer(OPTIONS_TILE, OPTIONS_TILE), false);
+  assert.equal(page.onlyOptionsDiffer(OPTIONS_TILE, OPTIONS_TILE.replace("Restyle or retire?", "Keep it?")), false);
+  const bare = OPTIONS_TILE.split("\n").filter((_, n) => n !== 1 && n !== 2 && n !== 3).join("\n");
+  assert.equal(page.onlyOptionsDiffer(bare, OPTIONS_TILE), true);  // a block that has just arrived
+});
+
+test("a tile's sub-tasks are found at their lines as an options block above them appears, grows, shrinks and goes", () => {
+  const head = "- [ ] PLN-30 **Old theme.** Restyle or retire?", tasks = ["  - [ ] restyle the sidebar", "  - [x] read the app-shell rules"];
+  const block = n => ["  **Options 2026-11-24:** recommends A.", ...["A", "B", "C"].slice(0, n).map(l => `  - **${l}. Option ${l}.** Its summary.`)];
+  const tile = n => [head, ...(n ? block(n) : []), "  Some words.", ...tasks].join("\n");
+  assert.deepEqual(page.subTaskLines(tile(0)), [2, 3]);
+  assert.deepEqual(page.subTaskLines(tile(2)), [5, 6]);
+  assert.deepEqual(page.subTaskLines(tile(3)), [6, 7]);
+  assert.deepEqual(page.subTaskLines(tile(1)), [4, 5]);
+  assert.deepEqual(page.subTaskLines(OPTIONS_TILE), [4]);
+  // the k-th sub-task before is the k-th after, at its new line, whichever way the block changes
+  for (const [from, to] of [[0, 2], [2, 3], [3, 1], [1, 0], [2, 0]]) {
+    const was = tile(from).split("\n"), now = tile(to).split("\n");
+    const before = page.subTaskLines(tile(from)), after = page.subTaskLines(tile(to));
+    assert.deepEqual(after.map(i => now[i]), before.map(i => was[i]), `${from} option lines, then ${to}`);
+    assert.deepEqual(after.map(i => now[i]), tasks);
+  }
+  // the title line is never a sub-task, nor is a bullet or an option line
+  assert.deepEqual(page.subTaskLines("- [ ] PLN-31 **x.**\n  - a bullet\n  - **A. Do it.** Now."), []);
+});
+
+test("story messages and the offer to start in parallel run on the plans board and the map, drafts on any board with a decision column", () => {
+  assert.deepEqual(page.pollsFor("plans.md", false, false), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("plans.md", false, true), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("backlog.md", false, true), { poll: true, stories: false });
+  assert.deepEqual(page.pollsFor("backlog.md", true, true), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("backlog.md", true, false), { poll: true, stories: true });
+  assert.deepEqual(page.pollsFor("backlog.md", false, false), { poll: false, stories: false });
+});
+
+test("a column's id in one parse of a board is matched to its id in another by name, and by order within one name", () => {
+  const secs = (...names) => names.map((name, n) => ({ id: 100 + n, name }));
+  const fresh = (...names) => names.map((name, n) => ({ id: 200 + n, name }));
+  // the same names in the same order
+  assert.deepEqual([...page.sectionIdMap(secs("To do", "Decisions", "Done"), fresh("To do", "Decisions", "Done"))],
+    [["100", 200], ["101", 201], ["102", 202]]);
+  // a renamed column has no match; the others still do
+  assert.deepEqual([...page.sectionIdMap(secs("To do", "Decisions", "Done"), fresh("To do", "Open decisions", "Done"))],
+    [["100", 200], ["102", 202]]);
+  // a removed column has no match, and the ones after it are found where they are now
+  assert.deepEqual([...page.sectionIdMap(secs("To do", "Doing", "Decisions"), fresh("To do", "Decisions"))],
+    [["100", 200], ["102", 201]]);
+  // two columns of one name: the first to the first and the second to the second, wherever they moved
+  assert.deepEqual([...page.sectionIdMap(secs("Notes", "To do", "Notes"), fresh("To do", "Notes", "Done", "Notes"))],
+    [["100", 201], ["101", 200], ["102", 203]]);
+  // a second column of one name that is gone: only the first is matched
+  assert.deepEqual([...page.sectionIdMap(secs("Notes", "Notes"), fresh("Notes"))], [["100", 200]]);
 });

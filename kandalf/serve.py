@@ -17,6 +17,9 @@ of archive/archived.md.
 Clear archives a whole Done column at once (/api/clear), and the page can hand the reply
 back to undo it (/api/unclear).
 
+A tile in a decision column can have its options drafted (/api/draft): a session researches
+them in a research doc, and the drafts' turn of the watch puts them on the tile (drafts.py).
+
 Tiles that say "Moves with KEY-NN" are linked: the page moves them together, and asks
 this server for the ones on the other board (/api/move takes them along, /api/pull
 fetches them).
@@ -52,6 +55,7 @@ sys.dont_write_bytecode = True  # no __pycache__ in the repo from importing pln
 from . import pln  # noqa: E402  tile keys
 from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
+from . import drafts  # noqa: E402  a decision's options, drafted by a session
 from . import jobs as ledger  # noqa: E402  board-pickup.json, the record of each pickup job
 from . import store as stores  # noqa: E402  which store, and its settings
 from . import tiles as reader  # noqa: E402  what the board's markdown says
@@ -327,6 +331,92 @@ SESSIONS = pickup.Sessions(announce=note_session)
 
 PICKUP_RECHECK = 20  # seconds between looks at the sessions while a job waits or runs
 
+# Set by /api/draft (and a draft that didn't finish ending) so the drafts' turn looks at once;
+# the turn clears it. An Event, as the handler threads set it and the watch's thread reads it.
+DRAFTS_ASKED = threading.Event()
+
+
+def pickup_reply(store) -> dict:
+    """What /api/pickup and /api/draft answer: pickup.summary, with the drafts (drafts.summary)
+    and why Draft options can't run (drafts.why_not, or None)."""
+    return {**pickup.summary(store), "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store)}
+
+
+def write_options(store, key: str, block: list, subject: str):
+    """Put a draft's options block on its tile (reader.with_options), on plans.md or else
+    backlog.md, and queue the commit with subject. A board that reads so already isn't written.
+    A key on neither board raises KeyError."""
+    for name in (reader.PLANS, reader.BACKLOG):
+        board = store.dir / name
+        if not board.is_file():
+            continue
+        old = board.read_text(encoding="utf-8")
+        if not any(t.key == key for t in reader.parse(store, old, file=name)):
+            continue
+        new = reader.with_options(store, old, key, block)
+        if new != old:
+            write_atomic(board, new)
+            gitlog.record(store, [board], subject)
+        return
+    raise KeyError(key)
+
+
+def end_drafts(store, keys):
+    """End the drafts of tiles a route took off the board (drafts.end), after its write. One
+    that doesn't finish is left ending for the next look, and said; it never fails the route."""
+    for key in keys:
+        try:
+            had = any(d["key"] == key for d in drafts.live(store))
+            if not had:
+                continue
+            if drafts.end(store, key, sessions=SESSIONS):
+                pickup.log(f"{key}: draft ended")
+            else:
+                pickup.log(f"{key}: draft ending; a later look finishes it")
+                DRAFTS_ASKED.set()
+        except Exception as e:  # the route's own change is made: a draft left over is the look's
+            pickup.log(f"{key}: the draft could not be ended: {e}")
+            DRAFTS_ASKED.set()
+
+
+def draft_request(store, board: Path, data: dict) -> tuple:
+    """The status and reply for /api/draft. Body: {key, note} asks for a draft (drafts.request:
+    a draft the key has is ended and a new one queued): the key must be an open tile in a
+    decision column of this board, plans.md or backlog.md (404), and Draft options able to run
+    (409, drafts.why_not). {key, stop: true} ends the key's draft (drafts.end), wherever its tile
+    is now: it needs only a draft in the ledger, in any state (404). A draft that didn't get
+    queued is a 500. The reply is pickup_reply's, and the drafts' turn looks on its next turn."""
+    key = str(data.get("key") or "")
+    if data.get("stop"):
+        if not any(d["key"] == key for d in drafts.live(store)):
+            return 404, {"error": f"{key} has no draft"}
+        try:  # it is marked ending first, so one whose ending stops part-way is left for the look
+            drafts.end(store, key, sessions=SESSIONS)
+        except Exception as e:
+            pickup.log(f"{key}: the draft could not be ended yet, so a later look ends it: {e}")
+        DRAFTS_ASKED.set()
+        return 200, pickup_reply(store)
+    tile = None
+    if key and board.parent == store.dir and board.name in (reader.PLANS, reader.BACKLOG):
+        tile = next((t for t in reader.parse(store, board.read_text(encoding="utf-8"), file=board.name) if t.key == key), None)
+    if tile is None or tile.done or not reader.is_decision_column(tile.column):
+        return 404, {"error": f"{key} is not a decision on this board"}
+    why = drafts.why_not(store)
+    if why:
+        return 409, {"error": why}
+    since = SESSIONS.now()
+    try:
+        drafts.request(store, key, tile.text, str(data.get("note") or "") or None, sessions=SESSIONS)
+    except Exception as e:
+        mine = drafts.of(store, key)
+        if not (mine and mine["state"] == "queued" and mine.get("asked_at", 0) >= since):
+            pickup.log(f"{key}: the draft could not be asked for: {e}")
+            return 500, {"error": str(e)}
+        # queued: only ending the draft before it stopped part-way, which the look finishes
+        pickup.log(f"{key}: the draft before it could not be ended yet, so a later look ends it: {e}")
+    DRAFTS_ASKED.set()
+    return 200, pickup_reply(store)
+
 
 def report_in_flight(store):
     """On the console, once at startup: what is in flight, and the Claude session on each."""
@@ -414,16 +504,90 @@ def watch_turn(store, ctx: dict):
         pickup.log(f"the look at {PICKUP_BOARD} failed: {e}")
 
 
+def board_mtimes(store) -> tuple:
+    """The mtimes of the boards a draft's tile can be on or leave for (reader.FAMILY), None for
+    a file that isn't there."""
+    return tuple((store.dir / n).stat().st_mtime_ns if (store.dir / n).is_file() else None for n in reader.FAMILY)
+
+
+def drafts_seen(store, held: list) -> tuple:
+    """What the drafts' turn compares from turn to turn: the research docs (drafts.docs) and,
+    while a draft that isn't ending is live, the boards (board_mtimes), as a tile that is moved
+    or deleted ends its draft. ({}, None) with no draft; nothing is stat'ed then."""
+    docs = drafts.docs(store, held)
+    return docs, board_mtimes(store) if docs else None
+
+
+def look_drafts(store, said: set) -> set:
+    """One drafts.look, on the boards read just before it, its lines on the console. A line
+    saying a block could not be written (drafts.UNWRITTEN) that the look before gave too (in
+    said) isn't said again: it repeats while the write keeps failing. Every other line is said.
+    The lines of this look that say a write failed."""
+    def write(key, block, subject):  # the look's write(key, block, subject), on this store
+        write_options(store, key, block, subject)
+    lines = drafts.look(store, reader.Snapshot.read(store), sessions=SESSIONS, write=write)
+    failed = {line for line in lines if f": {drafts.UNWRITTEN}: " in line}
+    for line in lines:
+        if line not in failed or line not in said:
+            pickup.log(line)
+    return failed
+
+
+def watch_drafts_turn(store, ctx: dict):
+    """One turn of the drafts' watch, whether or not pickup is on, reading the ledger once. With
+    a draft in the ledger, a look (look_drafts) when:
+      - a draft was just asked for or stopped (DRAFTS_ASKED);
+      - PICKUP_RECHECK seconds have passed since the last look, and a draft is queued, at work
+        or ending (one whose ending stopped part-way is tried again), or has a research doc
+        changed since it was read (drafts.unread: the look left it while its session was busy),
+        or the last look could not write a block;
+      - the research docs or the boards (drafts_seen) differ from what the last look saw and
+        are as they were a turn ago (settled).
+    ctx carries d_last (when it last looked), d_seen (what it looked at), d_before (what was
+    seen a turn ago) and d_said (the lines of the last look that said a write failed)."""
+    ctx.setdefault("d_last", 0.0)
+    ctx.setdefault("d_seen", ({}, None))
+    ctx.setdefault("d_before", ({}, None))
+    ctx.setdefault("d_said", set())
+    asked = DRAFTS_ASKED.is_set()
+    if asked:
+        DRAFTS_ASKED.clear()  # before the ledger is read, so a draft asked for after it is looked at next turn
+    held = drafts.live(store)
+    at = drafts_seen(store, held)
+    settled, ctx["d_before"] = at == ctx["d_before"], at
+    if not held:
+        return
+    due = time.time() - ctx["d_last"] > PICKUP_RECHECK and (
+        bool(ctx["d_said"]) or drafts.busy(store, held) or any(d["state"] == "ending" for d in held)
+        or drafts.unread(store, held))
+    if asked or due or (settled and at != ctx["d_seen"]):
+        ctx["d_seen"], ctx["d_last"] = at, time.time()
+        ctx["d_said"] = look_drafts(store, ctx["d_said"])
+
+
 def watch_pickups(store, every: float = 2.0):
     """Forever, from the server's start: say what is in flight, adopt what has no session when
-    pickup can run, then a watch_turn every few seconds, so pickup follows board.json."""
+    pickup can run, look at the drafts once, then a watch_drafts_turn and a watch_turn every few
+    seconds, so pickup follows board.json."""
     report_in_flight(store)
     why = pickup.why_off(store) if store.pickup else None  # main has said it
     if store.pickup and not why:
         adopt_in_flight(store)
     ctx = {"seen": None, "last": 0.0, "told": set(), "before": None, "was_on": store.pickup, "why": why,
            "mtime": store.config_mtime, "problem": store.config_problem}
+    try:  # the drafts' look at the start: drafts left ending are finished, and those whose tiles went are ended
+        held = drafts.live(store)
+        if held:
+            seen = drafts_seen(store, held)
+            said = look_drafts(store, set())
+            ctx.update(d_seen=seen, d_before=seen, d_said=said, d_last=time.time())
+    except Exception as e:  # never stop the server for it
+        pickup.log(f"the drafts' look at the start failed: {e}")
     while True:
+        try:
+            watch_drafts_turn(store, ctx)
+        except Exception as e:  # a bad drafts' turn must not end the watch, nor keep pickup's from running
+            pickup.log(f"the drafts' turn failed: {e}")
         try:
             watch_turn(store, ctx)
         except Exception as e:  # nor a bad turn
@@ -601,6 +765,7 @@ def archive_tile(store, board: Path, text: str, tile: str, docs: list, subject: 
     key = store.key_re.search(tile.split("\n", 1)[0])
     gitlog.record(store, [board, store.dir / ARCHIVE_LOG, *touched],
                   subject or f"board: archive {key.group(0) if key else 'a tile'}" + (f" ({len(moved)} docs)" if moved else ""))
+    end_drafts(store, [key.group(0)] if key else [])
     name = board.relative_to(store.dir).as_posix()
     snap = reader.Snapshot.read(store, reader.FAMILY if name in reader.FAMILY else [name])
     links = list(MOVES) if board.parent == store.dir and board.name in MOVES else [name]
@@ -746,7 +911,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif u.path == "/api/pickup":
-            self.send_json(200, pickup.summary(self.store))
+            self.send_json(200, pickup_reply(self.store))
         elif u.path == "/api/settings":
             reload_settings(self.store)
             self.send_json(200, settings.view(self.store))
@@ -833,7 +998,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(409, {"error": f"{key} has no session to report on"})
         write_atomic(board, reader.with_status(self.store, old, key, line))
         self.commit([board], f"board: {key} status refreshed")
-        self.send_json(200, {**pickup.summary(self.store), "status": line})
+        self.send_json(200, {**pickup_reply(self.store), "status": line})
 
     def clear(self, board: Path):
         """Body: {mtime, text: the board as the page has it, column}. Archives every tile in
@@ -851,6 +1016,7 @@ class Handler(BaseHTTPRequestHandler):
         write_atomic(board, new)
         keys = [t["key"] for t in record["tiles"] if t["key"]]
         self.commit([board, *touched], f"board: clear {record['column']}: archive {', '.join(keys) or str(record['count']) + ' tiles'}")
+        end_drafts(self.store, keys)
         tidied = tidy_archived(self.store, [t["text"] for t in record["tiles"]])
         self.send_json(200, {**self.board_reply(board), "cleared": record, "kept": kept, "tidied": tidied})
 
@@ -966,7 +1132,8 @@ class Handler(BaseHTTPRequestHandler):
                     done = [f"not discarded: {e}"]
                 for line in done:
                     pickup.log(f"{key} deleted: {line}")
-                return self.send_json(200, {**pickup.summary(self.store), "discarded": done})
+                end_drafts(self.store, [key] if key else [])
+                return self.send_json(200, {**pickup_reply(self.store), "discarded": done})
             why = pickup.why_off(self.store)
             if why:
                 return self.send_json(409, {"error": why})
@@ -974,24 +1141,24 @@ class Handler(BaseHTTPRequestHandler):
                 why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], sessions=SESSIONS,
                                    snap=self.snapshot(self.plans / "plans.md"))
                 if why:
-                    return self.send_json(409, {"error": why, **pickup.summary(self.store)})
-                return self.send_json(200, pickup.summary(self.store))
+                    return self.send_json(409, {"error": why, **pickup_reply(self.store)})
+                return self.send_json(200, pickup_reply(self.store))
             if data.get("queue"):  # {key, queue: true}: the Queue button on a paused story
                 if not pickup.requeue(self.store, data.get("key", ""), sessions=SESSIONS):
-                    return self.send_json(409, {"error": "that tile has no paused session to queue", **pickup.summary(self.store)})
-                return self.send_json(200, pickup.summary(self.store))
+                    return self.send_json(409, {"error": "that tile has no paused session to queue", **pickup_reply(self.store)})
+                return self.send_json(200, pickup_reply(self.store))
             if data.get("pause"):
                 if not pickup.pause(self.store, data.get("key", ""), sessions=SESSIONS):
-                    return self.send_json(409, {"error": "that tile has no session at work to pause, or it couldn't be stopped", **pickup.summary(self.store)})
-                return self.send_json(200, pickup.summary(self.store))
+                    return self.send_json(409, {"error": "that tile has no session at work to pause, or it couldn't be stopped", **pickup_reply(self.store)})
+                return self.send_json(200, pickup_reply(self.store))
             if data.get("continue"):
                 if not pickup.restart(self.store, data.get("key", ""), sessions=SESSIONS, nudge=True):
-                    return self.send_json(409, {"error": "that tile's session couldn't be stopped to continue it, or the board didn't start one", **pickup.summary(self.store)})
-                return self.send_json(200, pickup.summary(self.store))
+                    return self.send_json(409, {"error": "that tile's session couldn't be stopped to continue it, or the board didn't start one", **pickup_reply(self.store)})
+                return self.send_json(200, pickup_reply(self.store))
             act = pickup.restart if data.get("restart") else pickup.start_now
             if not act(self.store, data.get("key", ""), sessions=SESSIONS):
-                return self.send_json(409, {"error": "that tile has no session to start", **pickup.summary(self.store)})
-            return self.send_json(200, pickup.summary(self.store))
+                return self.send_json(409, {"error": "that tile has no session to start", **pickup_reply(self.store)})
+            return self.send_json(200, pickup_reply(self.store))
         if u.path in ("/api/clear", "/api/unclear"):
             p = self.target(parse_qs(u.query))
             if p is None or not p.is_file() or p.parent != self.plans:
@@ -1007,6 +1174,12 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             return self.decide(p)
+        if u.path == "/api/draft":  # {key, note}: Draft options or Draft again; {key, stop: true}: Stop
+            p = self.target(parse_qs(u.query))
+            if p is None or not p.is_file() or p.parent != self.plans:
+                return self.send_json(404, {"error": "no such board"})
+            status, reply = draft_request(self.store, p, self.read_body())
+            return self.send_json(status, reply)
         if u.path == "/api/settings":  # {mtime, changes}: the settings panel's Save
             return self.save_settings(self.read_body())
         self.send_json(404, {"error": "not found"})

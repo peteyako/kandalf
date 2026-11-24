@@ -210,6 +210,49 @@ class Edits(unittest.TestCase):
         self.assertEqual(tiles.with_status(self.store, PLANS, "PLN-99", "Status 2026-11-18 14:58: x."), PLANS)
 
 
+    OPTIONS_TILE = "- [ ] PLN-30 **Layering.**\n  Which rule?\n  - [ ] **Decide.**"
+    OPTIONS_BOARD = "## Decisions\n\n" + OPTIONS_TILE + "\n"
+    ITEMS = [{"letter": "A", "title": "Keep adapters", "summary": "Smallest change."},
+             {"letter": "B", "title": "Split the package", "summary": "Cleaner layering."}]
+
+    def test_the_options_block_goes_after_the_description_and_before_the_sub_tasks(self):
+        block = tiles.options_block("2026-11-23", self.ITEMS, recommends="B", doc="active/r.md")
+        out = tiles.with_options(self.store, self.OPTIONS_BOARD, "PLN-30", block)
+        self.assertEqual(out.split("\n")[2:], [
+            "- [ ] PLN-30 **Layering.**", "  Which rule?",
+            "  **Options 2026-11-23:** recommends B. [Research](active/r.md)",
+            "  - **A. Keep adapters.** Smallest change.", "  - **B. Split the package.** Cleaner layering.",
+            "  - [ ] **Decide.**", ""])
+
+    def test_a_new_block_replaces_the_one_already_on_the_tile(self):
+        first = tiles.with_options(self.store, self.OPTIONS_BOARD, "PLN-30", tiles.options_block("2026-11-22", self.ITEMS))
+        second = tiles.with_options(self.store, first, "PLN-30", tiles.options_block("2026-11-23", self.ITEMS[:1], recommends="A"))
+        self.assertEqual(second.count("**Options "), 1)
+        self.assertEqual(second.count("**B. "), 0)
+        self.assertEqual(tiles.options(second)["date"], "2026-11-23")
+        self.assertEqual(tiles.options(second)["items"], self.ITEMS[:1])
+
+    def test_a_block_with_no_items_says_the_draft_gave_no_options(self):
+        self.assertEqual(tiles.options_block("2026-11-23", [], doc="r.md"),
+                         ["  **Options 2026-11-23:** the draft gave no options. [Research](r.md)"])
+        self.assertEqual(tiles.options_block("2026-11-23", []), ["  **Options 2026-11-23:** the draft gave no options."])
+
+    def test_titles_summaries_and_the_note_are_folded_to_one_line(self):
+        items = [{"letter": "A", "title": "x\n- [ ] y", "summary": "x\n- [ ] y\n## z"}]
+        block = tiles.options_block("2026-11-23", items, asked="x\n- [ ] y\n## z")
+        self.assertEqual(block, ["  **Options 2026-11-23:** Asked: x - [ ] y ## z",
+                                 "  - **A. x - [ ] y.** x - [ ] y ## z"])
+
+    def test_what_is_written_reads_back_the_same(self):
+        want = {"date": "2026-11-23", "recommends": "B", "doc": "active/r.md", "asked": "keep the adapter half", "items": self.ITEMS}
+        block = tiles.options_block("2026-11-23", self.ITEMS, recommends="B", doc="active/r.md", asked="keep the adapter half")
+        out = tiles.with_options(self.store, self.OPTIONS_BOARD, "PLN-30", block)
+        self.assertEqual(tiles.options(out), want)
+
+    def test_a_board_with_no_such_tile_comes_back_as_it_was(self):
+        self.assertEqual(tiles.with_options(self.store, self.OPTIONS_BOARD, "PLN-99", ["  **Options 2026-11-23:**"]), self.OPTIONS_BOARD)
+
+
 class Helpers(unittest.TestCase):
     def setUp(self):
         self.store = stores.Store(tempfile.mkdtemp())
@@ -446,6 +489,11 @@ class TileCases(unittest.TestCase):
                         self.assertEqual(read(tile.text), case[name], name)
                 if "session" in case:
                     self.assertEqual(seen_session(tiles.session(tile.text)), case["session"])
+
+    def test_each_options_block_reads_as_the_case_says(self):
+        for case in CASES["options"]:
+            with self.subTest(case["md"]):
+                self.assertEqual(tiles.options(case["md"]), case["options"])
 
     def test_each_board_has_the_tiles_the_case_says(self):
         for case in CASES["boards"]:

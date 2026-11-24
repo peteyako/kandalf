@@ -70,29 +70,41 @@ def _lacks() -> list:
     return _lacking["lacks"]
 
 
+LEAD = "Pickup is off: "
+
+
+def cannot_run(store, *, installed=agent.installed, lacks=_lacks):
+    """None when a session can run for the store; else the reason, as the end of a sentence
+    that opens "<Feature> is off: ": the checks pickup and Draft options share (the app repo,
+    the naming patterns, the repos and agent settings, the agent's CLI installed and recent
+    enough). The CLI is asked only once the rest is fine."""
+    if not store.app:
+        return 'board.json names no "app" repo for sessions to work in, so set "app" to its path.'
+    if not store.app.is_dir():
+        return f'the app folder isn\'t there at {store.app}, so fix "app" in board.json.'
+    naming = naming_problem(store)
+    if naming:
+        return naming[len(LEAD):]
+    if store.repo_problem:
+        return f'{store.repo_problem}, so fix "repos" in board.json.'
+    if store.agent_problem:
+        return f'{store.agent_problem}, so fix "agent" in board.json.'
+    if not installed():
+        return f"`{agent.cli()}` isn't on your PATH, so install {agent.label()} or put it there and restart the board."
+    lacking = lacks()
+    if lacking:
+        named = ", ".join(lacking[:-1]) + " and " + lacking[-1] if len(lacking) > 1 else lacking[0]
+        return f"the installed {agent.label()} lacks {named}, so update it ({agent.update_hint()}) and restart the board."
+    return None
+
+
 def why_off(store, *, installed=agent.installed, lacks=_lacks):
     """None when pickup can run for the store; else one sentence saying why not, and how to
     fix it. The claude CLI is asked only once pickup is on and the app is there."""
     if not store.pickup:
         return 'Pickup is off for this store: set "pickup": true in its board.json to turn it on.'
-    if not store.app:
-        return 'Pickup is off: board.json names no "app" repo for sessions to work in, so set "app" to its path.'
-    if not store.app.is_dir():
-        return f'Pickup is off: the app folder isn\'t there at {store.app}, so fix "app" in board.json.'
-    naming = naming_problem(store)
-    if naming:
-        return naming
-    if store.repo_problem:
-        return f'Pickup is off: {store.repo_problem}, so fix "repos" in board.json.'
-    if store.agent_problem:
-        return f'Pickup is off: {store.agent_problem}, so fix "agent" in board.json.'
-    if not installed():
-        return f"Pickup is off: `{agent.cli()}` isn't on your PATH, so install {agent.label()} or put it there and restart the board."
-    lacking = lacks()
-    if lacking:
-        named = ", ".join(lacking[:-1]) + " and " + lacking[-1] if len(lacking) > 1 else lacking[0]
-        return f"Pickup is off: the installed {agent.label()} lacks {named}, so update it ({agent.update_hint()}) and restart the board."
-    return None
+    why = cannot_run(store, installed=installed, lacks=lacks)
+    return LEAD + why if why else None
 
 
 def enabled(store) -> bool:
@@ -436,6 +448,15 @@ def cut_of(store, job, repo):
     return Path(job["worktree"]) if job.get("worktree") and not job.get("repos") and repo.main else None
 
 
+def link_store(store, repo: Path, path: Path):
+    """Link the store into a worktree at docs/<link>, as the repo's own checkout has it (when
+    the repo links it and the worktree has nothing there yet)."""
+    link, mine = repo / "docs" / store.link, path / "docs" / store.link
+    if link.is_symlink() and not mine.exists() and not mine.is_symlink():
+        mine.parent.mkdir(parents=True, exist_ok=True)
+        mine.symlink_to(os.path.relpath(store.dir, mine.parent))
+
+
 def prepare(store, job, repo=None, name: str = None) -> tuple:
     """(worktree path, branch): the job's worktree in a repo (default the main one)
     (the one it has already, when that is still there), made if it isn't there yet on the
@@ -453,10 +474,7 @@ def prepare(store, job, repo=None, name: str = None) -> tuple:
             raise RuntimeError(made.stderr.strip() or "git worktree add failed")
     else:  # picked up before: carry on where its branch is
         name = _git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or name
-    link, mine = repo.path / "docs" / store.link, path / "docs" / store.link
-    if link.is_symlink() and not mine.exists() and not mine.is_symlink():
-        mine.parent.mkdir(parents=True, exist_ok=True)
-        mine.symlink_to(os.path.relpath(store.dir, mine.parent))
+    link_store(store, repo.path, path)
     return path, name
 
 

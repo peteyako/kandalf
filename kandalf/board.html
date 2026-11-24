@@ -185,6 +185,12 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] .bl-row a.keyref { color: inherit; text-decoration: underline; cursor: pointer; }
 :root[data-theme="classic"] .pickup.waits { color: var(--warn); }
 :root[data-theme="classic"] .tv-decide { border-top: 1px solid var(--line); }
+:root[data-theme="classic"] .tv-options { border-top: 1px solid var(--line); }
+:root[data-theme="classic"] .opt-letter { color: var(--story); }
+:root[data-theme="classic"] .opt-rec { color: var(--story); }
+:root[data-theme="classic"] .opt-state.bad .opt-label { color: var(--warn); }
+:root[data-theme="classic"] .opt-head button, :root[data-theme="classic"] .opt-row button, :root[data-theme="classic"] .opt-state button, :root[data-theme="classic"] .opt-start button { padding: 1px 8px; font-size: 12px; }
+:root[data-theme="classic"] .opt-note { background: var(--card); border: 1px solid var(--line); border-radius: 4px; }
 :root[data-theme="classic"] .dlg .tv-decide textarea { min-height: 64px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; }
 :root[data-theme="classic"] .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
 :root[data-theme="classic"] #cardEst::placeholder, :root[data-theme="classic"] #cardBase::placeholder { color: var(--muted); font-style: italic; opacity: .7; }
@@ -920,6 +926,12 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root:not([data-theme="classic"]) .bl-row a.keyref { color: inherit; text-decoration: underline; cursor: pointer; }
 :root:not([data-theme="classic"]) .pickup.waits { --sb: var(--st-wait); border-style: dashed; border-color: var(--check-bc); }
 :root:not([data-theme="classic"]) .tv-decide { border-top: var(--rule); }
+:root:not([data-theme="classic"]) .tv-options { border-top: var(--rule); }
+:root:not([data-theme="classic"]) .opt-letter { font-family: var(--mono); }
+:root:not([data-theme="classic"]) .opt-rec { color: var(--st-work); }
+:root:not([data-theme="classic"]) .opt-state.bad .opt-label { color: var(--st-gone); }
+:root:not([data-theme="classic"]) .opt-head button, :root:not([data-theme="classic"]) .opt-row button, :root:not([data-theme="classic"]) .opt-state button, :root:not([data-theme="classic"]) .opt-start button { min-height: 32px; padding: 3px 10px; font-size: 13px; line-height: normal; }
+:root:not([data-theme="classic"]) .opt-note { background: var(--card); border: var(--bw) solid var(--input-bc); border-radius: var(--ctl-radius); }
 :root:not([data-theme="classic"]) .dlg .tv-decide textarea { min-height: 64px; resize: vertical; background: var(--card); border: var(--bw) solid var(--input-bc); border-radius: var(--ctl-radius); }
 :root:not([data-theme="classic"]) .tv-family p { margin: 0 0 6px; color: var(--muted); font-size: 14px; }
 :root:not([data-theme="classic"]) .hint { font-size: 13px; color: var(--muted); }
@@ -991,7 +1003,24 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root .tv-decide .blocks { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 :root .tv-decide textarea { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; font: inherit; font-size: 13px; padding: 6px 8px; }
 :root .tv-decide .reply-row { display: flex; justify-content: flex-end; margin-top: 6px; }
-:root .tv-decide button[disabled] { opacity: .5; cursor: default; }
+:root .tv-decide button[disabled], :root .tv-options button[disabled] { opacity: .5; cursor: default; }
+/* A decision's drafted options, above its Answer box. */
+:root .tv-options { margin-top: 4px; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+:root .opt-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; font-weight: 600; }
+:root .opt-asked { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+:root .opt-state { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; }
+:root .opt-label { font-weight: 700; white-space: nowrap; }
+:root .opt-why { flex-basis: 100%; color: var(--muted); overflow-wrap: anywhere; }
+:root .opt-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+:root .opt-row { display: flex; align-items: flex-start; gap: 8px; }
+:root .opt-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+:root .opt-title { font-weight: 600; }
+:root .opt-rec { font-style: normal; font-size: 11px; font-weight: 700; white-space: nowrap; }
+:root .opt-row button, :root .opt-state button, :root .opt-head button { flex: none; }
+:root .opt-rows.dim .opt-letter, :root .opt-rows.dim .opt-text { opacity: .55; }
+:root .opt-start { display: flex; gap: 6px; }
+:root .opt-note { flex: 1; min-width: 0; box-sizing: border-box; font: inherit; font-size: 13px; padding: 4px 8px; }
+:root .opt-state code { overflow-wrap: anywhere; }
 :root .session-reply { margin-top: 8px; cursor: auto; }
 :root .session-reply > summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
 /* The stats strip under the header: a count for each state of the builds, full width. A count
@@ -1411,13 +1440,14 @@ const cardKey = c => splitCard(c.text).key;
 // The keys a tile's own text says it moves with, in order, never itself (tiles.py: Tile.links).
 function movesWith(key, text) {
   const out = [];
-  for (const m of text.matchAll(LINK_RE)) for (const o of m[1].match(KEY_ANY_RE)) if (o !== key && !out.includes(o)) out.push(o);
+  for (const m of withoutOptions(text).matchAll(LINK_RE)) for (const o of m[1].match(KEY_ANY_RE)) if (o !== key && !out.includes(o)) out.push(o);
   return out;
 }
 // The keys a tile's own text says it is blocked by, in order, each once, never itself (tiles.py:
 // Tile.blockers). The session, Status, Ready for review and decision lines are not read.
 function blockedBy(key, text) {
-  const own = text.split("\n").filter(x => !(SESSION_RE.test(x) || STATUS_RE.test(x) || READY_RE.test(x) || DECISION_RE.test(x))).join("\n");
+  let own = text.split("\n").filter(x => !(SESSION_RE.test(x) || STATUS_RE.test(x) || READY_RE.test(x) || DECISION_RE.test(x))).join("\n");
+  own = withoutOptions(own);
   const out = [];
   for (const m of own.matchAll(BLOCKED_RE)) for (const o of m[1].match(KEY_ANY_RE) || []) if (o !== key && !out.includes(o)) out.push(o);
   return out;
@@ -1455,7 +1485,7 @@ let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mention
 const byKeyOrder = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 // What a tile's own text says: its master, and the other keys it names.
 function tileFacts(key, text) {
-  const parent = [...text.matchAll(PART_RE)].map(m => m[1]).find(k => k !== key) ?? null;
+  const parent = [...withoutOptions(text).matchAll(PART_RE)].map(m => m[1]).find(k => k !== key) ?? null;
   return { parent, mentions: [...new Set(text.match(KEY_ANY_RE) || [])].filter(k => k !== key).sort(byKeyOrder), blockers: blockedBy(key, text) };
 }
 function tileIndex() {
@@ -1603,6 +1633,10 @@ const kidsHTML = kids => kids.map(t => `<li class="${t.done ? "done" : ""}"><spa
 // server (pickup.py), one at a time. The page shows where each one stands, and asks before
 // a second session is started beside a live one.
 const PICKUP_BOARD = "plans.md";
+// What the pickup poll does on a board (name: its file; map: the map is shown; decisions: it has a decision column):
+// poll, ask the server at all; stories, flash a story's news and offer to start one in parallel, which happens on the
+// plans board and the map alone, so a backlog that only drafts never shows them.
+const pollsFor = (name, map, decisions) => ({ poll: name === PICKUP_BOARD || map || decisions, stories: name === PICKUP_BOARD || map });
 let STORE_PICKUP_COLUMN = "";  // the store's "pickupColumn" (/api/files); "": any In flight column
 // Whether a column's tiles are picked up: the store's pickupColumn by name, in any case, else
 // any In flight column (pickup.is_pickup_column).
@@ -1637,6 +1671,16 @@ function jobView(job) {
   if (at === "failed") actions.push("restart");
   if (actions.includes("reply") && at !== "started" && job.ready && job.empty) actions.push("close");
   return { label, actions };
+}
+// What a draft shows: its label and the buttons open to it (drafts.py: view; view_cases.json "drafts").
+const DRAFT_VIEWS = {
+  queued: ["queued to draft", ["stop"]], working: ["drafting options", ["stop"]], ready: ["options ready", ["again"]],
+  empty: ["draft gave no options", ["again"]], need: ["draft needs you", ["again", "stop"]], lost: ["draft lost", ["again"]],
+  ending: ["", []],
+};
+function draftView(draft) {
+  const [label, actions] = DRAFT_VIEWS[draft && draft.state] || ["", []];
+  return { label, actions: [...actions] };
 }
 const canDo = (job, act) => jobView(job).actions.includes(act);
 const restartButton = (job, label = "↻ Restart") => `<button type="button" class="pickup-restart" data-act="restart" data-key="${job.key}" title="${esc(job.state === "failed" ? `Try starting ${AGENT} on this tile again` : "Get this session going again: it resumes the same conversation, or if that can't be done a new session takes over from the tile and the branch")}">${label}</button>`;
@@ -1786,6 +1830,77 @@ function pickupTag(key, sec, session) {
   if (canDo(job, "restart")) return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
   return "";
 }
+
+// A tile's draft, by key: the one in pickups.drafts (null with none, and on an older server that sends no list).
+const draftsKnown = () => Array.isArray(pickups.drafts);
+const draftOf = key => (key && pickups.drafts || []).find(d => d.key === key) ?? null;
+const draftLook = draft => draft ? (draft.view || draftView(draft)) : { label: "", actions: [] };
+// How long ago, in whole minutes, hours or days; "" under a minute.
+function ageText(secs) {
+  const m = Math.floor(secs / 60);
+  return m < 1 ? "" : m < 60 ? m + "m" : m < 1440 ? Math.floor(m / 60) + "h" : Math.floor(m / 1440) + "d";
+}
+// What a tile says about its draft: the draft's label (a working one with its age), or "options ready" when the tile
+// holds a block and no draft is running. "" for a tile with neither. now: unix seconds.
+function draftTag(key, now) {
+  const { label, age } = draftParts(key, now);
+  return age ? `${label} · ${age}` : label;
+}
+// A tag's words and, apart, its age ("12m" while a draft works, else "").
+function draftParts(key, now = Date.now() / 1000) {
+  if (!key) return { label: "", age: "" };
+  const draft = draftOf(key);  // null on an older server, which has no drafts: a block still says "options ready"
+  if (draft) return { label: draftLook(draft).label, age: draft.state === "working" && draft.started != null ? ageText(now - draft.started) : "" };
+  const f = doc && findCardByKey(key);
+  return { label: f && optionsOf(cardMarkdown(f.c)) ? "options ready" : "", age: "" };
+}
+// The age as its own element, which tickDrafts keeps current in place (filled: with the age as of now).
+const ageHTML = (key, filled) => `<span class="dage" data-age="${esc(key)}">${filled ? esc(ageSuffix(key)) : ""}</span>`;
+const ageSuffix = key => { const { age } = draftParts(key); return age ? ` · ${age}` : ""; };
+// The draft tag as a pill beside a decision tile's key, where pickupTag draws a story's.
+function draftTagHTML(key, sec, now) {
+  const label = isDecisionCol(sec.name) ? draftParts(key, now).label : "";
+  if (!label) return "";
+  const draft = draftOf(key), at = draft?.state, bad = ["need", "lost", "empty"].includes(at);
+  const title = draft?.why || (at === "working" ? `${AGENT} is drafting options for this decision. Open it with: ${attachCmd(key)}` : at === "queued" ? "Queued: the draft starts when the session at work ends" : "Its options are on the card");
+  return `<span class="pickup draft${at === "working" ? " on" : bad ? " bad" : ""}" data-draft="${esc(key)}" title="${esc(title)}">${at === "working" ? agentIcon() + " " : ""}<span class="dl">${esc(draftParts(key, now).label)}${ageHTML(key, true)}</span></span>`;
+}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayMonth = iso => { const m = iso.match(/^\d{4}-(\d\d)-(\d\d)$/); return m ? `${+m[2]} ${MONTHS[+m[1] - 1] || ""}`.trim() : iso; };
+// A tile's options as rows to pick from; [] with no block.
+function optionRows(md) {
+  const o = optionsOf(md);
+  return o ? o.items.map(i => ({ ...i, recommended: i.letter === o.recommends })) : [];
+}
+// What Use puts in the Answer box: "<letter>. <title>. <summary>", the title's own ?, ! or . kept as it is.
+const useText = row => `${row.letter}. ${/[.?!]$/.test(row.title) ? row.title : row.title + "."}${row.summary ? " " + row.summary : ""}`;
+// Whether two versions of a tile's markdown differ, and only in their options block.
+const onlyOptionsDiffer = (a, b) => a !== b && withoutOptions(a) === withoutOptions(b);
+// The columns of one parse of a board matched to the same columns of another (from, to: [{id, name}]), as a map from
+// the old id (as a string, an option's value) to the new one. A column is matched by its name, and the nth of one name
+// to the nth of that name; a column renamed or removed has no entry. parse gives every column a fresh id, so an id kept
+// from one parse finds nothing in the next.
+function sectionIdMap(from, to) {
+  const byName = new Map(), ids = new Map();
+  for (const s of to) byName.set(s.name, [...(byName.get(s.name) || []), s.id]);
+  for (const s of from) { const left = byName.get(s.name); if (left?.length) ids.set(String(s.id), left.shift()); }
+  return ids;
+}
+// The indexes of the lines that belong to an options block (its Options line and its option lines).
+function optionLineIdx(lines) {
+  const idx = new Set();
+  for (const [a, b] of optionsSpans(lines)) for (let i = a; i < b; i++) idx.add(i);
+  return idx;
+}
+// A sub-task line in a tile's body: "  - [ ] text" or "  - [x] text". The opened tile shows each with a tick box
+// (tileViewHTML), whose data-line is the line's index in the tile's markdown.
+const SUBTASK_RE = /^  [-*] \[( |x|X)\] (.*)$/;
+// The indexes of a tile's sub-task lines in its markdown, in order: what the tick boxes' data-line are. When an options
+// block lands above them under an open card, the k-th box is renumbered to the k-th index of the new text (syncOpenCard).
+const subTaskLines = md => md.split("\n").flatMap((line, i) => i > 0 && SUBTASK_RE.test(line) ? [i] : []);
+// A tile's body lines without its options block, in a decision column: there the tag (face) and the rows (card) show
+// them. In any other column nothing replaces them, so they stay as body text.
+const faceBody = (lines, colName) => { const drop = isDecisionCol(colName || "") ? optionLineIdx(lines) : new Set(); return lines.filter((_, i) => !drop.has(i)); };
 
 // Columns can show their tiles by priority or by estimate. Display only: the file keeps
 // its order, and a tile without the value sorts last.
@@ -1964,6 +2079,37 @@ function decisionLine(line) {
   return m ? { date: m[1], text: (m[2] || "").trim() } : null;
 }
 const decisionOf = md => md.split("\n").map(decisionLine).filter(Boolean).pop() ?? null;
+// A tile's options block: an indented "**Options 2026-11-23:**" line (recommends, research link, the
+// note it was asked with) and the option lines directly under it (tiles.py: OPTIONS_LINE_RE,
+// OPTION_ITEM_RE, options). Any other line ends the block.
+const OPTIONS_RE = /^[ \t]+\*\*Options (\d{4}-\d\d-\d\d):\*\*(?:[ \t]+(.*))?$/;  // tiles.py: OPTIONS_LINE_RE
+const OPTION_RE = /^[ \t]+[-*] \*\*([A-H])\. (.+?)\*\*(?:[ \t]+(.*))?$/;  // tiles.py: OPTION_ITEM_RE
+// The [start, end) line ranges of the options blocks in a list of lines (tiles.py: _options_spans).
+function optionsSpans(lines) {
+  const spans = [];
+  for (let i = 0; i < lines.length;) {
+    if (!OPTIONS_RE.test(lines[i])) { i++; continue; }
+    let end = i + 1;
+    while (end < lines.length && OPTION_RE.test(lines[end])) end++;
+    spans.push([i, end]); i = end;
+  }
+  return spans;
+}
+// The markdown without its options block's lines (tiles.py: _without_options).
+function withoutOptions(md) {
+  const lines = md.split("\n"), drop = new Set();
+  for (const [a, b] of optionsSpans(lines)) for (let i = a; i < b; i++) drop.add(i);
+  return lines.filter((_, i) => !drop.has(i)).join("\n");
+}
+function optionsOf(md) {
+  const lines = md.split("\n"), spans = optionsSpans(lines);
+  if (!spans.length) return null;
+  const [a, b] = spans[0], m = lines[a].match(OPTIONS_RE), rest = m[2] || "";
+  const asked = rest.match(/Asked: (.*)$/), head = asked ? rest.slice(0, asked.index) : rest;
+  const rec = head.match(/\brecommends ([A-H])\./), doc = head.match(/\[[^\]]*\]\(([^)\s]+)\)/);
+  const items = lines.slice(a + 1, b).map(x => { const i = x.match(OPTION_RE); return { letter: i[1], title: i[2].replace(/\.$/, ""), summary: (i[3] || "").trim() }; });
+  return { date: m[1], recommends: rec ? rec[1] : null, doc: doc ? doc[1] : null, asked: asked ? asked[1].trim() : null, items };
+}
 // A story that is finished and waiting for review says so on a line of its own that starts
 // "Ready for review" (its session writes "**Ready for review:** <gate results>"; tiles.py:
 // READY_RE, ready). The tile is outlined until it moves to Done.
@@ -2016,11 +2162,13 @@ function noteParts(text) {
   if (!m || (m[2] === undefined && m[3] === undefined)) return [{ label: "", text }];
   return [["Done", m[1]], ["Now", m[2]], ["Next", m[3]]].filter(([, t]) => t && t.trim()).map(([label, t]) => ({ label, text: t.trim() }));
 }
-function storyParts(card) {
+function storyParts(card, colName) {
   const subs = [], desc = [];
   let session = null, model = "", repos = [], base = "", tests = "", status = null, ready = null;
+  const options = isDecisionCol(colName || "") ? optionLineIdx(card.body) : new Set();
   card.body.forEach((line, i) => {
     const m = line.match(SUB_RE);
+    if (options.has(i)) return;  // the options block is on the card, not the face
     if (m) subs.push({ i, done: m[1] !== " ", text: m[2], extra: 0 });
     else if (statusLine(line)) status = statusLine(line);
     else if (readyLine(line) !== null) ready = readyLine(line);
@@ -2476,7 +2624,7 @@ function renderGhost({ ghost, cards }, sec) {
 // sec: the card's column, whose other cards may be folded into it.
 function renderCard(c, sec) {
   const { key, prio, est, title, desc } = splitCard(c.text);
-  const { subs, desc: storyDesc, session, model, repos, base, tests, ready } = storyParts(c);
+  const { subs, desc: storyDesc, session, model, repos, base, tests, ready } = storyParts(c, sec.name);
   const kids = kidsOf(key, renderIndex), isStory = subs.length > 0 || kids.length > 0;
   // Its sub-stories in this column are folded in as tiles; the rest are listed with where they are.
   const folded = foldedKids(c, sec.cards, renderIndex);
@@ -2494,10 +2642,10 @@ function renderCard(c, sec) {
   el.draggable = true; el.dataset.id = c.id;
   if (notMerged) el.title = `Done, but not merged into ${base || STORE_TRUNK} yet: ` + notMerged.join(", ");
   const check = c.check !== null ? `<span class="check${c.check ? " on" : ""}" data-act="toggle">${c.check ? "✓" : ""}</span>` : "";
-  const keyTag = (key ? `<span class="key" title="${fmtFiled(c)}">${key}</span>` : "") + masterTag(kids) + chip + pickupTag(key, sec, session) + modelTag(model) + reposTag(repos) + baseTag(base) + testsTag(tests) + linkTag(linkedTo(key, renderEdges)) + prioTag(prio) + estTag(est);
+  const keyTag = (key ? `<span class="key" title="${fmtFiled(c)}">${key}</span>` : "") + masterTag(kids) + chip + pickupTag(key, sec, session) + draftTagHTML(key, sec) + modelTag(model) + reposTag(repos) + baseTag(base) + testsTag(tests) + linkTag(linkedTo(key, renderEdges)) + prioTag(prio) + estTag(est);
   if (!isStory) {
     // A bare title line with the description on the next line reads as one description.
-    const body = trimBlank(c.body).filter(line => !sessionLine(line) && !MODEL_RE.test(line) && !REPOS_RE.test(line) && !BASE_RE.test(line) && !TESTS_RE.test(line) && !statusLine(line) && readyLine(line) === null);
+    const body = faceBody(trimBlank(c.body), sec.name).filter(line => !sessionLine(line) && !MODEL_RE.test(line) && !REPOS_RE.test(line) && !BASE_RE.test(line) && !TESTS_RE.test(line) && !statusLine(line) && readyLine(line) === null);
     let about = desc;
     if (!about && body.length && /^ {2}\S/.test(body[0])) about = body.shift().trim();
     const blockRows = blockerRowsHTML(key, renderIndex);
@@ -3491,9 +3639,12 @@ function tileViewHTML(md) {
   };
   const flushPara = () => { if (para.length) html += `<p>${inline(para.join(" "))}</p>`; para = []; };
   const closeList = () => { if (list) html += list + "</li></ul>"; list = null; };
+  const options = decidable() ? optionLineIdx(lines) : new Set();  // the rows above the Answer box show them (optionsHTML)
   lines.slice(1).forEach((line, n) => {
-    const i = n + 1, task = line.match(/^  [-*] \[( |x|X)\] (.*)$/), bullet = line.match(/^ {2,}[-*] (.*)$/);
-    if (statusLine(line) || readyLine(line) !== null || handoffLine(line) !== null) {
+    const i = n + 1, task = line.match(SUBTASK_RE), bullet = line.match(/^ {2,}[-*] (.*)$/);
+    if (options.has(i)) {
+      // the options block is listed apart, above the Answer box (optionsHTML)
+    } else if (statusLine(line) || readyLine(line) !== null || handoffLine(line) !== null) {
       // shown apart: the status and the handoff under the session block (statusHTML), ready for review at the top
     } else if (task) {
       flushPara();
@@ -3544,24 +3695,197 @@ function decideHTML() {
     <textarea data-answer="${card.id}" data-draft="${esc(answerKey(card))}" rows="3" placeholder="The answer: what was decided, and why (⌘↵ decides)">${esc(draft)}</textarea>
     <div class="reply-row"><button type="button" data-act="decide" data-id="${card.id}"${draft.trim() ? "" : " disabled"} title="Archive this tile with the answer, and unblock the tiles waiting on it">Decide</button></div></div>`;
 }
+// A decision's options, above its Answer box: the drafted rows to pick from, and the buttons that draft them.
+// Not shown on an older server (no drafts list). draftNotes keeps the note typed for a draft, and againOpen the
+// tiles whose Draft again has its note field open, while the card is drawn again.
+const draftNotes = {}, againOpen = new Set();
+let drafting = false;  // a draft request is on its way: asking again would end the draft just started
+const decidable = () => { const card = editing?.card, sec = editing?.sec; return !!card && !!sec && isDecisionCol(sec.name) && !readonly && !!doc && !isDocFile() && file !== ARCHIVE_LOG; };
+function optionsInner(md) {
+  const key = splitCard(md.split("\n")[0]).key, block = optionsOf(md), draft = draftOf(key), look = draftLook(draft);
+  const known = draftsKnown(), running = !!draft && ["queued", "working"].includes(draft.state), off = pickups.draftsOff || (drafting ? "Asking for a draft…" : null);
+  const can = a => look.actions.includes(a), attach = key && draft?.id ? attachCmd(key) : "";  // a queued draft has no session to attach to
+  const again = known && (can("again") || (!!block && !draft)), noteOpen = known && ((!block && !draft) || (again && againOpen.has(key)));
+  const note = `<input type="text" class="opt-note" data-note="${esc(key)}" value="${esc(draftNotes[key] || "")}" placeholder="What to look at (optional)" aria-label="What to look at (optional)">`;
+  const start = (label, title) => `<button type="button" data-act="draft-start"${off ? " disabled" : ""} title="${esc(off || title)}">${label}</button>`;
+  const againBtn = `<button type="button" data-act="draft-again"${off ? " disabled" : ""} title="${esc(off || `Have ${AGENT} draft the options again, with a note on what to look at`)}">Draft again</button>`;
+  let html = "";
+  if (block) {
+    const link = block.doc ? ` · <a href="?file=${encodeURIComponent(block.doc)}" target="_blank" rel="noopener" data-act="open" data-file="${esc(block.doc)}">Research ↗</a>` : "";
+    html += `<div class="opt-head"><span>Options · drafted ${esc(dayMonth(block.date))}${link}</span>${again && !noteOpen ? againBtn : ""}</div>`;
+    if (block.asked) html += `<div class="opt-asked">Asked: ${esc(block.asked)}</div>`;
+  }
+  if (draft && look.label && (draft.state !== "ready" || draft.why)) {
+    const bad = ["need", "lost", "empty"].includes(draft.state);
+    html += `<div class="opt-state${bad ? " bad" : ""}"><span class="opt-label">${draft.state === "working" ? agentIcon() + " " : ""}${esc(draftParts(key).label)}${ageHTML(key, false)}</span>${draft.why ? `<span class="opt-why">${esc(draft.why)}</span>` : ""}`
+      + (attach && draft.state !== "ready" ? `<code>${esc(attach)}</code><button type="button" data-act="copy" data-copy="${esc(attach)}" title="Copy the command that opens this draft: ${esc(attach)}">Copy attach</button>` : "")
+      + (can("stop") ? `<button type="button" data-act="draft-stop"${drafting ? " disabled" : ""} title="Stop this draft: its worktree is thrown away">Stop</button>` : "")
+      + (!block && again && !noteOpen ? againBtn : "") + `</div>`;
+  }
+  if (block) html += `<ul class="opt-rows${running ? " dim" : ""}">${block.items.map(i => `<li class="opt-row${i.letter === block.recommends ? " rec" : ""}"><b class="opt-letter">${i.letter}</b><span class="opt-text"><span class="opt-title">${esc(i.title)}</span> ${esc(i.summary)}${i.letter === block.recommends ? ` <em class="opt-rec">recommended</em>` : ""}</span><button type="button" data-act="draft-use" data-letter="${i.letter}" title="Put this option in the Answer box">Use</button></li>`).join("")}</ul>`;
+  if (noteOpen) html += `<div class="opt-start">${note}${start(block || draft ? "Start" : "Draft options", `Have ${AGENT} research this decision and draft its options`)}</div>`;
+  return html;
+}
+// The options area of the open card; "" where the card has none (not a decision, or an older server).
+// optionsShown is the markup last drawn there, so a redraw that would draw the same is skipped.
+let optionsShown = "";
+function optionsHTML() {
+  if (!decidable() || !(draftsKnown() || optionsOf($("#cardText").value))) return "";
+  optionsShown = optionsInner($("#cardText").value);
+  return `<div class="tv-options">${optionsShown}</div>`;
+}
+// Draw the options area again, keeping a note field's focus and cursor; its text is kept in draftNotes.
+function refreshOptions() {
+  const el = $("#cardView .tv-options");
+  if (!el) return;
+  const html = optionsInner($("#cardText").value);
+  if (html === optionsShown) return;
+  const had = document.activeElement?.matches?.(".opt-note") && el.contains(document.activeElement);
+  const at = had ? document.activeElement.selectionStart : 0;
+  optionsShown = html;
+  el.innerHTML = html;
+  if (had) { const f = el.querySelector(".opt-note"); if (f) { f.focus(); f.setSelectionRange(at, at); } }
+  tickDrafts();
+}
+// The open card's tile as the server has it now (j: a board reply). Before this, a board that changed on disk under an
+// open card was left alone (the poll skips while a card is open), so the page's mtime went stale and a Save or Decide
+// got a 409 and a reload. Now, for a decision card nobody has changed (and a page that isn't mid-drag or mid-save), the
+// board is taken as the page's own (adopt: doc, mtime, links, tiles, maxKey), the card is re-pointed at the same key's
+// card in the new doc, and, when the tile differs from the card in its options block alone, the card's text takes the
+// new markdown and the options area is drawn again. A tile that differs anywhere else leaves everything as it was. No
+// dialog field's value (column, check, priority, estimate, model, base) is changed: the Column field's options only
+// take the new doc's ids, keeping the column picked. The board behind is drawn again when the card closes
+// (adoptedUnderCard), as it was never drawn under an open card. Not while a question is open over the card: what it
+// was asked about was found in the old doc.
+let adoptedUnderCard = false;
+function syncOpenCard(j) {
+  if (!editing || !dlg.open || !decidable() || dirty || saving || dragging || askDlg.open || $("#cardText").value !== editing.original) return;
+  const key = cardKey(editing.card), ta = $("#cardText");
+  if (!key || j.mtime === mtime) return;
+  const fresh = parse(j.text).sections.flatMap(s => s.cards).find(c => cardKey(c) === key);
+  if (!fresh) return;
+  const text = [fresh.text, ...trimBlank(fresh.body)].join("\n");
+  if (text !== ta.value && !onlyOptionsDiffer(ta.value, text)) return;
+  const was = doc.sections, sel = $("#cardCol"), picked = sel.value, own = String(editing.sec.id);
+  adopt(j); adoptedUnderCard = true;
+  const f = findCardByKey(key);
+  if (!f) return;
+  editing.card = f.c; editing.sec = f.s;
+  // The Column field's options take their columns' ids in the new doc, in place: a column that is gone loses its
+  // option and a new one gains one. A column the person picked stays picked; otherwise (or if it is gone) the tile's
+  // own column in the new doc is.
+  const ids = sectionIdMap(was, doc.sections), kept = new Map();
+  for (const o of [...sel.options]) { const id = ids.get(o.value); if (id === undefined) o.remove(); else { o.value = id; kept.set(String(id), o); } }
+  let prev = null;
+  for (const s of doc.sections) {
+    let o = kept.get(String(s.id));
+    if (!o) { o = new Option(s.name, s.id); prev ? prev.after(o) : sel.prepend(o); }
+    prev = o;
+  }
+  sel.value = picked !== own && ids.has(picked) ? ids.get(picked) : f.s.id;
+  // The Answer box and Decide button follow the new card's id, in place, so focus and caret stay.
+  const box = $("#cardView textarea[data-answer]"), decide = $("#cardView [data-act=decide]");
+  if (box) box.dataset.answer = f.c.id;
+  if (decide) decide.dataset.id = f.c.id;
+  if (text === ta.value) return;
+  ta.value = text; editing.original = ta.value;
+  // The sub-task tick boxes take their lines in the new text, in place: only the options block differs, so the
+  // sub-tasks are the same ones in the same order, each some lines up or down.
+  const ticks = [...$("#cardView").querySelectorAll(".tv-tasks [data-line]")], at = subTaskLines(text);
+  if (ticks.length === at.length) ticks.forEach((t, k) => { t.dataset.line = at[k]; });
+  const back = scrollPlaces($("#cardView"));
+  refreshOptions();
+  back();
+}
+// The card's draft changed (its state or why): draw its options again, and take the board as it is now in case the draft
+// wrote its options.
+async function draftChanged() {
+  if (!editing || !dlg.open) return;
+  refreshOptions();
+  const at = mtime;
+  try {
+    const j = await (await fetch(`/api/board?file=${encodeURIComponent(file)}`)).json();
+    if (mtime === at && j.mtime !== mtime) syncOpenCard(j);
+  } catch {}
+}
+// The ages in the tags and the card's status line move on while a draft works, though the pickups reply is the same.
+// Only the age's own text is set; nothing is drawn again.
+function tickDrafts() {
+  for (const el of document.querySelectorAll("[data-age]")) { const t = ageSuffix(el.dataset.age); if (el.textContent !== t) el.textContent = t; }
+}
+// Start (or start again) a draft for the open card, or stop one. An unkeyed tile is given its key and saved first,
+// as the draft is found by it. The reply is /api/pickup's: adopted as it stands.
+async function sendDraft(body) {
+  const card = editing?.card;
+  if (drafting) return;
+  if (!card || saving) return flash("Still saving; try again in a moment.");
+  drafting = true; refreshOptions();
+  try {
+    if (!cardKey(card) && !body.stop) {
+      const key = nextKey(), f = findCard(card.id);
+      if (!f) return;
+      clearTimeout(saveTimer);
+      f.c.text = key + " " + f.c.text;
+      const ta = $("#cardText"), lines = ta.value.split("\n"), fresh = ta.value === editing.original;
+      lines[0] = key + " " + lines[0];
+      ta.value = lines.join("\n");
+      if (fresh) editing.original = ta.value;
+      dirty = true;  // so a save that fails shows
+      await save();
+      if (dirty || !findCardByKey(key)) return flash("The tile wasn't saved, so no draft was started.");
+      setCardMode(dlg.dataset.mode);
+    }
+    const key = cardKey(editing.card);
+    const r = await fetch(`/api/draft?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...body }) });
+    const j = await r.json();
+    if (!r.ok) return flash((body.stop ? "Stop failed: " : "Draft failed: ") + (j.error || r.status));
+    pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null };
+    if (!body.stop) { againOpen.delete(key); delete draftNotes[key]; }
+    render();
+  } catch { flash("Draft failed: server down?"); }
+  finally { drafting = false; refreshOptions(); }
+}
+// Use: put an option in the Answer box, asking first when what is there was typed rather than chosen.
+async function useOption(letter) {
+  const md = $("#cardText").value, rows = optionRows(md), row = rows.find(r => r.letter === letter), box = $("#cardView textarea[data-answer]");
+  if (!row || !box) return;
+  const typed = box.value.trim();
+  if (typed && !rows.some(r => useText(r) === typed) && !await ask({ title: `Replace what you typed with option ${letter}?`, body: [`The Answer box holds text that isn't one of the options.`], ok: "Replace", danger: true })) return;
+  box.value = useText(row);
+  answerDrafts[box.dataset.draft] = box.value;
+  box.closest(".tv-decide").querySelector("[data-act=decide]").disabled = false;
+  box.focus();
+}
 function setCardMode(mode) {
   dlg.dataset.mode = mode;
   $("#cardMode").textContent = mode === "view" ? "Edit" : "Preview";
-  if (mode === "view") $("#cardView").innerHTML = tileViewHTML($("#cardText").value) + familyHTML($("#cardText").value) + decideHTML();
+  if (mode === "view") $("#cardView").innerHTML = tileViewHTML($("#cardText").value) + familyHTML($("#cardText").value) + optionsHTML() + decideHTML();
+  if (mode === "view") tickDrafts();
   else { const ta = $("#cardText"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
 $("#cardMode").addEventListener("click", () => setCardMode(dlg.dataset.mode === "view" ? "edit" : "view"));
 $("#cardView").addEventListener("input", e => {
+  const note = e.target.closest?.("input[data-note]");
+  if (note) { draftNotes[note.dataset.note] = note.value; return; }
   const box = e.target.closest?.("textarea[data-answer]");
   if (!box) return;
   answerDrafts[box.dataset.draft] = box.value;
   box.closest(".tv-decide").querySelector("[data-act=decide]").disabled = !box.value.trim();
 });
 $("#cardView").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.closest?.("input[data-note]")) { e.preventDefault(); return pickups.draftsOff ? undefined : sendDraft({ note: e.target.value.trim() }); }
   const box = e.target.closest?.("textarea[data-answer]");
   if (box && e.key === "Enter" && (e.metaKey || e.ctrlKey) && box.value.trim()) { e.preventDefault(); decideCard(+box.dataset.answer, box.value); }
 });
 $("#cardView").addEventListener("click", e => {
+  const opt = e.target.closest(".tv-options [data-act]");
+  if (opt && opt.dataset.act === "draft-use") return useOption(opt.dataset.letter);
+  if (opt && opt.dataset.act === "draft-stop") return sendDraft({ stop: true });
+  if (opt && opt.dataset.act === "draft-start") return sendDraft({ note: (opt.closest(".tv-options").querySelector(".opt-note")?.value || "").trim() });
+  if (opt && opt.dataset.act === "draft-again") {
+    againOpen.add(cardKey(editing.card)); refreshOptions();
+    return $("#cardView .opt-note")?.focus();
+  }
   const decide = e.target.closest("[data-act=decide]");
   if (decide) return decideCard(+decide.dataset.id, decide.closest(".tv-decide").querySelector("textarea").value);
   const ref = e.target.closest("[data-act=jump]");
@@ -3722,17 +4046,25 @@ $("#cardDelete").addEventListener("click", async () => {
     if (!j) return flash(`${key} wasn't deleted: its session and worktree couldn't be thrown away (server down?)`);
     if (j.discarded?.length) flash(j.discarded.join("\n"), `${key} deleted`);
   }
-  const f = findCard(card.id); f.s.cards.splice(f.i, 1);
+  // Found by the open card as it is now: a board adopted under it while the session was thrown away gave it a new id.
+  const f = findCard((editing?.card || card).id); if (f) f.s.cards.splice(f.i, 1);
   dlg.close("deleted"); changed();
 });
 dlg.addEventListener("close", () => {
   const ed = editing; editing = null;
-  if (dlg.returnValue !== "save" || !ed) return;
+  // A way out that doesn't draw the board itself draws it here when a board was adopted under the card.
+  const redraw = () => { if (adoptedUnderCard) { adoptedUnderCard = false; render(); } };
+  if (dlg.returnValue !== "save" || !ed) return redraw();
   const lines = $("#cardText").value.replace(/\s+$/, "").split("\n");
-  if (!lines[0].trim()) return;
+  if (!lines[0].trim()) return redraw();
   const body = lines.slice(1).map(l => (!l.trim() || /^\s/.test(l)) ? l : "  " + l);
-  const toSec = findSec($("#cardCol").value);
-  let card = ed.card;
+  // The tile and its column are found in the doc as it is now, by id or else by key; a column that isn't there
+  // (an id from a doc since replaced) leaves the tile where it is.
+  const key = ed.card && cardKey(ed.card), f = ed.card && (findCard(ed.card.id) || (key && findCardByKey(key)));
+  if (ed.card && !f) return redraw();
+  const toSec = findSec($("#cardCol").value) || (f ? f.s : doc.sections.includes(ed.sec) ? ed.sec : null);
+  if (!toSec) return redraw();
+  let card = f ? f.c : null;
   if (!card) {
     card = { id: nextId++, check: false, text: "", body: [] };
     const master = ed.kidOf ? toSec.cards.findIndex(c => cardKey(c) === ed.kidOf) : -1;
@@ -3741,9 +4073,10 @@ dlg.addEventListener("close", () => {
   card.text = lines[0].replace(/^[-*] (\[[ xX]\] )?/, "");
   card.body = body;
   card.check = $("#cardCheck").checked;
-  const fromSec = ed.card && findCard(card.id).s, moved = ed.card && toSec !== fromSec;
+  const fromSec = f && f.s, moved = !!f && toSec !== fromSec;
   if (moved) moveCard(card.id, toSec, toSec.cards.length);
   if (ed.kidOf) { const m = findCardByKey(ed.kidOf); if (m && !expanded.has(m.c.text)) toggleExpanded(m.c.text); }  // show the new sub-story in its master
+  adoptedUnderCard = false;  // movedColumn and changed draw the board
   const settled = moved ? movedColumn(card, toSec, fromSec) : changed();
   // The move may have reloaded the board, so the master is found again by its key.
   if (ed.addKid && cardKey(card)) Promise.resolve(settled).then(() => { const f = findCardByKey(cardKey(card)); if (f) openCard(null, f.s, cardKey(card)); });
@@ -3893,11 +4226,17 @@ darkOS.addEventListener("change", () => { applyTheme(themeNow, accentNow); showT
 showThemePick();
 
 // Pick up edits made elsewhere (an editor, another Claude session) while idle.
+// Whether the page is idle enough to take the board from disk: asked before the fetch and again when its reply lands.
+const pollIdle = () => !!file && !dirty && !saving && !dragging && !(editing && !dlg.open) && !docEditing && !askDlg.open && !settingsDlg.open && !document.hidden;
 setInterval(async () => {
-  if (!file || dirty || saving || dragging || editing || docEditing || askDlg.open || settingsDlg.open || document.hidden) return;
+  if (!pollIdle()) return;
+  const from = file, at = mtime;
   try {
     const j = await (await fetch(`/api/board?file=${encodeURIComponent(file)}`)).json();
-    if (j.mtime !== mtime && !dirty && !dragging && !editing && !askDlg.open) { adopt(j); render(); setStatus("Updated from disk " + new Date().toLocaleTimeString()); }
+    // A reply older than something the page did while it was fetched (a save, a decide, another file opened) is dropped.
+    if (!pollIdle() || file !== from || mtime !== at || j.mtime === mtime) return;
+    if (editing) syncOpenCard(j);  // a draft's block written while its card is open
+    else { adopt(j); render(); setStatus("Updated from disk " + new Date().toLocaleTimeString()); }
   } catch {}
 }, 3000);
 // Pickups change without the board file changing, so they are polled on their own.
@@ -3907,7 +4246,7 @@ const pickupId = job => `${job.key}@${job.at}`;
 async function postPickup(body, failed = `${AGENT} wasn't started`) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
-  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked }; render(); }
+  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null }; render(); }
   return r.ok ? j : (flash(`${failed}: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });
@@ -4017,11 +4356,17 @@ async function offerPickup(job, unasked = false) {
     note: `Queued, it starts when the session on ${esc(ahead)} ends.` })) startPickup(job.key);
 }
 async function pollPickups() {
-  if ((file !== PICKUP_BOARD && !mapOn()) || document.hidden) return;  // the map shows sessions from any board
+  // the map shows sessions from any board; a board with a decision column shows its drafts
+  const decisions = !!file && !!doc && !isDocFile() && file !== ARCHIVE_LOG && doc.sections.some(s => isDecisionCol(s.name));
+  const { poll, stories } = pollsFor(file, mapOn(), decisions);
+  if (!poll || document.hidden) return;
   const next = await (await fetch("/api/pickup")).json();
   const changed = JSON.stringify(next) !== JSON.stringify(pickups), first = !pickupsLoaded;
-  pickups = next; pickupsLoaded = true;
-  for (const job of pickups.jobs) {
+  const before = editing && dlg.open ? JSON.stringify(draftOf(cardKey(editing.card))) : "";
+  pickups = next;
+  if (stories) pickupsLoaded = true;  // only a poll that tells stories' news counts, so its first run tells none (as before drafts)
+  if (editing && dlg.open && JSON.stringify(draftOf(cardKey(editing.card))) !== before) draftChanged(); else if (changed && editing && dlg.open) refreshOptions();
+  if (stories) for (const job of pickups.jobs) {
     if (toldPickups.has(pickupId(job) + job.state + (job.waiting || "") + (job.ready ? "ready" : ""))) continue;
     toldPickups.add(pickupId(job) + job.state + (job.waiting || "") + (job.ready ? "ready" : ""));
     if (first) continue;  // what happened before this page opened isn't news
@@ -4031,9 +4376,10 @@ async function pollPickups() {
     if (job.ready) flash(`${job.key} is ready for review: its tile is outlined in green.`);
     else if (job.state === "idle" && job.waiting) flash(`${AGENT} is waiting for your input on ${job.key}: ${WAITING[job.waiting]}. Open it with: ${attachCmd(job.id)}`);
   }
+  tickDrafts();
   if (dragging || editing) return;
   if (changed && !settingsDlg.open) render();  // not under the open panel: a redraw closes its dropdowns; closing it redraws
-  for (const job of pickups.jobs) {
+  if (stories) for (const job of pickups.jobs) {
     if (job.state !== "waiting" || !job.behind || askedPickups.has(pickupId(job))) continue;
     askedPickups.add(pickupId(job));
     offerPickup(job, true);

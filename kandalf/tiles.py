@@ -7,12 +7,12 @@ wording (`parse`, `splitCard`, `tileFacts` there), so each rule that is written 
 holds both readers to the same cases (test_tiles.TileCases, test_page.js).
 
     parse(store, text)      every tile of a board file, as Tile
-    model(md), base(md), tests(md), repos(md), sessions(md), ready(md), decision(md), opted_out(md)
+    model(md), base(md), tests(md), repos(md), sessions(md), ready(md), decision(md), options(md), opted_out(md)
                             what one attribute line of a tile says
     is_pickup_column, is_decision_column
                             whether a column's name says it is the pickup column or a decision column
     session(md)             the tile's session line, as SessionLine
-    take, without, insert_after, with_session, with_status, with_decision, with_key
+    take, without, insert_after, with_session, with_status, with_decision, with_options, with_key
                             edits that return the board's text
     Snapshot                plans, backlog and the archive log read once: the tile index, the
                             texts, the In flight tiles, a tile's lineage, the nearest line
@@ -95,6 +95,40 @@ class SessionLine:
     cuts: list
 
 
+# A tile's options block: an indented "**Options 2026-11-23:**" line (recommends, research link, the
+# note it was asked with) and the option lines directly under it.
+OPTIONS_LINE_RE = re.compile(r"^[ \t]+\*\*Options (\d{4}-\d\d-\d\d):\*\*(?:[ \t]+(.*))?$")  # same in board.html (OPTIONS_RE there)
+OPTION_ITEM_RE = re.compile(r"^[ \t]+[-*] \*\*([A-H])\. (.+?)\*\*(?:[ \t]+(.*))?$")  # same in board.html (OPTION_RE there)
+_OPTIONS_RECOMMENDS_RE = re.compile(r"\brecommends ([A-H])\.")
+_OPTIONS_DOC_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+_OPTIONS_ASKED_RE = re.compile(r"Asked: (.*)$")
+
+
+def _options_spans(lines: list) -> list:
+    """The (start, end) line ranges of the options blocks in a list of lines: an Options line and
+    the option lines directly under it. Any other line ends a block. Same in board.html
+    (optionsSpans there)."""
+    spans, i = [], 0
+    while i < len(lines):
+        if OPTIONS_LINE_RE.match(lines[i]):
+            end = i + 1
+            while end < len(lines) and OPTION_ITEM_RE.match(lines[end]):
+                end += 1
+            spans.append((i, end))
+            i = end
+        else:
+            i += 1
+    return spans
+
+
+def _without_options(md: str) -> str:
+    """The tile's markdown without the lines of its options block, which quote other tiles' words
+    (same in board.html: withoutOptions)."""
+    lines = md.split("\n")
+    drop = {i for a, b in _options_spans(lines) for i in range(a, b)}
+    return "\n".join(x for i, x in enumerate(lines) if i not in drop)
+
+
 @lru_cache(maxsize=None)
 def _patterns(key: str) -> tuple:
     k = re.escape(key)
@@ -142,14 +176,16 @@ def parse(store, text: str, *, file: str = "plans.md") -> list:
             m = head.match(line)
             key = m.group(1) if m else None
             others = {k.group(0) for k in keys.finditer(md)} - {key}
+            plain = _without_options(md)  # "Part of" and "Moves with" are not read from the options block
             moves = []
-            for found in link.finditer(md):
+            for found in link.finditer(plain):
                 for other in keys.finditer(found.group(1)):
                     if other.group(0) != key and other.group(0) not in moves:
                         moves.append(other.group(0))
             # The session, Status, Ready for review and decision lines quote other tiles' words, not this tile's.
             own = "\n".join(x for x in md.split("\n") if not (
                 SESSION_LINE_RE.match(x) or STATUS_LINE_RE.match(x) or READY_RE.match(x) or DECISION_LINE_RE.match(x)))
+            own = _without_options(own)
             blocking = []
             for found in blocked.finditer(own):
                 for other in keys.finditer(found.group(1)):
@@ -157,7 +193,7 @@ def parse(store, text: str, *, file: str = "plans.md") -> list:
                         blocking.append(other.group(0))
             out.append(Tile(
                 key=key, column=column, start=i, end=end, text=md, title=_title(store, md),
-                parent=next((p.group(1) for p in part.finditer(md) if p.group(1) != key), None),
+                parent=next((p.group(1) for p in part.finditer(plain) if p.group(1) != key), None),
                 links=moves, mentions=sorted(others, key=store.num), blockers=blocking,
                 done=file == ARCHIVE_LOG or bool(DONE_COL_RE.search(column))))
             i = end
@@ -283,6 +319,28 @@ def decision(md: str):
     return {"date": found[-1][0], "text": found[-1][1].strip()} if found else None
 
 
+def options(md: str):
+    """What a tile's first Options line and the option lines under it say, as {"date",
+    "recommends", "doc", "asked", "items": [{"letter", "title", "summary"}]} (recommends, doc and
+    asked None when absent), None if the tile has no Options line. Same in board.html (optionsOf)."""
+    lines = (md or "").split("\n")
+    spans = _options_spans(lines)
+    if not spans:
+        return None
+    a, b = spans[0]
+    m = OPTIONS_LINE_RE.match(lines[a])
+    rest = m.group(2) or ""
+    asked = _OPTIONS_ASKED_RE.search(rest)
+    head = rest[:asked.start()] if asked else rest
+    rec, doc = _OPTIONS_RECOMMENDS_RE.search(head), _OPTIONS_DOC_RE.search(head)
+    items = []
+    for x in lines[a + 1:b]:
+        i = OPTION_ITEM_RE.match(x)
+        items.append({"letter": i.group(1), "title": re.sub(r"\.$", "", i.group(2)), "summary": (i.group(3) or "").strip()})
+    return {"date": m.group(1), "recommends": rec.group(1) if rec else None, "doc": doc.group(1) if doc else None,
+            "asked": asked.group(1).strip() if asked else None, "items": items}
+
+
 def opted_out(md: str) -> bool:
     """Whether the text says "No pickup"."""
     return bool(OPT_OUT_RE.search(md or ""))
@@ -396,6 +454,44 @@ def with_decision(md: str, answer: str, date: str) -> str:
     lines = md.rstrip("\n").split("\n")
     lines[0] = re.sub(r"^(\s*[-*+] )\[ \]", r"\1[x]", lines[0], count=1)
     lines.append(f"  **Decision {date}:** {folded}")
+    return "\n".join(lines)
+
+
+def options_block(date: str, items: list, recommends=None, doc=None, asked=None) -> list:
+    """The lines of an options block, indented as the server writes them: the Options line, then
+    one line per item ({"letter", "title", "summary"}). Everything is folded to one line."""
+    fold = lambda x: " ".join((x or "").split())
+    head = f"  **Options {date}:**"
+    if not items:
+        head += " the draft gave no options."
+    if recommends:
+        head += f" recommends {recommends}."
+    if doc:
+        head += f" [Research]({doc})"
+    if fold(asked):
+        head += f" Asked: {fold(asked)}"
+    out = [head]
+    for it in items:
+        title = fold(it["title"])
+        title += "" if title.endswith((".", "?", "!")) else "."
+        out.append(f"  - **{it['letter']}. {title}**" + (f" {fold(it['summary'])}" if fold(it["summary"]) else ""))
+    return out
+
+
+def with_options(store, text: str, key: str, block: list) -> str:
+    """The board with an options block (options_block) in the tile with this key: after the
+    description and before the first tick-box sub-task. It replaces a block already on the tile,
+    wherever that is. A board with no such tile comes back as it was."""
+    tile = _tile(store, text, key)
+    if tile is None:
+        return text
+    lines = text.split("\n")
+    body = lines[tile.start + 1:tile.end]
+    drop = {i for a, b in _options_spans(body) for i in range(a, b)}
+    body = [x for i, x in enumerate(body) if i not in drop]
+    at = next((i for i, x in enumerate(body) if re.match(r"^  [-*] \[[ xX]\] ", x)), len(body))
+    body[at:at] = block
+    lines[tile.start + 1:tile.end] = body
     return "\n".join(lines)
 
 
