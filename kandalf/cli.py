@@ -148,7 +148,7 @@ def main(argv=None):
         from . import tiles as reader
         st, rest = pick_store(args)
         key = rest[0].upper()
-        tile = reader.Snapshot.read(st, [reader.PLANS]).tile(key)
+        tile = reader.Snapshot.read(st, [st.build]).tile(key)
         line = pickup.status(st, key, tile.text) if tile else None
         if line is None:
             print(f"{key} has no session to report on", file=sys.stderr)

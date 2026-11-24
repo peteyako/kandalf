@@ -2,7 +2,7 @@
 
 Every top-level tile on the board carries a key at the front of its line:
 `- [ ] PLN-07 **Title.** …`. Numbers are never reused: the next one is one
-past the highest key in plans.md, backlog.md and the archive log together.
+past the highest key in the build board, the plan board and the archive log together.
 
     kandalf key next      # print the next free key
     kandalf key assign    # key every tile that has none, oldest first
@@ -26,8 +26,8 @@ def highest(store, *paths: Path) -> int:
 
 
 def keyed_files(store) -> list:
-    """Every file whose tiles hold keys: the plans board, the backlog board, the archive log."""
-    return [store.dir / "plans.md", store.dir / "backlog.md", store.dir / "archive" / "archived.md"]
+    """Every file whose tiles hold keys: the build board, the plan board, the archive log."""
+    return [store.dir / name for name in store.family]
 
 
 def next_key(store) -> str:

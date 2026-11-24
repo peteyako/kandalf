@@ -16,11 +16,12 @@ assert.ok(start > 0 && end > start, "board.html's functions not found");
 // The globals the lifted code reads; open() loads a board the way the page's adopt() does.
 const page = new Function(
   `let nextId = 1, doc = null, file = null;
-   const ARCHIVE_LOG = "archive/archived.md", BACKLOG = "backlog.md";
+   const ARCHIVE_LOG = "archive/archived.md";
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder,
+            setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setFullSuite: on => { STORE_FULL_SUITE = on; },
@@ -82,7 +83,7 @@ test("a master's sub-stories come from every board, in key order", () => {
   page.open("plans.md", PLANS, SERVER);
   const kids = page.kidsOf("PLN-70", page.tileIndex());
   assert.deepEqual(kids.map(k => [k.key, k.done, page.whereLabel(k)]),
-    [["PLN-74", true, "Done"], ["PLN-75", false, "In flight"], ["PLN-81", false, "Backlog"], ["PLN-100", true, "Done"]]);
+    [["PLN-74", true, "Done"], ["PLN-75", false, "In flight"], ["PLN-81", false, "Plan"], ["PLN-100", true, "Done"]]);
   assert.deepEqual(page.kidsOf("PLN-75", page.tileIndex()), []);
   assert.equal(page.whereLabel(SERVER["PLN-41"]), "Archived");
 });
@@ -1407,4 +1408,98 @@ test("a drawing keeps only the selected stories it still shows", () => {
   const sel = new Set(["PLN-70", "PLN-71"]);
   assert.deepEqual([...page.mapKeepShown(sel, new Set(["PLN-71", "PLN-72"]))], ["PLN-71"]);
   assert.deepEqual([...sel], ["PLN-70", "PLN-71"]);
+});
+
+const NEW_NAMES = { build: "build.md", plan: "plan.md" }, OLD_NAMES = { build: "plans.md", plan: "backlog.md" };
+
+test("a files reply from a new server names the two boards", () => {
+  assert.deepEqual(page.boardNames({ build: "1.3.0", boards: { build: "build.md", plan: "plan.md" } }), NEW_NAMES);
+});
+
+test("a files reply from an older server, or a partial one, means plans.md and backlog.md", () => {
+  assert.deepEqual(page.boardNames({ build: "1.2.0", files: [] }), OLD_NAMES);
+  assert.deepEqual(page.boardNames({ boards: { build: "build.md" } }), OLD_NAMES);
+  assert.deepEqual(page.boardNames(null), OLD_NAMES);
+});
+
+test("a board's label is Build, Plan or Archive by the store's own file names", () => {
+  for (const names of [OLD_NAMES, NEW_NAMES]) {
+    assert.equal(page.boardLabel(names.build, names), "Build");
+    assert.equal(page.boardLabel(names.plan, names), "Plan");
+    assert.equal(page.boardLabel("archive/archived.md", names), "Archive");
+    assert.equal(page.boardLabel("notes/some-ideas.md", names), "Some ideas");
+  }
+});
+
+test("ownName maps either spelling of a board onto the store's own and leaves other names", () => {
+  assert.equal(page.ownName("plans.md", NEW_NAMES), "build.md");
+  assert.equal(page.ownName("build.md", OLD_NAMES), "plans.md");
+  assert.equal(page.ownName("backlog.md", NEW_NAMES), "plan.md");
+  assert.equal(page.ownName("plan.md", OLD_NAMES), "backlog.md");
+  assert.equal(page.ownName("archive/archived.md", NEW_NAMES), "archive/archived.md");
+  assert.equal(page.ownName("active/plans.md", NEW_NAMES), "active/plans.md");
+});
+
+test("an old-named file left beside the store's present board is not offered", () => {
+  assert.deepEqual(page.pickable(["plans.md", "build.md", "backlog.md", "plan.md", "x.md"], NEW_NAMES), ["build.md", "plan.md", "x.md"]);
+  assert.deepEqual(page.pickable(["plans.md", "backlog.md"], OLD_NAMES), ["plans.md", "backlog.md"]);
+  assert.deepEqual(page.pickable(["plans.md", "plan.md"], { build: "build.md", plan: "plan.md" }), ["plan.md"]);
+});
+
+test("the header's files run Plan, Build, Archive, then the others alphabetically", () => {
+  const files = ["zeta.md", "archive/archived.md", "build.md", "alpha.md", "plan.md", "plans.md"];
+  assert.deepEqual(page.boardOrder(files, NEW_NAMES), ["plan.md", "build.md", "archive/archived.md", "alpha.md", "zeta.md"]);
+});
+
+test("the harness's boards open under the new names when told them", () => {
+  page.setNames(NEW_NAMES);
+  try {
+    page.open("build.md", PLANS, {});
+    assert.equal(page.pollsFor("build.md", false, false).poll, true);
+    assert.equal(page.pollsFor("plans.md", false, false).poll, false);
+    assert.equal(page.pickupHintShows("build.md", "In flight", "why", ""), true);
+    assert.equal(page.whereLabel({ file: "plan.md", column: "Feature" }), "Plan");
+    assert.equal(page.whereLabel({ file: "backlog.md", column: "Feature" }), "Feature");
+  } finally { page.setNames(OLD_NAMES); }
+  assert.equal(page.pollsFor("plans.md", false, false).poll, true);
+});
+
+test("a store on the old names with its own plan.md keeps that file as a file of its own", () => {
+  const files = ["plans.md", "backlog.md", "plan.md", "archive/archived.md"];
+  assert.equal(page.boardLabel("plan.md", OLD_NAMES), "plan.md");
+  assert.equal(page.boardLabel("plan.md", NEW_NAMES), "Plan");
+  assert.equal(page.ownName("plan.md", OLD_NAMES, files), "plan.md");
+  assert.deepEqual(page.pickable(files, OLD_NAMES), files);
+  const labels = page.boardOrder(files, OLD_NAMES).map(f => page.boardLabel(f, OLD_NAMES));
+  assert.deepEqual(labels, ["Plan", "Build", "Archive", "plan.md"]);
+  assert.equal(labels.filter(l => l === "Plan").length, 1);
+});
+
+test("a stray old file on a new-names store still maps onto the present board", () => {
+  const files = ["build.md", "plan.md", "plans.md", "backlog.md"];
+  assert.equal(page.ownName("plans.md", NEW_NAMES, files), "build.md");
+  assert.equal(page.ownName("backlog.md", NEW_NAMES, files), "plan.md");
+  assert.deepEqual(page.pickable(files, NEW_NAMES), ["build.md", "plan.md"]);
+});
+
+test("the map puts a story on the plan board under backlog and an unstarted build one under planned, on the new names", () => {
+  page.setNames(NEW_NAMES);
+  try {
+    const index = new Map([
+      ["A-1", { key: "A-1", title: "Idea", file: "plan.md", column: "Feature", done: false, parent: null, mentions: [] }],
+      ["A-2", { key: "A-2", title: "Queued", file: "build.md", column: "To do", done: false, parent: null, mentions: [] }],
+    ]);
+    const g = page.mapGraph(index, new Map(), []);
+    assert.equal(g.nodes.get("A-1").where, "backlog");
+    assert.equal(g.nodes.get("A-2").where, "planned");
+  } finally { page.setNames(OLD_NAMES); }
+});
+
+test("a board's label asked for with no names uses the page's current ones", () => {
+  assert.equal(page.boardLabel("plans.md"), "Build");
+  page.setNames(NEW_NAMES);
+  try {
+    assert.equal(page.boardLabel("build.md"), "Build");
+    assert.equal(page.boardLabel("plan.md"), "Plan");
+  } finally { page.setNames(OLD_NAMES); }
 });

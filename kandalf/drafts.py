@@ -453,10 +453,10 @@ def _set(store, draft: dict, was: str, fields: dict) -> bool:
 
 
 def _gone(snap, at: dict, key: str):
-    """Why a draft's tile is no longer a decision to draft for (gone from plans and backlog,
-    archived, done, or out of the decision column), or None while it is one."""
+    """Why a draft's tile is no longer a decision to draft for (gone from the build and plan
+    boards, archived, done, or out of the decision column), or None while it is one."""
     tile = snap.tile(key)
-    if tile is None or at.get(key, {}).get("file") not in (tiles.PLANS, tiles.BACKLOG):
+    if tile is None or at.get(key, {}).get("file") not in (snap.build, snap.plan):
         return "its tile is archived" if at.get(key, {}).get("file") == tiles.ARCHIVE_LOG else "its tile is gone"
     if tile.done:
         return "its tile is done"

@@ -15,7 +15,7 @@ holds both readers to the same cases (test_tiles.TileCases, test_page.js).
     take, without, insert_after, with_session, with_status, with_decision, with_options, with_domain, with_key
                             edits that return the board's text
     domain_name(raw)        a domain's name as it will be written, or ValueError saying why not
-    Snapshot                plans, backlog and the archive log read once: the tile index, the
+    Snapshot                the build and plan boards and the archive log read once: the tile index, the
                             texts, the In flight tiles, a tile's lineage, the nearest line
                             of a kind up its family, what still blocks a tile and the
                             decisions made for it
@@ -25,10 +25,10 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-ARCHIVE_LOG = "archive/archived.md"  # the archive log's path in a store
-PLANS = "plans.md"  # the board whose In flight column is picked up
-BACKLOG = "backlog.md"
-FAMILY = (PLANS, BACKLOG, ARCHIVE_LOG)  # the files a tile's master or sub-stories may be on
+from . import store as stores
+
+ARCHIVE_LOG = stores.ARCHIVE_LOG  # the archive log's path in a store
+BACKLOG = stores.OLD_PLAN  # kept for the tests until they are renamed; no module reads it
 
 # The columns that mean under way, however they are spelt: In flight, in-flight, In progress (or a slip
 # of it, "In progrees"), Doing, WIP, Working, Underway, Ongoing, Active; never one that says "not".
@@ -157,10 +157,10 @@ def _title(store, md: str) -> str:
     return re.sub(r"\*\*|`", "", title)
 
 
-def parse(store, text: str, *, file: str = "plans.md") -> list:
+def parse(store, text: str, *, file: str = "") -> list:
     """Every tile of a board file, in order. A tile line starts "- " or "* ", and its key is
-    read the same way in both. file is the board's path in the store: the archive log's
-    tiles are done."""
+    read the same way in both. file is the board's path in the store (by default a board that
+    is not the archive log): the archive log's tiles are done."""
     head, keys, _, link, part, _, blocked = _patterns(store.key)
     lines, out, column, i = text.replace("\r\n", "\n").split("\n"), [], None, 0  # a CRLF file reads as the page reads it
     while i < len(lines):
@@ -553,16 +553,21 @@ def with_domain(store, text: str, key: str, name) -> str:
 
 # ---------- a snapshot across the boards ----------
 class Snapshot:
-    """The tiles of plans.md, backlog.md and the archive log, read once, with what the whole
-    family answers: where a key's tile is, its masters, the nearest line of a kind up its
-    family. A key on two files is the first one's tile (plans, backlog, archive in that order).
+    """The tiles of the build board, the plan board and the archive log, read once, with what
+    the whole family answers: where a key's tile is, its masters, the nearest line of a kind up
+    its family. A key on two files is the first one's tile (build, plan, archive in that order).
     A ring of masters is broken the way board.html does: the first of them stands as the
     master and has none."""
 
     def __init__(self, store, files: dict):
-        """files: {name: text}, names as in FAMILY (any others read as plain boards)."""
+        """files: {name: text}, names as in the store's family (any others read as plain
+        boards). build and plan are the board names these files go by, taken once, by the
+        store's rule (store.names) applied to the names given, or the store's own names when
+        no build board is among them."""
         self.store = store
         self.files = dict(files)
+        given = stores.BUILD in self.files or stores.OLD_BUILD in self.files
+        self.build, self.plan = stores.names(self.files) if given else store.boards
         self._parsed = {name: parse(store, text, file=name) for name, text in self.files.items()}
         self._at = {}  # key -> (file name, Tile)
         for name, found in self._parsed.items():
@@ -579,8 +584,9 @@ class Snapshot:
                 self._parent[k] = None
 
     @classmethod
-    def read(cls, store, names=FAMILY):
-        """The snapshot of these files of the store that exist."""
+    def read(cls, store, names=None):
+        """The snapshot of these files of the store that exist (by default its family)."""
+        names = store.family if names is None else names
         files = {n: (store.dir / n).read_text(encoding="utf-8") for n in names if (store.dir / n).is_file()}
         return cls(store, files)
 
@@ -653,14 +659,14 @@ class Snapshot:
         return [t for t in found if t and t.done and decision(t.text)]
 
     def in_flight(self) -> list:
-        """The keyed tiles in the plans board's pickup column (is_pickup_column), for
+        """The keyed tiles in the build board's pickup column (is_pickup_column), for
         pickup.py: [{"key", "title", "text", "parent"}]. A tile whose master isn't in flight
         (it sits in another column, on the backlog or in the archive) also carries "of", that
         master's key, and "context", the tiles of the masters above it, for its session to
         read: a design or a decision is often linked from the master alone. A tile with keys
         still blocking it carries "blocked", those keys, and one with decisions made for it
         carries "decisions", those tiles' markdown joined by a newline."""
-        flying = [t for t in self.tiles(PLANS) if t.key and is_pickup_column(self.store, t.column)]
+        flying = [t for t in self.tiles(self.build) if t.key and is_pickup_column(self.store, t.column)]
         in_flight = {t.key for t in flying}
         out = []
         for t in flying:

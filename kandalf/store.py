@@ -88,6 +88,13 @@ from pathlib import Path
 from . import agent
 
 CONFIG = "board.json"
+# The two boards' file names, the only place they are written: the Build board (whose In
+# flight column is picked up) and the Plan board, and the names a store used before it was moved.
+BUILD = "build.md"
+PLAN = "plan.md"
+OLD_BUILD = "plans.md"
+OLD_PLAN = "backlog.md"
+ARCHIVE_LOG = "archive/archived.md"  # the archive log's path in a store
 HOOKS_FILE = ".claude/settings.json"  # the board's hooks, in the store
 WORKTREE = "{app}/.worktrees/{key}"  # a story's worktree, inside its repo, unless board.json says otherwise
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -115,6 +122,28 @@ def has_branch(repo: Path, name: str) -> bool:
 def default_trunk(repo) -> str:
     """The trunk of a repo whose board.json names none: dev when it has a dev branch, else main."""
     return "dev" if repo and Path(repo).is_dir() and has_branch(repo, "dev") else "main"
+
+
+def names(there) -> tuple:
+    """(build, plan): the two board file names of a folder whose files are there (any container
+    of file names). build.md there means the new names, else plans.md there the old ones, and
+    neither the new ones. On the new names the plan board is plan.md, or backlog.md while it is
+    there and plan.md is not (a store half moved)."""
+    if BUILD not in there and OLD_BUILD in there:
+        return OLD_BUILD, OLD_PLAN
+    if PLAN in there or OLD_PLAN not in there:
+        return BUILD, PLAN
+    return BUILD, OLD_PLAN
+
+
+class _Folder:
+    """The files of a folder as names() asks for them: each one looked for when it is asked about."""
+
+    def __init__(self, folder: Path):
+        self.folder = folder
+
+    def __contains__(self, name) -> bool:
+        return (self.folder / name).is_file()
 
 
 def git_root(path: Path):
@@ -226,6 +255,71 @@ class Store:
                 continue
             problem = problem or why
         return repos, problem
+
+    # The board names are looked for in the folder each time they are asked for, never kept, so
+    # a store moved while the server runs is seen on its new names at once.
+    @property
+    def build(self) -> str:
+        """The Build board's file name: build.md, or plans.md on a store not yet moved."""
+        return names(_Folder(self.dir))[0]
+
+    @property
+    def plan(self) -> str:
+        """The Plan board's file name: plan.md, or backlog.md on a store not yet moved or half moved."""
+        return names(_Folder(self.dir))[1]
+
+    @property
+    def boards(self) -> tuple:
+        """(build, plan)."""
+        return names(_Folder(self.dir))
+
+    @property
+    def family(self) -> tuple:
+        """The files a tile's master or sub-stories may be on: the two boards and the archive log."""
+        return (*self.boards, ARCHIVE_LOG)
+
+    @property
+    def on_old_names(self) -> bool:
+        """True when the store's boards are plans.md and backlog.md."""
+        return self.build == OLD_BUILD
+
+    @property
+    def half_moved(self) -> bool:
+        """True when build.md is there but the plan board is still backlog.md."""
+        return self.boards == (BUILD, OLD_PLAN)
+
+    @property
+    def strays(self) -> list:
+        """The old names' files on a store on the new names, which are never read as boards:
+        plans.md when it is there, and backlog.md when it is there beside plan.md."""
+        if self.build != BUILD:
+            return []
+        there = _Folder(self.dir)
+        found = [OLD_BUILD] if OLD_BUILD in there else []
+        if OLD_PLAN in there and PLAN in there:
+            found.append(OLD_PLAN)
+        return found
+
+    @property
+    def is_store(self) -> bool:
+        """True when the folder is a kandalf store: it has a board.json."""
+        return (self.dir / CONFIG).is_file()
+
+    def board(self, name: str) -> str:
+        """The store's present name for a board a caller named by either of its names (an old
+        bookmark, a page not yet reloaded); any other name as it is. A store's own name for a
+        board comes back as it is, an old spelling is mapped onto the present board (a stray
+        beside it too), and a new spelling on a store on the old names is mapped only when the
+        folder has no file of that name: a person's own plan.md is that file."""
+        if name in (self.build, self.plan):
+            return name
+        if name == OLD_BUILD:
+            return self.build
+        if name == OLD_PLAN:
+            return self.plan
+        if name in (BUILD, PLAN) and not (self.dir / name).is_file():
+            return self.build if name == BUILD else self.plan
+        return name
 
     @property
     def main_repo(self):

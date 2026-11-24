@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plans Board</title>
+<title>Plan and Build</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="alternate icon" href="/favicon.ico">
 <style>
@@ -69,7 +69,7 @@ html, body { height: 100%; margin: 0; }
 :root[data-theme="classic"] [data-kind="to-do"] { --colc: var(--yellow); }
 :root[data-theme="classic"] [data-kind="in-flight"] { --colc: var(--accent); }
 :root[data-theme="classic"] [data-kind="done"] { --colc: var(--done); }
-/* The backlog board's kinds of work. */
+/* The Plan board's kinds of work. */
 :root[data-theme="classic"] [data-kind="design-decision"] { --colc: var(--purple); }
 :root[data-theme="classic"] [data-kind="major-feature"] { --colc: var(--magenta); }
 :root[data-theme="classic"] [data-kind="feature"] { --colc: var(--accent); }
@@ -1221,7 +1221,7 @@ applyTheme(themeNow, accentNow);
 <header>
   <span class="logo"><svg role="img" aria-label="kandalf" width="34" height="34" viewBox="0 0 32 32"><path class="l-hat" d="M9 22 C11 14 14 7 22 4 C19.5 9 21.5 15 23 22 Z" fill="#1c1c1a"/><ellipse class="l-hat" cx="16" cy="24" rx="13" ry="3.6" fill="#1c1c1a"/><path class="l-brim" d="M9.8 19.8 C13 21.4 19 21.4 22.4 19.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path class="l-star" d="M15.5 10 l1 2 2 1 -2 1 -1 2 -1 -2 -2 -1 2 -1 Z" fill="#dcbb62"/></svg></span>
   <span id="storeName" title="The project this board belongs to (its store's board.json name)"></span>
-  <h1 id="docTitle">Plans board</h1>
+  <h1 id="docTitle">Plan and Build</h1>
   <nav id="fileSel" role="tablist" aria-label="Boards"></nav>
   <span id="viewSel" role="group" aria-label="View" hidden><button type="button" data-view="board" title="The columns of tiles">Board</button><button type="button" data-view="map" title="Every story as a map: masters with their sub-stories, grouped by domain, and what is joined to what">Map</button></span>
   <input id="search" type="text" placeholder="Filter tiles…">
@@ -1308,7 +1308,7 @@ applyTheme(themeNow, accentNow);
 
 <script>
 "use strict";
-let rawText = "", docEditing = false, lastBoard = "plans.md";
+let rawText = "", docEditing = false, lastBoard = "";  // the board last shown (set when the files list names the boards)
 let readonly = false, file = null, mtime = null, doc = null, dirty = false, saving = false, dragging = null, editing = null;
 let nextId = 1;
 const $ = s => document.querySelector(s);
@@ -1631,7 +1631,7 @@ function columnLayout(shown, index) {
 function whereLabel(t) {
   if (t.file === file) return t.column;  // on this board: its column says most
   if (t.file === ARCHIVE_LOG) return "Archived";
-  if (t.file === BACKLOG) return "Backlog";
+  if (t.file === BACKLOG) return "Plan";
   return t.column;
 }
 
@@ -1652,17 +1652,61 @@ const kidsHTML = kids => kids.map(t => `<li class="${t.done ? "done" : ""}"><spa
 // A tile that lands in In flight is handed to a background Claude Code session by the
 // server (pickup.py), one at a time. The page shows where each one stands, and asks before
 // a second session is started beside a live one.
-const PICKUP_BOARD = "plans.md";
+// The two board files' names come from the server with the files list (boardNames), so a store
+// can keep its boards under the old names, plans.md and backlog.md, until it is moved to
+// build.md and plan.md. These start on the old names, for a server that doesn't say.
+const SPELLINGS = { build: ["build.md", "plans.md"], plan: ["plan.md", "backlog.md"] };  // [new, old]
+const OLD_NAMES = { build: SPELLINGS.build[1], plan: SPELLINGS.plan[1] };
+let NAMES = { ...OLD_NAMES };
+let PICKUP_BOARD = NAMES.build, BACKLOG = NAMES.plan, PULLS_INTO = NAMES.build;  // serve.py: MOVES, PULLS
+// Points the page at a store's two board files; the names are {build, plan}.
+function applyNames(names) { NAMES = names; PICKUP_BOARD = PULLS_INTO = names.build; BACKLOG = names.plan; }
+// The two names in a /api/files reply ({boards: {build, plan}}); an older server says none, and
+// its boards are plans.md and backlog.md. (The reply's own "build" key is the version stamp.)
+function boardNames(reply) {
+  const b = reply && reply.boards;
+  return b && typeof b.build === "string" && b.build && typeof b.plan === "string" && b.plan ? { build: b.build, plan: b.plan } : { ...OLD_NAMES };
+}
+// A board's own name in the store, whichever spelling a link or bookmark used. A name that is
+// one of the store's present board names, or a file of its own in the files list (a plan.md on a
+// store still on backlog.md), is kept; otherwise the other spelling of a board maps onto the
+// present one, a stray old file included. Any other name is kept.
+function ownName(name, names, files = []) {
+  if (name === names.build || name === names.plan) return name;
+  if (files.includes(name) && !strayName(name, names)) return name;
+  if (SPELLINGS.build.includes(name)) return names.build;
+  if (SPELLINGS.plan.includes(name)) return names.plan;
+  return name;
+}
+// What a board's button and a tile's place read as: Build, Plan, Archive, else the file's name
+// made readable (some-ideas.md → Some ideas), or as it is when that would repeat one of those words.
+function boardLabel(name, names = NAMES) {
+  if (name === names.build) return "Build";
+  if (name === names.plan) return "Plan";
+  if (name === ARCHIVE_LOG) return "Archive";
+  const label = name.replace(/^.*\//, "").replace(/\.md$/, "").replace(/[-_]+/g, " ").replace(/^./, ch => ch.toUpperCase());
+  return ["Plan", "Build", "Archive"].includes(label) ? name : label;  // never a second button with a board's word
+}
+// An old-named board left beside the store's present one (plans.md beside build.md, backlog.md
+// beside plan.md) is a stray, not a board.
+const strayName = (f, names) => (f === SPELLINGS.build[1] && names.build !== f) || (f === SPELLINGS.plan[1] && names.plan !== f);
+// The files the header offers: all but the strays.
+const pickable = (files, names) => files.filter(f => !strayName(f, names));
+// The header's buttons in order: Plan, Build, Archive, then any other file alphabetically.
+function boardOrder(files, names) {
+  const rank = f => f === names.plan ? 0 : f === names.build ? 1 : f === ARCHIVE_LOG ? 2 : 3;
+  return pickable(files, names).sort((a, b) => rank(a) - rank(b) || (rank(a) === 3 ? a.localeCompare(b) : 0));
+}
 // What the pickup poll does on a board (name: its file; map: the map is shown; decisions: it has a decision column):
 // poll, ask the server at all; stories, flash a story's news and offer to start one in parallel, which happens on the
-// plans board and the map alone, so a backlog that only drafts never shows them.
+// Build board and the map alone, so a Plan board that only drafts never shows them.
 const pollsFor = (name, map, decisions) => ({ poll: name === PICKUP_BOARD || map || decisions, stories: name === PICKUP_BOARD || map });
 let STORE_PICKUP_COLUMN = "";  // the store's "pickupColumn" (/api/files); "": any In flight column
 // Whether a column's tiles are picked up: the store's pickupColumn by name, in any case, else
 // any In flight column (pickup.is_pickup_column).
 const isPickupColumn = name => STORE_PICKUP_COLUMN ? name.trim().toLowerCase() === STORE_PICKUP_COLUMN.trim().toLowerCase() : IN_FLIGHT_RE.test(name);
 let pickups = { enabled: false, why: null, jobs: [] };  // /api/pickup: why pickup is off (null: on), blocked ({key: [blockers]}, absent from an older server), and jobs of {key, title, with, state, behind, id, branch, error}
-// The line at the top of the plans board's In flight column saying why pickup is off, unless
+// The line at the top of the Build board's In flight column saying why pickup is off, unless
 // this browser hid that very sentence (× on it; a new reason shows again).
 const pickupHintShows = (board, colName, why, hidden) => board === PICKUP_BOARD && isPickupColumn(colName) && !!why && why !== hidden;
 const HINT_KEY = () => "board.pickupHintHidden." + STORE_NAME;
@@ -2210,7 +2254,7 @@ function toggleExpanded(key) {
 }
 const matchesFilter = (c, q) => !q || (c.text + "\n" + c.body.join("\n")).toLowerCase().includes(q);
 
-// The stats strip under the header counts the plans board's builds by what each needs:
+// The stats strip under the header counts the Build board's builds by what each needs:
 // [state, mark, label, what it means]. A build is a story a session was handed (or, for ready
 // and unmerged, one that was finished), counted once (buildState says where).
 const STATS = [
@@ -2335,7 +2379,7 @@ function mapState(job) {
   return { waiting: "queued", paused: "paused", idle: "idle" }[job.state] || "";
 }
 // The map of every keyed tile: {nodes: Map key -> node, edges: [{a, b, kind}]}. A node says
-// where its story is (backlog, planned, flight, done; an archived one is done), its session's
+// where its story is (backlog is the Plan board, planned is To build, flight, done; an archived one is done), its session's
 // state, its domain, its master and sub-stories, and whether it is one to pull next: it needs
 // you or is ready, or it hasn't started and its master is already moving, or it is planned and
 // stands alone, and isn't blocked. An edge is "linked" (tiles that move together), "blocks"
@@ -2383,7 +2427,7 @@ function mapGraph(index, links, jobs) {
   }
   return { nodes, edges: [...edges.values()] };
 }
-// The strip's keys for the map when the plans board isn't the open one: each story's state as
+// The strip's keys for the map when the Build board isn't the open one: each story's state as
 // the map shows it, and the Done tiles not merged that the server last told of.
 function mapStats(graph) {
   const stats = Object.fromEntries(STATS.map(([state]) => [state, []]));
@@ -2651,7 +2695,7 @@ function render() {
   const box = boardEl.querySelector(`textarea[data-reply="${typing.key}"]`);
   if (box) { box.focus(); box.setSelectionRange(typing.from, typing.to); }
 }
-// The strip is on the plans board while pickup is on. Its buttons are made once and then
+// The strip is on the Build board while pickup is on. Its buttons are made once and then
 // kept current, so one that has the focus keeps it.
 let statFilter = "";  // the state the board is narrowed to by a click on the strip, or ""
 let viewMode = "board";  // "map": the story map in place of the columns (remembered in this browser)
@@ -2713,7 +2757,7 @@ function renderBoard() {
     boardEl.appendChild(col);
   }
   // The right-hand column holds drop targets, not sections of the file: a tile dropped on one
-  // leaves the board. Archive, then (on plans.md and backlog.md) the other board's columns.
+  // leaves the board. Archive, then (on the Build and Plan boards) the other board's columns.
   if (!file.includes("/") && !readonly) {
     const side = document.createElement("div");
     side.className = "side-col";
@@ -2906,10 +2950,9 @@ function moveCard(cardId, toSec, index) {
   }
 }
 // A tile that changed column takes its linked tiles with it, to sit straight after it.
-// Not on the backlog board, whose columns are kinds of work rather than statuses; not into
+// Not on the Plan board, whose columns are kinds of work rather than statuses; not into
 // Done or out of it (finishing one story doesn't finish the other); and never to Archive.
 // Returns {moved: keys that followed, away: linked keys that aren't on this board}.
-const BACKLOG = "backlog.md", PULLS_INTO = "plans.md";  // serve.py: MOVES, PULLS
 function follow(card, toSec) {
   const out = { moved: [], away: [] };
   if (file === BACKLOG || isDoneCol(toSec.name)) return out;
@@ -2931,7 +2974,7 @@ function bringKids(card, fromSec, toSec) {
   return kids.map(cardKey);
 }
 // After a tile changed column: bring its linked tiles and its sub-stories, save, and say what came along. A
-// linked tile still on the backlog is fetched by the server (/api/pull), which saves this
+// linked tile still on the Plan board is fetched by the server (/api/pull), which saves this
 // board in the same step.
 async function movedColumn(card, toSec, fromSec, fromIndex) {
   // A master pulled into In flight with several sub-stories: each of them gets a Claude
@@ -3063,18 +3106,18 @@ boardEl.addEventListener("drop", e => {
 });
 function endDrag() { ph?.remove(); ph = null; boardEl.querySelectorAll(".drop").forEach(el => el.classList.remove("over")); dragging?.el.classList.remove("dragging"); dragging = null; }
 
-// Tiles move between plans.md and backlog.md: the server says where this board's tiles can go
-// ({file, columns}). From backlog.md that is Promote, to To do; from plans.md, any backlog column.
+// Tiles move between the Build and Plan boards: the server says where this board's tiles can go
+// ({file, columns}). From the Plan board that is Promote, to To do; from the Build board, any Plan column.
 let moveTo = {};
 function moveColumn() {
-  const promote = moveTo.file === "plans.md";
+  const promote = moveTo.file === NAMES.build;
   const el = document.createElement("section");
   el.className = "archive-col";
-  el.innerHTML = `<div class="col-name">${promote ? "Promote" : "Back to backlog"}</div>
-    <p>${promote ? "Drop a tile here to schedule it. It moves to the top of To do on the plans board."
-                 : "Drop a tile on a column to unschedule it. It moves to the top of that column on the backlog board."}</p>
+  el.innerHTML = `<div class="col-name">${promote ? "Promote" : "Back to Plan"}</div>
+    <p>${promote ? "Drop a tile here to schedule it. It moves to the top of To do on the Build board."
+                 : "Drop a tile on a column to unschedule it. It moves to the top of that column on the Plan board."}</p>
     ${moveTo.columns.map(c => `<div class="drop move-zone" data-drop="move" data-col="${esc(c)}" data-kind="${esc(c.toLowerCase().replace(/\s+/g, "-"))}">${esc(c)}</div>`).join("")}
-    <a href="?file=${encodeURIComponent(moveTo.file)}" data-act="open" data-file="${esc(moveTo.file)}">Open the ${promote ? "plans" : "backlog"} board</a>`;
+    <a href="?file=${encodeURIComponent(moveTo.file)}" data-act="open" data-file="${esc(moveTo.file)}">Open the ${promote ? "Build" : "Plan"} board</a>`;
   return el;
 }
 // Send a tile to the top of a column on the other board (keyed if it has no key).
@@ -3086,7 +3129,7 @@ async function sendCard(id, column) {
   const kids = foldedTree(f.c, f.s.cards, tileIndex());
   const partners = serverLinks ? linkedTo(cardKey(f.c)).map(findCardByKey).filter(p => p && !isDoneCol(p.s.name)).map(p => p.c) : [];
   const along = [...kids, ...partners.filter(c => !kids.includes(c))], withKeys = along.map(cardKey);
-  const where = boardLabel(moveTo.file);
+  const where = boardLabel(moveTo.file, NAMES);
   if (!await ask({ title: `Move to ${where}?`, ok: "Move",
     body: [`<b>${esc(cardKey(f.c) || "This tile")}</b> ${esc(title)}`, `It goes to the top of <b>${esc(column)}</b> on the ${esc(where.toLowerCase())} board.`],
     note: along.length ? `${esc(keyList(withKeys))} will move with it.` : "" })) return;
@@ -3245,7 +3288,7 @@ async function jumpTo(key) {
     if (!t || t.file === file) return flash(`There is no ${key} tile on the boards.`);
     await openFile(t.file);
     f = file === t.file && findCardByKey(key);
-    if (!f) return flash(`${key} isn't on ${boardLabel(t.file)} any more.`);
+    if (!f) return flash(`${key} isn't on ${boardLabel(t.file, NAMES)} any more.`);
   }
   if (!matchesFilter(f.c, $("#search").value.trim().toLowerCase()) || (statFilter && buildState(f.c, f.s) !== statFilter)) { $("#search").value = ""; statFilter = ""; render(); }
   const find = () => boardEl.querySelector(`.card[data-id="${f.c.id}"], .lcard[data-id="${f.c.id}"]`);
@@ -3361,7 +3404,7 @@ function ask({ title, body = [], note = "", ok = "OK", cancel = "Cancel", danger
 // only when what it shows has changed, so where you are looking and what is in focus stay put.
 try { if (localStorage.getItem("board.view") === "map") viewMode = "map"; } catch {}
 const MAP_HUES = ["#e5677f", "#2fa89f", "#d9952b", "#6f8cf5", "#a56ee8", "#3fa7d6", "#7fb347", "#e07b4f"];
-const MAP_WHERE = { backlog: "Backlog", planned: "Planned", flight: "In flight", done: "Done" };
+const MAP_WHERE = { backlog: "Plan", planned: "To build", flight: "In flight", done: "Done" };
 const sm = { graph: null, lay: null, laySig: "", sig: "", at: new Map(), els: new Map(), hubs: new Map(), regions: new Map(), edges: [],
   hue: new Map(), cam: null, focus: null, trail: [], scope: "", drag: null,
   // Filing: the selected keys, the re-file drag in progress, what Undo sends back, whether a
@@ -3389,7 +3432,7 @@ function renderMap(q) {
   const graph = mapGraph(renderIndex, renderEdges, pickups.jobs), nodes = [...graph.nodes.values()];
   const laySig = JSON.stringify(nodes.map(n => [n.key, n.parent, n.domain, n.mentions, n.linked, n.blockedBy, n.blocks]));
   if (laySig !== sm.laySig) { sm.lay = mapLayout(graph); sm.laySig = laySig; }
-  // The strip counts what the board would on the plans board; from the backlog, what the map shows.
+  // The strip counts what the board would on the Build board; from the Plan board, what the map shows.
   const stats = file === PICKUP_BOARD ? buildStats() : mapStats(graph), only = statsShown() && statFilter ? new Set(stats[statFilter]) : null;
   if (file !== PICKUP_BOARD) renderStats(stats);
   const sig = laySig + JSON.stringify(nodes.map(n => [n.title, n.where, n.state, n.next, n.column])) + "\n" + q + "\n" + AGENT + "\n" + (only ? [...only] : "all");
@@ -3467,7 +3510,7 @@ function drawMap(q, only) {  // q: the filter box's words; only: the keys the st
   $("#mapMasters").innerHTML = (group("Moving", masters.filter(r => r.moving && !finished(r))) + group("Not started", masters.filter(r => !r.moving && !finished(r))) + group("Finished", masters.filter(finished)))
     || `<h2>Masters</h2><p class="m-text">No story has sub-stories yet. A tile that says "Part of ${esc(KEY)}-12" becomes a sub-story of ${esc(KEY)}-12.</p>`;
   const dot = (v, label, extra = "") => `<span><i style="--dom:var(${v})${extra}"></i>${label}</span>`;
-  $("#mapLegend").innerHTML = dot("--m-backlog", "Backlog") + dot("--m-planned", "Planned") + dot("--m-flight", "In flight") + dot("--m-done", "Done", ";opacity:.55") + dot("--m-need", "Needs you")
+  $("#mapLegend").innerHTML = dot("--m-backlog", "Plan") + dot("--m-planned", "To build") + dot("--m-flight", "In flight") + dot("--m-done", "Done", ";opacity:.55") + dot("--m-need", "Needs you")
     + `<span><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--line)" stroke-width="3"/><path d="M8 2 A6 6 0 0 1 14 8" fill="none" stroke="var(--m-done)" stroke-width="3"/></svg>Sub-stories done</span>`
     + `<span><svg width="16" height="16"><circle cx="8" cy="8" r="3" fill="var(--muted)"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--muted)" opacity=".6"/></svg>Next up</span>`
     + `<span><svg width="24" height="10"><path d="M1 5 H23" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="3 4"/></svg>Mentions</span>`
@@ -3615,7 +3658,7 @@ async function mapOpen(key) {
   const n = mapNode(key);
   if (n.file !== file) await openFile(n.file);
   const f = file === n.file && findCardByKey(key);
-  if (f) openCard(f.c, f.s); else flash(`${key} couldn't be opened from here: open ${boardLabel(n.file)} to see it.`);
+  if (f) openCard(f.c, f.s); else flash(`${key} couldn't be opened from here: open ${boardLabel(n.file, NAMES)} to see it.`);
 }
 // ----- the pointer: a plain drag pans, the wheel zooms, a click focuses, and with Ctrl or ⌘
 // held a drag moves what is under it: a master's cluster, a domain (its region or its name),
@@ -4483,8 +4526,18 @@ async function loadStoreFacts() {
   AGENT = j.agent || "Claude";
   if (j.models) MODELS = j.models;
   STORE_PICKUP_COLUMN = j.pickupColumn || "";
+  // The server's names are the truth: a board named by an old link or bookmark is the present one.
+  const names = boardNames(j);
+  applyNames(names);
+  j.files = boardOrder(j.files, names);
+  lastBoard = lastBoard ? ownName(lastBoard, names, j.files) : names.build;
+  if (file && ownName(file, names, j.files) !== file) {  // the store was moved while the page was open
+    file = ownName(file, names, j.files);
+    try { localStorage.setItem("board.file", file); } catch {}
+    history.replaceState(null, "", "?file=" + encodeURIComponent(file));
+  }
   $("#storeName").textContent = STORE_NAME;
-  $("#fileSel").innerHTML = j.files.map(f => `<button type="button" role="tab" data-file="${esc(f)}" title="${esc(f)}">${esc(boardLabel(f))}</button>`).join("");
+  $("#fileSel").innerHTML = j.files.map(f => `<button type="button" role="tab" data-file="${esc(f)}" title="${esc(f)}">${esc(boardLabel(f, NAMES))}</button>`).join("");
   $("#fileSel").title = j.dir;
   return j;
 }
@@ -4492,17 +4545,15 @@ async function listFiles(select) {
   const j = await loadStoreFacts();
   let pick = select || new URLSearchParams(location.search).get("file");
   if (!pick) try { pick = localStorage.getItem("board.file"); } catch {}
+  if (pick) pick = ownName(pick, NAMES, j.files);  // load() then puts the present name in the address bar
   // A plan doc isn't in the picker, but a tab opened from its link loads it from the URL.
   const isDocPath = /^(active|archive)\/[\w.-]+\.md$/.test(pick || "") && pick !== "archive/archived.md";
-  if (!j.files.includes(pick) && !isDocPath) pick = j.files.includes("plans.md") ? "plans.md" : j.files[0];
+  if (!j.files.includes(pick) && !isDocPath) pick = j.files.includes(NAMES.build) ? NAMES.build : j.files[0];
   if (pick) await load(pick); else setStatus("No boards in this folder", true);
 }
 // Switching files saves pending changes to the current one first.
 async function openFile(name) { if (dirty) await save(); return load(name); }
-// A board's button reads as its name: plans.md → Plans, archive/archived.md → Archive.
-const BOARD_LABELS = { "plans.md": "Plans", "backlog.md": "Backlog", [ARCHIVE_LOG]: "Archive" };
-const boardLabel = f => BOARD_LABELS[f] || f.replace(/^.*\//, "").replace(/\.md$/, "").replace(/[-_]+/g, " ").replace(/^./, ch => ch.toUpperCase());
-// The map shows plans and backlog together, so while it is up their two buttons are greyed
+// The map shows the Plan and Build boards together, so while it is up their two buttons are greyed
 // out and none is lit; the archive's still opens the archive list.
 function showBoardButtons(on) {
   const mapped = mapOn();
@@ -4510,7 +4561,7 @@ function showBoardButtons(on) {
     const both = mapped && [PULLS_INTO, BACKLOG].includes(b.dataset.file), lit = b.dataset.file === on && !both;
     b.classList.toggle("on", lit); b.setAttribute("aria-selected", lit);
     b.disabled = both;
-    b.title = both ? "The map shows the plans and backlog boards together. Switch to Board to open one." : b.dataset.file;
+    b.title = both ? "The map shows the Plan and Build boards together. Switch to Board to open one." : b.dataset.file;
   }
 }
 $("#fileSel").addEventListener("click", e => { const b = e.target.closest("button[data-file]"); if (b && b.dataset.file !== file) openFile(b.dataset.file); });

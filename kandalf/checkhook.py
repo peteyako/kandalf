@@ -4,8 +4,8 @@
 
 The board opens a file view-only when it doesn't round-trip through its own
 parser (see check.js). The autocommit hook stays silent by design; this one speaks
-up: when the edited file is a store's board (plans.md, backlog.md or
-archive/archived.md) and check.js finds a difference, it exits 2 with check.js's
+up: when the edited file is a store's board (its build and plan boards, by the names
+the store uses, or archive/archived.md) and check.js finds a difference, it exits 2 with check.js's
 message on stderr, which Claude Code hands back to the session that made the
 edit, so it fixes the file at once. Anything else (not a board file, no node,
 bad input) exits 0.
@@ -20,7 +20,6 @@ from pathlib import Path
 from . import store as stores
 
 HERE = Path(__file__).resolve().parent
-BOARDS = {"plans.md", "backlog.md", "archive/archived.md"}
 
 
 def _file_path(call: dict):
@@ -48,7 +47,7 @@ def main(stdin=sys.stdin, stdout=sys.stdout) -> int:
             return 0
         f = Path(path).resolve()  # resolves the docs/plans symlink
         st = stores.find(f.parent)
-        if not st or not f.is_file() or f.relative_to(st.dir).as_posix() not in BOARDS:
+        if not st or not f.is_file() or f.relative_to(st.dir).as_posix() not in st.family:
             if is_agy:
                 stdout.write("{}\n")
             return 0

@@ -247,23 +247,27 @@ def file_in_archive_log(log: Path, tile: str):
     write_atomic(log, text[:at] + "\n" + entry + text[at:].lstrip("\n"))
 
 
-# Tiles move between the two boards by dropping them on the other board's columns, shown
-# beside Archive: a backlog.md tile is promoted to the top of plans.md's To do, and a
-# plans.md tile goes back to the top of any backlog.md column. {from: (to, columns or None for all)}
-MOVES = {"backlog.md": ("plans.md", ["To do"]), "plans.md": ("backlog.md", None)}
+def moves(store) -> dict:
+    """Where tiles move between the two boards, by dropping them on the other board's columns,
+    shown beside Archive: a plan board tile is promoted to the top of the build board's To do,
+    and a build board tile goes back to the top of any plan board column. {from: (to, columns or
+    None for all)}, in the store's names."""
+    build, plan = store.boards
+    return {plan: (build, ["To do"]), build: (plan, None)}
 
 
-def move_targets(plans: Path, name: str) -> dict:
+def move_targets(store, name: str) -> dict:
     """{"file", "columns"}: where a tile on this board can be sent, or {} for nowhere."""
-    if name not in MOVES or not (plans / MOVES[name][0]).is_file():
+    board_moves = moves(store)
+    if name not in board_moves or not (store.dir / board_moves[name][0]).is_file():
         return {}
-    to, only = MOVES[name]
-    columns = [line[3:].strip() for line in (plans / to).read_text(encoding="utf-8").split("\n") if line.startswith("## ")]
+    to, only = board_moves[name]
+    columns = [line[3:].strip() for line in (store.dir / to).read_text(encoding="utf-8").split("\n") if line.startswith("## ")]
     return {"file": to, "columns": [c for c in columns if only is None or c in only]}
 
 
 def keyed_tile(store, tile: str, next_key: str) -> tuple:
-    """(tile, key): the tile as a plans.md story, with a "- [ ] " checkbox and its own key,
+    """(tile, key): the tile as a build board story, with a "- [ ] " checkbox and its own key,
     or next_key when it has none."""
     first, nl, rest = tile.partition("\n")
     m = re.match(r"^[-*] (?:\[[ xX]\] )?(.*)$", first)
@@ -296,7 +300,10 @@ def insert_at_top(text: str, column: str, tile: str) -> str:
     return "\n".join(lines)
 
 
-PICKUP_BOARD = "plans.md"
+def pickup_board(store) -> str:
+    """The board whose In flight column is picked up: the build board."""
+    return store.build
+
 
 def with_session(store, text: str, job: dict) -> str:
     """The board with the job's session written into its tile (reader.with_session): one
@@ -317,8 +324,8 @@ def with_session(store, text: str, job: dict) -> str:
 
 
 def note_session(store, job: dict):
-    """Write a started job's session id into its tile on the plans board, and queue the commit."""
-    board = store.dir / PICKUP_BOARD
+    """Write a started job's session id into its tile on the build board, and queue the commit."""
+    board = store.dir / pickup_board(store)
     old = board.read_text(encoding="utf-8")
     new = with_session(store, old, job)
     if new != old:
@@ -343,10 +350,10 @@ def pickup_reply(store) -> dict:
 
 
 def write_options(store, key: str, block: list, subject: str):
-    """Put a draft's options block on its tile (reader.with_options), on plans.md or else
-    backlog.md, and queue the commit with subject. A board that reads so already isn't written.
+    """Put a draft's options block on its tile (reader.with_options), on the build board or else
+    the plan board, and queue the commit with subject. A board that reads so already isn't written.
     A key on neither board raises KeyError."""
-    for name in (reader.PLANS, reader.BACKLOG):
+    for name in store.boards:
         board = store.dir / name
         if not board.is_file():
             continue
@@ -363,8 +370,8 @@ def write_options(store, key: str, block: list, subject: str):
 
 def set_domains(store, changes, expect=None) -> tuple:
     """File stories into domains: changes is {KEY: name | None}. Each key's top master gets its
-    Domain line written, replaced or (None) removed on whichever of plans.md, backlog.md and the
-    archive log holds it, and the lot is one commit. A name some tile's own line already carries is
+    Domain line written, replaced or (None) removed on whichever of the build board, the plan
+    board and the archive log holds it, and the lot is one commit. A name some tile's own line already carries is
     written as it is; one that matches such a line only ignoring case is written as the first of
     them is spelt. expect, when given, is {KEY: name | None}: what the own Domain line of each
     key's top master should say right now (Undo sends what its drop wrote); when one says
@@ -387,7 +394,7 @@ def set_domains(store, changes, expect=None) -> tuple:
             return 400, {"error": "A domain needs a name."}
     snap = reader.Snapshot.read(store)
     spelt, carried = {}, set()
-    for file in reader.FAMILY:
+    for file in snap.files:
         for t in snap.tiles(file):
             own = reader.domain(t.text)
             if own:
@@ -462,7 +469,7 @@ def end_drafts(store, keys):
 def draft_request(store, board: Path, data: dict) -> tuple:
     """The status and reply for /api/draft. Body: {key, note} asks for a draft (drafts.request:
     a draft the key has is ended and a new one queued): the key must be an open tile in a
-    decision column of this board, plans.md or backlog.md (404), and Draft options able to run
+    decision column of this board, the build or the plan board (404), and Draft options able to run
     (409, drafts.why_not). {key, stop: true} ends the key's draft (drafts.end), wherever its tile
     is now: it needs only a draft in the ledger, in any state (404). A draft that didn't get
     queued is a 500. The reply is pickup_reply's, and the drafts' turn looks on its next turn."""
@@ -477,7 +484,7 @@ def draft_request(store, board: Path, data: dict) -> tuple:
         DRAFTS_ASKED.set()
         return 200, pickup_reply(store)
     tile = None
-    if key and board.parent == store.dir and board.name in (reader.PLANS, reader.BACKLOG):
+    if key and board.parent == store.dir and board.name in store.boards:
         tile = next((t for t in reader.parse(store, board.read_text(encoding="utf-8"), file=board.name) if t.key == key), None)
     if tile is None or tile.done or not reader.is_decision_column(tile.column):
         return 404, {"error": f"{key} is not a decision on this board"}
@@ -500,7 +507,7 @@ def draft_request(store, board: Path, data: dict) -> tuple:
 
 def report_in_flight(store):
     """On the console, once at startup: what is in flight, and the Claude session on each."""
-    board = store.dir / PICKUP_BOARD
+    board = store.dir / pickup_board(store)
     if not board.is_file():
         return
     try:
@@ -526,7 +533,7 @@ def reload_settings(store) -> bool:
 def adopt_in_flight(store):
     """Hand the In flight tiles that never had a session to the next look (pickup.adopt), and
     say which: at the start, and whenever pickup comes on."""
-    board = store.dir / PICKUP_BOARD
+    board = store.dir / pickup_board(store)
     try:
         if board.is_file():
             for key in pickup.adopt(store, reader.Snapshot.read(store).in_flight()):
@@ -537,7 +544,7 @@ def adopt_in_flight(store):
 
 def watch_turn(store, ctx: dict):
     """One turn of the pickup watch: read board.json again if it changed, and while pickup is
-    on and can run, look at plans.md when it, the backlog or the archive log changes (a blocker
+    on and can run, look at the build board when it, the plan board or the archive log changes (a blocker
     done on those frees a tile in flight), and now and then while a job waits or runs, and hand
     what landed in In flight to pickup.tick. Pickup coming on adopts what is in flight first; on
     but unable to run says why once. ctx carries the watch from turn to turn:
@@ -565,13 +572,12 @@ def watch_turn(store, ctx: dict):
         ctx["was_on"], ctx["why"] = True, why
     if ctx["why"]:
         return
-    board = store.dir / PICKUP_BOARD
+    board = store.dir / pickup_board(store)
     try:
-        # What a look reads: plans.md, and the backlog and archive log its tiles' blockers may
-        # be on (a decision archived from the backlog writes no plans.md). A file not there
-        # counts as None.
-        at = tuple((store.dir / n).stat().st_mtime_ns if (store.dir / n).is_file() else None
-                   for n in reader.FAMILY) if board.is_file() else None
+        # What a look reads: the build board, and the plan board and archive log its tiles'
+        # blockers may be on (a decision archived from the plan board writes no build board). A
+        # file not there counts as None.
+        at = board_mtimes(store) if board.is_file() else None
         # A file still being written is left for the next look: half a board reads as
         # tiles that left In flight, and then as the same tiles arriving.
         settled, ctx["before"] = at == ctx["before"], at
@@ -581,13 +587,13 @@ def watch_turn(store, ctx: dict):
             pickup.tick(store, reader.Snapshot.read(store).in_flight(), sessions=SESSIONS)
             tidy_stragglers(store, ctx["told"])
     except Exception as e:  # a bad look must not end the watch
-        pickup.log(f"the look at {PICKUP_BOARD} failed: {e}")
+        pickup.log(f"the look at {board.name} failed: {e}")
 
 
 def board_mtimes(store) -> tuple:
-    """The mtimes of the boards a draft's tile can be on or leave for (reader.FAMILY), None for
-    a file that isn't there."""
-    return tuple((store.dir / n).stat().st_mtime_ns if (store.dir / n).is_file() else None for n in reader.FAMILY)
+    """The mtimes of the boards a draft's tile can be on or leave for (the store's family), None
+    for a file that isn't there."""
+    return tuple((store.dir / n).stat().st_mtime_ns if (store.dir / n).is_file() else None for n in store.family)
 
 
 def drafts_seen(store, held: list) -> tuple:
@@ -675,9 +681,11 @@ def watch_pickups(store, every: float = 2.0):
         time.sleep(every)
 
 
-# A linked tile still on the backlog follows its partner on the plans board: {board: where from}.
-# Never the other way, which would unschedule a tile because its partner changed kind.
-PULLS = {"plans.md": "backlog.md"}
+def pulls(store) -> dict:
+    """{board: where from}: a linked tile still on the plan board follows its partner on the
+    build board. Never the other way, which would unschedule a tile because its partner changed
+    kind."""
+    return {store.build: store.plan}
 
 # Optional, in the store: {"first": {"KEY-NN": unix seconds}} for tiles filed before the
 # store's own history began (myapp-plans: tiles filed while the board lived in the app).
@@ -766,7 +774,7 @@ def tidy_stragglers(store, told: set):
     keys = {j["key"] for j in ledger.Ledger(store).with_branch()}
     if not keys or not log.is_file():
         return
-    boards = reader.Snapshot.read(store, [reader.PLANS, reader.BACKLOG])
+    boards = reader.Snapshot.read(store, store.boards)
     live = {t.key for name in boards.files for t in boards.tiles(name)}
     for t in reader.parse(store, log.read_text(encoding="utf-8"), file=ARCHIVE_LOG):
         key = t.key
@@ -826,7 +834,7 @@ def first_committed(store, board: Path) -> dict:
         elif line.startswith("+") and (m := opens.match(line[1:])):
             first.setdefault(m.group(1), t)
     seed = store.dir / FIRST_SEED
-    if board == store.dir / "plans.md" and seed.is_file():
+    if board == store.dir / store.build and seed.is_file():
         for key, at in json.loads(seed.read_text(encoding="utf-8"))["first"].items():
             first[key] = min(at, first.get(key, at))
     _first_cache[(board, head)] = first
@@ -847,8 +855,8 @@ def archive_tile(store, board: Path, text: str, tile: str, docs: list, subject: 
                   subject or f"board: archive {key.group(0) if key else 'a tile'}" + (f" ({len(moved)} docs)" if moved else ""))
     end_drafts(store, [key.group(0)] if key else [])
     name = board.relative_to(store.dir).as_posix()
-    snap = reader.Snapshot.read(store, reader.FAMILY if name in reader.FAMILY else [name])
-    links = list(MOVES) if board.parent == store.dir and board.name in MOVES else [name]
+    snap = reader.Snapshot.read(store, store.family if name in store.family else [name])
+    links = list(moves(store)) if board.parent == store.dir and board.name in store.boards else [name]
     return {"mtime": mtime(board), "text": board.read_text(encoding="utf-8"), "moved": moved,
             "tidied": tidy_archived(store, [tile]),
             "maxKey": pln.highest(store, *pln.keyed_files(store)),
@@ -942,10 +950,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def target(self, qs):
+        """The file a request's ?file= names, under the store's present name for a board named
+        by its old or new name (store.board), or None for a name that isn't a store file's."""
         name = (qs.get("file") or [""])[0]
         if not NAME_RE.match(name):
             return None
-        return self.plans / name
+        return self.plans / self.store.board(name)
 
     def do_GET(self):
         u = urlparse(self.path)
@@ -979,7 +989,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(),
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
                                  "trunk": self.store.trunk, "fullSuiteOnMerge": self.store.full_suite_on_merge, "branches": local_branches(self.store),
-                                 "repos": [{"name": r.name, "main": r.main} for r in self.store.repos], "build": BUILD})
+                                 "repos": [{"name": r.name, "main": r.main} for r in self.store.repos], "build": BUILD,
+                                 "boards": {"build": self.store.build, "plan": self.store.plan}})
         elif u.path == "/api/log":  # ?key=PLN-01: the last lines of that tile's session log
             view = log_view(self.store, (qs.get("key") or [""])[0])
             self.send_json(200, view) if view else self.send_json(404, {"error": "no session on that tile"})
@@ -1003,8 +1014,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "maxKey": self.max_key(),
                                  "firstCommitted": first_committed(self.store, p) if p.parent == self.plans else {},
                                  "unmerged": unmerged_done(self.store, p.read_text(encoding="utf-8"))
-                                 if p.name == "plans.md" else {},
-                                 "moveTo": move_targets(self.plans, p.name) if p.parent == self.plans else {},
+                                 if p.name == self.store.build else {},
+                                 "moveTo": move_targets(self.store, p.name) if p.parent == self.plans else {},
                                  "linked": self.linked(p), "tiles": self.tiles(p)})
         else:
             self.send_json(404, {"error": "not found"})
@@ -1034,15 +1045,15 @@ class Handler(BaseHTTPRequestHandler):
         return pln.highest(self.store, *pln.keyed_files(self.store))
 
     def snapshot(self, board: Path) -> reader.Snapshot:
-        """The tiles a board's page should know: plans.md, backlog.md and the archive log share
-        one snapshot, since a tile's master or sub-stories may be on another of them."""
-        name = board.relative_to(self.plans).as_posix()
-        return reader.Snapshot.read(self.store, reader.FAMILY if name in reader.FAMILY else [name])
+        """The tiles a board's page should know: the two boards and the archive log share one
+        snapshot, since a tile's master or sub-stories may be on another of them."""
+        name, family = board.relative_to(self.plans).as_posix(), self.store.family
+        return reader.Snapshot.read(self.store, family if name in family else [name])
 
     def linked(self, board: Path) -> dict:
-        """The linked tiles a board's page should know: plans.md and backlog.md share their
-        links, since a tile's partner may be on the other one."""
-        names = list(MOVES) if board.parent == self.plans and board.name in MOVES else [board.relative_to(self.plans).as_posix()]
+        """The linked tiles a board's page should know: the two boards share their links, since
+        a tile's partner may be on the other one."""
+        names = list(moves(self.store)) if board.parent == self.plans and board.name in self.store.boards else [board.relative_to(self.plans).as_posix()]
         return reader.Snapshot.read(self.store, names).linked()
 
     def tiles(self, board: Path) -> dict:
@@ -1070,7 +1081,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(status, reply)
 
     def refresh_status(self, key: str):
-        board = self.plans / PICKUP_BOARD
+        board = self.plans / pickup_board(self.store)
         old = board.read_text(encoding="utf-8") if board.is_file() else ""
         tile = next((t for t in reader.parse(self.store, old) if t.key == key), None)
         line = pickup.status(self.store, key, tile.text, sessions=SESSIONS) if tile else None
@@ -1088,7 +1099,7 @@ class Handler(BaseHTTPRequestHandler):
         if data.get("mtime") != mtime(board):
             return self.send_json(409, {"error": "changed on disk",
                                         "text": board.read_text(encoding="utf-8"), "mtime": mtime(board)})
-        kept = sorted(unmerged_done(self.store, data["text"])) if board.name == "plans.md" else []
+        kept = sorted(unmerged_done(self.store, data["text"])) if board.name == self.store.build else []
         try:
             new, record, touched = clear_column(self.store, board, data["text"], data.get("column"), kept)
         except (KeyError, ValueError, FileExistsError, subprocess.CalledProcessError) as e:
@@ -1120,19 +1131,19 @@ class Handler(BaseHTTPRequestHandler):
         """What the page adopts after the server changed a board."""
         text = board.read_text(encoding="utf-8")
         return {"mtime": mtime(board), "text": text, "maxKey": self.max_key(),
-                "unmerged": unmerged_done(self.store, text) if board.name == "plans.md" else {},
-                "moveTo": move_targets(self.plans, board.name),
+                "unmerged": unmerged_done(self.store, text) if board.name == self.store.build else {},
+                "moveTo": move_targets(self.store, board.name),
                 "linked": self.linked(board), "tiles": self.tiles(board)}
 
     def move(self, board: Path):
         """Body: {mtime, text: the board without the tiles, tiles: their markdown (or tile, for
-        one), column}. The tiles go to the top of that column on the other board (MOVES), in
+        one), column}. The tiles go to the top of that column on the other board (moves), in
         order, each keyed if it has no key. The page sends a tile's linked tiles with it."""
         data = self.read_body()
         if data.get("mtime") != mtime(board):
             return self.send_json(409, {"error": "changed on disk",
                                         "text": board.read_text(encoding="utf-8"), "mtime": mtime(board)})
-        targets, column = move_targets(self.plans, board.name), data.get("column")
+        targets, column = move_targets(self.store, board.name), data.get("column")
         if column not in targets.get("columns", []):
             return self.send_json(409, {"error": f"{board.name} tiles can't go to {column!r}"})
         dest = self.plans / targets["file"]
@@ -1154,18 +1165,18 @@ class Handler(BaseHTTPRequestHandler):
         self.commit([board, dest], f"board: move {', '.join(keys)} from {board.name} to {dest.name} {column}")
         self.send_json(200, {"mtime": mtime(board), "text": board.read_text(encoding="utf-8"),
                              "key": keys[0], "keys": keys,
-                             "moveTo": move_targets(self.plans, board.name),
+                             "moveTo": move_targets(self.store, board.name),
                              "maxKey": self.max_key(), "linked": self.linked(board), "tiles": self.tiles(board)})
 
     def pull(self, board: Path):
         """Body: {mtime, text: the board after a tile changed column, after: that tile's key,
         keys: the tiles linked to it that aren't on this board}. Saves the board, with any of
-        those tiles found on the other board (PULLS) moved in straight after that tile."""
+        those tiles found on the other board (pulls) moved in straight after that tile."""
         data = self.read_body()
         if data.get("mtime") != mtime(board):
             return self.send_json(409, {"error": "changed on disk",
                                         "text": board.read_text(encoding="utf-8"), "mtime": mtime(board)})
-        src = self.plans / PULLS[board.name]
+        src = self.plans / pulls(self.store)[board.name]
         old, new, paths, keys = board.read_text(encoding="utf-8"), data["text"], [board], []
         src_text = src.read_text(encoding="utf-8") if src.is_file() else ""
         rest, found = reader.take(self.store, src_text, set(data.get("keys") or []))
@@ -1185,19 +1196,19 @@ class Handler(BaseHTTPRequestHandler):
             message += f"; {', '.join(keys)} from {src.name} with {data.get('after')}"
         self.commit(paths, message)
         self.send_json(200, {"mtime": mtime(board), "text": new, "pulled": keys,
-                             "moveTo": move_targets(self.plans, board.name),
+                             "moveTo": move_targets(self.store, board.name),
                              "maxKey": self.max_key(), "linked": self.linked(board), "tiles": self.tiles(board)})
 
     def do_POST(self):
         u = urlparse(self.path)
         if u.path == "/api/move":
             p = self.target(parse_qs(u.query))
-            if p is None or not p.is_file() or p.parent != self.plans or p.name not in MOVES:
+            if p is None or not p.is_file() or p.parent != self.plans or p.name not in moves(self.store):
                 return self.send_json(404, {"error": "only plans.md and backlog.md tiles move between boards"})
             return self.move(p)
         if u.path == "/api/pull":
             p = self.target(parse_qs(u.query))
-            if p is None or not p.is_file() or p.parent != self.plans or p.name not in PULLS:
+            if p is None or not p.is_file() or p.parent != self.plans or p.name not in pulls(self.store):
                 return self.send_json(404, {"error": "only plans.md pulls linked tiles in"})
             return self.pull(p)
         if u.path == "/api/pickup":  # {key}: start a waiting job now, in parallel; {key, restart: true}: the Restart button; {key, continue: true}: the Continue button; {key, pause: true}: the Pause button
@@ -1219,7 +1230,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(409, {"error": why})
             if "reply" in data:  # {key, reply: text, steps: [squash, merge, push]}: the reply box
                 why = pickup.reply(self.store, data.get("key", ""), data.get("reply") or "", data.get("steps") or [], sessions=SESSIONS,
-                                   snap=self.snapshot(self.plans / "plans.md"))
+                                   snap=self.snapshot(self.plans / self.store.build))
                 if why:
                     return self.send_json(409, {"error": why, **pickup_reply(self.store)})
                 return self.send_json(200, pickup_reply(self.store))

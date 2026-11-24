@@ -31,7 +31,6 @@ from pathlib import Path
 from . import store as stores
 from . import tiles as reader
 
-BOARDS = ("plans.md", "backlog.md", "archive/archived.md")  # relative to the store
 SUBJECT_MAX = 72
 
 
@@ -82,7 +81,7 @@ def summarize(store, rels) -> str:
     for rel in rels:
         f, srel = root / rel, store.rel(rel)
         now = f.read_text(encoding="utf-8") if f.is_file() else ""
-        if srel in BOARDS:
+        if srel in store.family:
             parts += tile_changes(store, Path(rel).name, head_text(root, rel), now)
         elif f.is_file() and not (srel and srel.startswith("archive/") and f"active/{Path(rel).name}" in srels):
             docs.append(rel)  # a doc moved by an archive is covered by "PLN-NN archived"
@@ -251,7 +250,7 @@ def dirty_board_files(store) -> list:
     def ours(r):
         s = store.rel(r)
         return s is not None and r.endswith(".md") and \
-            (s in BOARDS or (s.startswith(("active/", "archive/")) and s.count("/") == 1))
+            (s in store.family or (s.startswith(("active/", "archive/")) and s.count("/") == 1))
     return [r for r in rels if ours(r)]
 
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The page calls the two boards **Plan** (was Backlog) and **Build** (was Plans): the header buttons, the side drop zones, the map's legend and chips (**Plan**, **To build**), and its messages. It takes the two file names from the server, so a store on `plans.md` and `backlog.md` works as before, and an old `?file=plans.md` or `?file=backlog.md` link opens the board under its present name.
 - The map's bar has an **(i)** at its end: hover it, or focus it with Tab or a tap, for a short guide to getting around, arranging, and filing stories into domains.
 - Stories are filed into domains from the map. Shift-click stories, or Shift-drag a box, to select them; drag a selected story onto a domain's region and the whole selection is filed there, families whole (a sub-story follows its master, and `Part of` is never changed). Dropping on **No domain** takes the `Domain:` line off. Esc, or a click on empty space, clears the selection, and a drop released elsewhere or abandoned with Esc writes nothing.
 - A drop writes, replaces or takes off the `Domain:` line of each story's top master wherever it is (`plans.md`, `backlog.md` or the archive log), as one commit, through `POST /api/domain`; the open board must be saved first. The page says what it filed, and **Undo** in the map's bar stays until the next drop that files something or a reload; it is refused when a filed story's domain has been changed since.

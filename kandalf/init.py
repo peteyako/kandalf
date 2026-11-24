@@ -792,7 +792,7 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
         folder = base.parent / name
     if folder.exists() and not folder.is_dir():
         raise SystemExit(f"kandalf init: {folder} is a file")
-    for f in (stores.CONFIG, "plans.md"):
+    for f in (stores.CONFIG, stores.OLD_BUILD, stores.BUILD):
         if (folder / f).exists():
             raise SystemExit(f"kandalf init: {folder} already has {f}, so it is a store already. Nothing was written.")
     if app and (folder == app or app in folder.parents):
@@ -879,8 +879,8 @@ def checks(st, *, which=shutil.which, version=sys.version_info, why_off=pickup.w
     if not st.dir.is_dir():
         out.append((BAD, f"store {st.dir} isn't there"))
         return out
-    if not (st.dir / "plans.md").is_file():
-        out.append((BAD, f"store {st.dir} has no plans.md ({settings})"))
+    if not (st.dir / st.build).is_file():
+        out.append((BAD, f"store {st.dir} has no {st.build} ({settings})"))
     elif not (st.dir / stores.CONFIG).is_file():
         out.append((INFO, f"store {st.dir} has no board.json, so it runs on defaults: {settings}"))
     else:
