@@ -54,10 +54,9 @@ PICKUP_ASK = """Pickup: when it is on, a story dragged to In flight starts a bac
 (Claude Code, GitHub Copilot CLI or Antigravity CLI) in a new git worktree under the app's .worktrees/, in the store's permission mode
 (auto by default, which edits and runs commands without asking). Archiving a merged story
 removes its worktree, branch and session."""
-# A new store keeps its sessions' worktrees inside the app, out of the folder the app sits in.
-# (Unset, the store's default is beside the app.) An agent starts a session in a worktree
-# only when the worktree's main repo is trusted: hence agent.trust.
-WORKTREE = "{app}/.worktrees/{key}"
+# A new store keeps its sessions' worktrees inside the app (stores.WORKTREE, written into
+# board.json so it can be seen and changed). An agent starts a session in a worktree only
+# when the worktree's main repo is trusted: hence agent.trust.
 WORKTREES_IGNORE = ".worktrees"
 
 
@@ -686,7 +685,7 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
     port = a.port or ask("Port", free_port(folder, bindable), check_port)
     cfg = {"name": name, "key": key, "port": port, "link": LINK}
     if app:
-        cfg.update(app=os.path.relpath(app, folder), trunk=default_trunk(app), worktree=WORKTREE)
+        cfg.update(app=os.path.relpath(app, folder), trunk=default_trunk(app), worktree=stores.WORKTREE)
         on = a.pickup
         if on is None:
             if isatty() and not a.yes:

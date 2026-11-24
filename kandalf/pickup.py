@@ -6,7 +6,7 @@ this starts a background Claude Code session for it:
 
     claude --bg --model opus -n "PLN-74 Title" --permission-mode auto "<the tile and the rules>"
 
-in a git worktree of the store's app repo, beside it (myapp-pln-74), on a branch cut
+in a git worktree of the store's app repo, inside it (myapp/.worktrees/pln-74), on a branch cut
 from the trunk (pln-74-title); "worktree" and "branch" in board.json name them otherwise
 (branch, worktree). A tile with a "Repos: api, web" line gets a worktree in each of those
 repos on that one branch; the session starts in the first and is given the rest (--add-dir).
@@ -205,22 +205,38 @@ def branch(store, job, repo=None) -> str:
 
 def worktree(store, job, repo=None) -> Path:
     """The job's worktree in a repo (default: the main one): the store's "worktree" pattern
-    (default {app}-{key}), under the repo's parent folder."""
+    (default {app}/.worktrees/{key}), under the repo's parent folder."""
     folder = repo.path if repo else store.app
     return Path(os.path.normpath(folder.parent / fill(store.worktree_pattern, **names(store, job, repo))))
 
 
+def pattern_problem(name: str, pattern: str):
+    """None when a "branch" or "worktree" pattern can be used; else what is wrong with it, as
+    the end of a sentence. A worktree stays within the folder above the app's parent."""
+    if "{key}" not in pattern and "{KEY}" not in pattern:
+        return "has no {key}, so every story would share one; put {key} in it."
+    where = os.path.normpath(pattern)
+    if name == "worktree" and (os.path.isabs(where) or where.startswith("~") or where in (".", "..") or where.startswith("../..")):
+        return "must be a path relative to the folder the app is in, climbing at most one folder (../), so fix it."
+    return None
+
+
 def naming_problem(store):
     """None when the store's "branch" and "worktree" patterns can be used; else one sentence
-    saying what is wrong with them. A worktree stays within the folder above the app's parent."""
+    saying what is wrong with them."""
     for name, pattern in (("branch", store.branch_pattern), ("worktree", store.worktree_pattern)):
-        if "{key}" not in pattern and "{KEY}" not in pattern:
-            return f'Pickup is off: "{name}" in board.json ({pattern}) has no {{key}}, so every story would share one; put {{key}} in it.'
-    where = os.path.normpath(store.worktree_pattern)
-    if os.path.isabs(where) or where.startswith("~") or where in (".", "..") or where.startswith("../.."):
-        return (f'Pickup is off: "worktree" in board.json ({store.worktree_pattern}) must be a path relative to the folder the app is in, '
-                "climbing at most one folder (../), so fix it.")
+        why = pattern_problem(name, pattern)
+        if why:
+            return f'Pickup is off: "{name}" in board.json ({pattern}) {why}'
     return None
+
+
+def worktrees_at(store) -> str:
+    """Where a story's worktree goes in the main repo, with {key} left in: the store's
+    "worktree" pattern under the app's parent folder (just the pattern, with no app)."""
+    if not store.app:
+        return store.worktree_pattern
+    return os.path.normpath(store.app.parent / fill(store.worktree_pattern, app=store.app.name))
 
 
 def worktree_label(store, path, repo=None) -> str:
@@ -384,6 +400,24 @@ def _git(repo: Path, *args) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=60)
 
 
+def keep_out(repo: Path, path: Path):
+    """Keep a worktree inside the repo out of the repo's git status: when nothing ignores it
+    yet, its top folder under the repo (.worktrees) goes into the repo's info/exclude."""
+    try:
+        rel = Path(path).resolve().relative_to(Path(repo).resolve())
+    except ValueError:  # beside the repo, not in it
+        return
+    if not rel.parts or _git(repo, "check-ignore", "-q", str(rel)).returncode == 0:
+        return
+    found = _git(repo, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+    if not found:
+        return
+    exclude = Path(repo) / found
+    have = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(have + ("" if not have or have.endswith("\n") else "\n") + f"/{rel.parts[0]}/\n", encoding="utf-8")
+
+
 def cut_of(store, job, repo):
     """The worktree the job already has in a repo, as a path; None when it has none. A job
     from before several repos has its one worktree in the main repo."""
@@ -394,7 +428,7 @@ def cut_of(store, job, repo):
 
 
 def prepare(store, job, repo=None, name: str = None) -> tuple:
-    """(worktree path, branch): the job's worktree in a repo (default the main one) beside it
+    """(worktree path, branch): the job's worktree in a repo (default the main one)
     (the one it has already, when that is still there), made if it isn't there yet on the
     branch name (default branch(); cut from the story's trunk, story_trunk), with the store linked in at
     docs/<link> as the repo's own checkout has it."""
@@ -403,6 +437,7 @@ def prepare(store, job, repo=None, name: str = None) -> tuple:
     path = own if own and own.is_dir() else worktree(store, job, repo)
     name = name or branch(store, job, repo)
     if not path.exists():
+        keep_out(repo.path, path)
         exists = _git(repo.path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0
         made = _git(repo.path, "worktree", "add", *([str(path), name] if exists else ["-b", name, str(path), repo.trunk]))
         if made.returncode != 0:

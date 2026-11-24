@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Story worktrees go inside the app by default, at `myapp/.worktrees/pln-74`, instead of beside it (`myapp-pln-74`). Pickup keeps `.worktrees/` out of the app's git status through its `info/exclude` when the app doesn't ignore it yet. A store whose `board.json` sets `"worktree"` keeps its own pattern, and a story already picked up keeps its worktree; set `"worktree": "{app}-{key}"` to cut new ones beside the app again.
+- Where worktrees go is a setting in the ⚙ panel (Worktrees, under Git and commits), checked as pickup checks it: it needs `{key}` and may climb at most one folder.
+- `kandalf serve` says where a story's worktree goes (`in worktrees at …/myapp/.worktrees/{key}`), instead of always saying "beside" the app.
+- The settings panel's Model, Trunk and Worktrees fields get a ▾ list of choices that always shows them all (the browser's own suggestions showed only what matched the field, so a filled field showed nothing). Worktrees lists three places with where a story's worktree would go in your app, and its ⓘ says how to write others in `board.json`.
+- The board no longer redraws behind the open settings panel, which closed its dropdowns every few seconds; it catches up when the panel closes.
+- A pressed filter on the stats strip (at work, need you, …) is filled in its colour, and the others dim, so it's plain which one the board is showing.
+
 ## 1.2.0
 
 - Pickup can hand stories to the Antigravity CLI (`agy`): set `"agent": "agy"` in `board.json`, pass `--agent agy` to `kandalf init`, or switch an existing store with `kandalf agent agy`. Antigravity sessions run detached with `agy --output-format stream-json --print`, get the store with `--add-dir`, receive the board's hooks in `.agents/hooks.json`, and open in `agy --conversation` on `kandalf attach`.

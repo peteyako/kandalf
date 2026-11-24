@@ -213,7 +213,7 @@ class Reading(unittest.TestCase):
         self.store.app = Path("/x/myapp")
         job = {"key": "PLN-75", "title": "Theme switch: the System option!"}
         self.assertEqual(pickup.branch(self.store, job), "pln-75-theme-switch-the-system-option")
-        self.assertEqual(pickup.worktree(self.store, job), Path("/x/myapp-pln-75"))
+        self.assertEqual(pickup.worktree(self.store, job), Path("/x/myapp/.worktrees/pln-75"))
 
     def test_a_story_runs_on_opus_unless_the_store_or_the_tile_says_otherwise(self):
         self.assertEqual(pickup.model_for(self.store, "- [ ] PLN-01 **One.**\n  The data model: users and teams."), "opus")
@@ -329,8 +329,14 @@ class Reading(unittest.TestCase):
         self.assertEqual(pickup.worktree(st, job), Path("/x/wt/myapp-pln-75"))
         self.assertEqual(pickup.worktree_label(st, pickup.worktree(st, job)), "../wt/myapp-pln-75")
         self.assertEqual(pickup.worktree_label(self.store, "/x/app-pln-70"), "app-pln-70")  # no app: the folder's name
-        self.store.app = Path("/x/y/myapp")  # the default: beside the app, named by its folder alone
-        self.assertEqual(pickup.worktree_label(self.store, pickup.worktree(self.store, job)), "myapp-pln-75")
+        self.store.app = Path("/x/y/myapp")  # the default: inside the app, named from the app's folder
+        self.assertEqual(pickup.worktree_label(self.store, pickup.worktree(self.store, job)), "myapp/.worktrees/pln-75")
+
+    def test_the_server_says_where_a_story_s_worktree_goes(self):
+        self.store.app = Path("/x/myapp")
+        self.assertEqual(pickup.worktrees_at(self.store), "/x/myapp/.worktrees/{key}")
+        self.store.worktree_pattern = "{app}-{key}"
+        self.assertEqual(pickup.worktrees_at(self.store), "/x/myapp-{key}")
 
     def test_a_worktree_pattern_that_leaves_the_app_s_surroundings_or_has_no_key_is_refused(self):
         folder = Path(tempfile.mkdtemp())
@@ -1532,11 +1538,48 @@ class Worktree(unittest.TestCase):
         st = stores.Store(plans)
         job = {"key": "PLN-07", "title": "Small thing"}
         path, branch = pickup.prepare(st, job)
-        self.assertEqual((path, branch), (top / "app-pln-07", "pln-07-small-thing"))
+        self.assertEqual((path, branch), (top / "app" / ".worktrees" / "pln-07", "pln-07-small-thing"))
         head = subprocess.run(["git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True)
         self.assertEqual(head.stdout.strip(), "pln-07-small-thing")
         self.assertEqual((path / "docs" / "plans").resolve(), plans)
         self.assertEqual(pickup.prepare(st, job), (path, branch))  # again: the same worktree, untouched
+
+    def app_with_store(self, gitignore):
+        top = Path(tempfile.mkdtemp()).resolve()
+        app, plans = top / "app", top / "plans"
+        (app / "docs").mkdir(parents=True)
+        plans.mkdir()
+        (plans / "board.json").write_text(json.dumps({"app": "../app", "trunk": "dev"}))
+        (app / "docs" / "plans").symlink_to("../../plans")
+        (app / ".gitignore").write_text(gitignore)
+        git(app, "init", "-q", "-b", "dev")
+        git(app, "add", "-A")
+        git(app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
+        return app, stores.Store(plans)
+
+    def exclude(self, app):
+        found = app / ".git" / "info" / "exclude"
+        return found.read_text() if found.is_file() else ""
+
+    def test_a_worktree_inside_the_app_is_kept_out_of_the_app_s_git_status(self):
+        app, st = self.app_with_store("docs/plans\n")
+        pickup.prepare(st, {"key": "PLN-07", "title": "Small thing"})
+        pickup.prepare(st, {"key": "PLN-08", "title": "Next thing"})
+        self.assertEqual(subprocess.run(["git", "-C", str(app), "status", "--porcelain"], capture_output=True, text=True).stdout, "")
+        self.assertEqual(self.exclude(app).count("/.worktrees/"), 1)  # once, for every story's worktree
+
+    def test_an_app_that_already_ignores_its_worktrees_gets_no_exclude_line(self):
+        app, st = self.app_with_store("docs/plans\n.worktrees/\n")
+        pickup.prepare(st, {"key": "PLN-07", "title": "Small thing"})
+        self.assertNotIn(".worktrees", self.exclude(app))
+
+    def test_a_worktree_beside_the_app_gets_no_exclude_line(self):
+        app, st = self.app_with_store("docs/plans\n")
+        (st.dir / "board.json").write_text(json.dumps({"app": "../app", "trunk": "dev", "worktree": "{app}-{key}"}))
+        st = stores.Store(st.dir)
+        path, _ = pickup.prepare(st, {"key": "PLN-07", "title": "Small thing"})
+        self.assertEqual(path, app.parent / "app-pln-07")
+        self.assertNotIn("pln-07", self.exclude(app))
 
 
 class Tidy(unittest.TestCase):
@@ -1557,7 +1600,7 @@ class Tidy(unittest.TestCase):
         (self.path / "feature").write_text("done\n")
         self.commit(self.path, "the work")
         self.tile = ("- [x] PLN-07 **Small thing.**\n  Claude session `ab12cd34`: `claude attach ab12cd34`. "
-                     f"Branch `{self.branch}`, worktree `{self.path.name}`. Model `opus`. Started {DAY}.")
+                     f"Branch `{self.branch}`, worktree `{pickup.worktree_label(self.store, self.path)}`. Model `opus`. Started {DAY}.")
 
     def commit(self, repo, message):
         git(repo, "add", "-A")
@@ -1573,7 +1616,7 @@ class Tidy(unittest.TestCase):
 
     def test_a_landed_story_loses_its_worktree_and_its_branch(self):
         said = self.tidy()
-        self.assertEqual(said[0], "removed worktree app-pln-07")
+        self.assertEqual(said[0], "removed worktree pln-07")
         self.assertRegex(said[1], r"^deleted branch pln-07-small-thing \(was [0-9a-f]{7,}\)$")
         self.assertFalse(self.path.exists())
         self.assertFalse(self.has_branch())
@@ -1581,7 +1624,7 @@ class Tidy(unittest.TestCase):
 
     def test_its_session_is_closed_first_when_it_is_still_listed(self):
         said = self.tidy(sessions=lambda: {"ab12cd34": "idle"}, there=True)
-        self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree app-pln-07"])
+        self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree pln-07"])
         self.assertEqual(self.retired, ["ab12cd34"])
 
     def test_a_session_is_closed_even_when_the_worktree_and_branch_are_gone(self):
@@ -1589,18 +1632,18 @@ class Tidy(unittest.TestCase):
         self.assertEqual(self.tidy(there=True), ["closed session ab12cd34"])
 
     def test_a_branch_that_is_not_in_the_trunk_keeps_both(self):
-        self.assertEqual(self.tidy(merged=False), ["kept branch pln-07-small-thing and worktree app-pln-07 and session ab12cd34: the branch isn't in dev yet"])
+        self.assertEqual(self.tidy(merged=False), ["kept branch pln-07-small-thing and worktree pln-07 and session ab12cd34: the branch isn't in dev yet"])
         self.assertTrue(self.path.exists() and self.has_branch())
         self.assertEqual(self.retired, [])
 
     def test_uncommitted_work_keeps_both(self):
         (self.path / "scratch").write_text("not committed\n")
-        self.assertEqual(self.tidy(), ["kept branch pln-07-small-thing and worktree app-pln-07 and session ab12cd34: 1 uncommitted file in the worktree"])
+        self.assertEqual(self.tidy(), ["kept branch pln-07-small-thing and worktree pln-07 and session ab12cd34: 1 uncommitted file in the worktree"])
         self.assertTrue(self.path.exists() and self.has_branch())
 
     def test_a_session_still_at_work_keeps_both(self):
         self.assertEqual(self.tidy(sessions=lambda: {"ab12cd34": "busy"}),
-                         ["kept branch pln-07-small-thing and worktree app-pln-07 and session ab12cd34: the session is still at work"])
+                         ["kept branch pln-07-small-thing and worktree pln-07 and session ab12cd34: the session is still at work"])
         self.assertTrue(self.path.exists() and self.has_branch())
 
     def test_the_branch_goes_when_the_worktree_is_already_gone(self):
@@ -1611,7 +1654,7 @@ class Tidy(unittest.TestCase):
         job = {"key": "PLN-07", "id": "ab12cd34", "branch": self.branch, "worktree": str(self.path)}
         said = pickup.tidy(self.store, "- [x] PLN-07 **Small thing.**\n  Merged.", merged=lambda r, b: True, job=job,
                            sessions=pickup.Sessions(sessions=lambda: {}, retire=lambda sid: True))
-        self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree app-pln-07"])
+        self.assertEqual(said[:2], ["closed session ab12cd34", "removed worktree pln-07"])
         self.assertFalse(self.path.exists() or self.has_branch())
 
     def test_a_deleted_story_loses_its_session_and_worktree_but_keeps_a_branch_with_commits(self):
@@ -1619,7 +1662,7 @@ class Tidy(unittest.TestCase):
         pickup.save(self.store, {"inflight": ["PLN-07"], "jobs": [{"key": "PLN-07", "id": "ab12cd34", "state": "started"}]})
         retired = []
         said = pickup.discard(self.store, "PLN-07", self.tile, sessions=pickup.Sessions(retire=lambda sid: retired.append(sid) or True))
-        self.assertEqual(said, ["closed session ab12cd34", "removed worktree app-pln-07",
+        self.assertEqual(said, ["closed session ab12cd34", "removed worktree pln-07",
                                 "kept branch pln-07-small-thing: 1 commit not in dev"])
         self.assertEqual(retired, ["ab12cd34"])
         self.assertFalse(self.path.exists())
@@ -1629,7 +1672,7 @@ class Tidy(unittest.TestCase):
     def test_a_deleted_story_with_no_commits_loses_its_branch_too(self):
         git(self.path, "reset", "-q", "--hard", "HEAD~1")
         said = pickup.discard(self.store, "PLN-07", self.tile, sessions=pickup.Sessions(retire=lambda sid: False))
-        self.assertEqual(said, ["removed worktree app-pln-07", "deleted branch pln-07-small-thing"])
+        self.assertEqual(said, ["removed worktree pln-07", "deleted branch pln-07-small-thing"])
         self.assertFalse(self.has_branch())
 
     def test_a_deleted_tile_that_was_never_picked_up_touches_nothing(self):
@@ -2050,7 +2093,7 @@ class Base(unittest.TestCase):
         git(self.app, "merge", "-q", "--ff-only", name)
         git(self.app, "switch", "-q", "dev")
         tile = (f"- [x] PLN-07 **Small thing.**\n  Base: feature-x\n  Claude session `ab12cd34`: `claude attach ab12cd34`. "
-                f"Branch `{name}`, worktree `{path.name}`. Model `opus`. Started {DAY}.")
+                f"Branch `{name}`, worktree `{pickup.worktree_label(self.store, path)}`. Model `opus`. Started {DAY}.")
         self.assertEqual(serve.unmerged_done(self.store, "## Done\n\n" + tile + "\n"), {})  # in feature-x, though not in dev
         self.assertIn(name, serve.unmerged_done(self.store, "## Done\n\n" + tile.replace("  Base: feature-x\n", "") + "\n")["PLN-07"])
         trunks = []

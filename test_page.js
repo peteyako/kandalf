@@ -725,6 +725,28 @@ test("the settings panel shows each setting with its default, marks the changed 
   assert.match(page.settingsHTML({ ...SETTINGS_VIEW, problem: "board.json doesn't parse" }), /doesn&#39;t parse|doesn't parse/);
 });
 
+test("a text setting with suggestions gets its own pick list, with examples for where worktrees go", () => {
+  const view = { ...SETTINGS_VIEW,
+    effective: { ...SETTINGS_VIEW.effective, worktree: "{app}/.worktrees/{key}" },
+    defaults: { ...SETTINGS_VIEW.defaults, worktree: "{app}/.worktrees/{key}" },
+    fields: { ...SETTINGS_VIEW.fields, worktree: { kind: "text", section: "Git and commits", label: "Worktrees" } },
+    readonly: { ...SETTINGS_VIEW.readonly, app: "/x/flycogo-back-end" } };
+  const out = page.settingsHTML(view);
+  assert.doesNotMatch(out, /<datalist/);  // a datalist shows only what matches the field, so a filled field showed nothing
+  const picks = k => out.match(new RegExp(`<div class="spicks" id="picks-${k}"[\\s\\S]*?</div>`))[0];
+  assert.match(out, /data-pick="worktree"/);
+  const wt = picks("worktree");
+  assert.match(wt, /popover/);
+  for (const [value, example] of [["{app}/.worktrees/{key}", "flycogo-back-end/.worktrees/pln-12"], ["{app}-{key}", "flycogo-back-end-pln-12"], ["worktrees/{app}-{key}", "worktrees/flycogo-back-end-pln-12"]]) {
+    assert.ok(wt.includes(`data-value="${value}"`), value);
+    assert.ok(wt.includes(example), example);
+  }
+  assert.match(wt, /Inside the project/);
+  assert.match(wt, /Beside the project/);
+  assert.match(picks("model"), /data-value="opus"[\s\S]*data-value="sonnet"/);  // the agent's models
+  assert.doesNotMatch(out, /data-pick="trunk"/);  // no branches known: nothing to pick from
+});
+
 test("every theme has a dark palette and a dark accent for each of its accents", () => {
   const src = html.match(/const BOARD_THEMES = (\{[\s\S]*?\n\});/)[1];
   const themes = new Function(`return ${src}`)();

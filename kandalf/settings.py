@@ -39,6 +39,12 @@ EDITABLE = {
     "trunk": {"kind": "text", "section": "Git and commits", "label": "Trunk",
               "help": "The app branch stories are cut from and merged into. A tile's Base: line picks another branch "
                       "for its story."},
+    "worktree": {"kind": "text", "section": "Git and commits", "label": "Worktrees",
+                 "help": "Where a story's worktree goes: \"worktree\" in the store's board.json, a path from the folder "
+                         "the app is in. {app} is the app folder's name, {key} the tile's key (pln-12; {KEY} for PLN-12). "
+                         "{app}/.worktrees/{key} (the default) keeps them inside the app; {app}-{key} puts them beside it; "
+                         "../wt/{key} goes one folder up. It needs {key} and may climb one folder at most. "
+                         "Stories already picked up keep theirs."},
     "tidy": {"kind": "bool", "section": "Git and commits", "label": "Tidy",
              "help": "When a story is archived, remove its worktree, feature branch and session, but only if nothing "
                      "would be lost (the branch is merged and nothing is uncommitted)."},
@@ -61,7 +67,6 @@ READONLY_HELP = {
     "link": "The folder name the store is linked into each repo by (docs/<link>).",
     "pickupColumn": "The column whose tiles are picked up. Unset, any column named like In flight.",
     "branch": "The pattern for a story's feature branch: {key} is the tile's key, {slug} its title.",
-    "worktree": "The pattern for a story's worktree folder, next to the app: {app} is the app folder's name.",
     "hooks": "Whether kandalf serve adds the board's Claude Code hooks to the store.",
 }
 
@@ -73,13 +78,13 @@ class SettingsError(Exception):
 def _effective(store) -> dict:
     return {"pickup": store.pickup, "agent": store.agent, "model": store.model, "permission": store.permission,
             "parallel": store.parallel, "sessions": store.sessions, "fullSuiteOnMerge": store.full_suite_on_merge,
-            "trunk": store.trunk, "tidy": store.tidy, "push": store.push, "commitDelay": store.commit_delay()}
+            "trunk": store.trunk, "worktree": store.worktree_pattern, "tidy": store.tidy, "push": store.push, "commitDelay": store.commit_delay()}
 
 
 def _defaults(store) -> dict:
     return {"pickup": False, "agent": "claude", "model": agent.default_model(), "permission": "auto",
             "parallel": 1, "sessions": 2, "fullSuiteOnMerge": False, "trunk": stores.default_trunk(store.app),
-            "tidy": True, "push": True, "commitDelay": 300}
+            "worktree": stores.WORKTREE, "tidy": True, "push": True, "commitDelay": 300}
 
 
 def _read(store) -> dict:
@@ -119,7 +124,7 @@ def view(store) -> dict:
                      "app": str(store.app) if store.app else None,
                      "repos": [{"name": r.name, "trunk": r.trunk} for r in store.repos],
                      "link": store.link, "pickupColumn": store.pickup_column, "branch": store.branch_pattern,
-                     "worktree": store.worktree_pattern, "hooks": store.hooks},
+                     "hooks": store.hooks},
         "readonlyHelp": READONLY_HELP,
         "problem": store.config_problem or unread or (pickup.why_off(store) if store.pickup else None),
     }
@@ -152,6 +157,10 @@ def _check(store, key: str, value):
                 raise SettingsError("Trunk must be a branch name: letters, digits and . _ / -")
             if store.app and not stores.has_branch(store.app, value):
                 raise SettingsError(f'Trunk "{value}" is not a branch of {store.app.name}.')
+        if key == "worktree":
+            why = pickup.pattern_problem("worktree", value)
+            if why:
+                raise SettingsError(f"Worktrees ({value}) {why}")
 
 
 def apply(store, changes: dict) -> list:

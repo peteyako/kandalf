@@ -147,6 +147,25 @@ class Settings(unittest.TestCase):
         settings.apply(s, {"trunk": "dev"})
         self.assertEqual(self.on_disk()["trunk"], "dev")
 
+    def test_where_worktrees_go_is_a_setting_that_defaults_to_inside_the_app(self):
+        v = settings.view(self.store({}))
+        self.assertEqual((v["defaults"]["worktree"], v["effective"]["worktree"]), ("{app}/.worktrees/{key}",) * 2)
+        self.assertNotIn("worktree", v["readonly"])
+        s = self.store({})
+        settings.apply(s, {"worktree": "{app}-{key}"})
+        self.assertEqual((self.on_disk()["worktree"], s.worktree_pattern), ("{app}-{key}", "{app}-{key}"))
+        settings.apply(s, {"worktree": None})
+        self.assertNotIn("worktree", self.on_disk())
+        self.assertEqual(s.worktree_pattern, "{app}/.worktrees/{key}")
+
+    def test_a_worktree_place_pickup_could_not_use_is_refused(self):
+        s = self.store({})
+        for bad in ("{app}-x", "/tmp/{key}", "../../{key}", "~/{key}", "", 3):
+            with self.subTest(bad=bad):
+                with self.assertRaises(settings.SettingsError):
+                    settings.apply(s, {"worktree": bad})
+                self.assertNotIn("worktree", self.on_disk())
+
     def test_switching_the_agent_is_refused_while_a_session_is_live(self):
         s = self.store({"pickup": True})
         pickup.save(s, {"inflight": [], "jobs": [{"key": "PLN-01", "state": "started", "id": "s1"}]})

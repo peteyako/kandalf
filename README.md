@@ -45,7 +45,7 @@ kandalf serve               # the board, on http://127.0.0.1:7788 (or the port i
 Pickup is off until you turn it on. Once it's on, each story that lands in In flight gets a background agent session in your repo, working in its own worktree and branch. By default the session edits files and runs commands without asking (Claude Code's auto mode decides what's allowed), and it's told to stop before merging or pushing.
 
 1. **Turn it on.** Answer yes when `kandalf init` asks, or set `"pickup": true` in the store's `board.json`. A running `kandalf serve` notices within a few seconds, with no restart: turned on, it starts on the tiles already in flight; turned off, it leaves running sessions alone.
-2. **Trust the repo.** Run the agent (`claude`, `copilot` for a Copilot store, or `agy` for an Antigravity store, signed in) once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers its worktrees, which a store made by `kandalf init` keeps under `.worktrees/` (gitignored). A story that works in several repos (`Repos:` on its tile) needs each of them trusted.
+2. **Trust the repo.** Run the agent (`claude`, `copilot` for a Copilot store, or `agy` for an Antigravity store, signed in) once in your repo and accept its trust prompt. Claude Code won't start a background session in a repo it doesn't trust, and the tile will say so. Trusting the repo covers its worktrees, which pickup keeps under `.worktrees/` inside it (kept out of git: `kandalf init` adds it to `.gitignore`, and otherwise pickup adds it to the repo's `info/exclude`). A story that works in several repos (`Repos:` on its tile) needs each of them trusted.
 3. **Check.** `kandalf doctor` lists what works and what's missing.
 
 Pickup needs [Claude Code](https://claude.com/claude-code) (the default), the [GitHub Copilot CLI](https://github.com/features/copilot/cli), or the [Antigravity CLI](https://antigravity.google/docs) (`agy`). See [Platforms and requirements](#platforms-and-requirements).
@@ -115,7 +115,7 @@ The `permission` setting maps onto Antigravity's flags:
 
 While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a keyed tile that lands in the In flight column of `plans.md` is picked up, however it got there: dragged on the board, edited in by hand, or moved by an agent. The server:
 
-1. **Cuts a worktree** on a new branch from the trunk, or from the branch the tile's `Base:` line names. For PLN-74 in a store made by `kandalf init`, that's worktree `myapp/.worktrees/pln-74` on branch `pln-74-colour-tokens`. The default, with no `"worktree"` setting, is `myapp-pln-74`, beside the app. `"branch"` and `"worktree"` in `board.json` change the names. The store is linked in at `docs/plans` there too.
+1. **Cuts a worktree** on a new branch from the trunk, or from the branch the tile's `Base:` line names. For PLN-74, that's worktree `myapp/.worktrees/pln-74` on branch `pln-74-colour-tokens`. `"branch"` and `"worktree"` in `board.json` change the names; `"worktree": "{app}-{key}"` puts it beside the app (`myapp-pln-74`), the default before. The store is linked in at `docs/plans` there too.
 2. **Starts a background session** in it, given the tile and told to follow the repo's rules, tick sub-tasks with their commits as they land, keep a `Handoff:` line on the tile, and stop before merging or pushing.
 3. **Writes the session, branch and worktree onto the tile.**
 
@@ -129,7 +129,7 @@ If a session can't be started, the tile shows **not started** with the reason, a
 
 The board writes the session onto the tile as one line:
 
-``Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp-pln-74`. Model `opus`. Started 2026-11-18.``
+``Claude session `ab12cd34`: `kandalf attach ab12cd34`. Branch `pln-74-colour-tokens`, worktree `myapp/.worktrees/pln-74`. Model `opus`. Started 2026-11-18.``
 
 A Copilot store's line starts ``Copilot session``, an Antigravity store's ``Antigravity session``. A story in several repos names each worktree: ``Branch `pln-74-colour-tokens`, worktrees api `api/.worktrees/pln-74`, web `web/.worktrees/pln-74`.``
 
@@ -261,7 +261,7 @@ Only the board applies links and sub-story moves. A tile moved by hand, in an ed
 
 ## Settings
 
-A store's `board.json` is optional; every key has a default. You can edit it by hand or with the ⚙ button in the board's header, which covers pickup, agent, model, permission mode, stories at once, sessions, full suite on merge, trunk, tidy, push and commit delay. Each setting shows its default and, once `board.json` sets it, a mark and a Reset button. Save writes only what you changed (Reset removes the key), and pickup follows without a restart. The store's other facts (name, key, port, folder, repos) are listed read-only; set those in `board.json`.
+A store's `board.json` is optional; every key has a default. You can edit it by hand or with the ⚙ button in the board's header, which covers pickup, agent, model, permission mode, stories at once, sessions, full suite on merge, trunk, worktrees, tidy, push and commit delay. Each setting shows its default and, once `board.json` sets it, a mark and a Reset button. Save writes only what you changed (Reset removes the key), and pickup follows without a restart. The store's other facts (name, key, port, folder, repos, branch pattern) are listed read-only; set those in `board.json`.
 
 | Key | Default | What it does |
 |---|---|---|
@@ -281,7 +281,7 @@ A store's `board.json` is optional; every key has a default. You can edit it by 
 | `sessions` | `2` | How many of a master's sub-stories have a session at work at once. A master's `Sessions:` line overrides it. |
 | `fullSuiteOnMerge` | `false` | `true`: a merge from the board runs the full suite on the trunk before the push (for a sub-story, only when it's the last of its master's), unless the tile has a `Tests: affected` line. `false`: only when the tile has a `Tests: full` line. Either way, sessions run only the tests for what they change. |
 | `branch` | `{key}-{slug}` | A session's feature branch. `{key}` is the tile's key in lower case, `{KEY}` as written, `{slug}` its title, `{app}` the app folder's name. Must contain `{key}` or `{KEY}`. |
-| `worktree` | `{app}-{key}` | Its worktree, relative to the folder the app is in, with the same placeholders. Must contain `{key}` or `{KEY}`, and may climb at most one folder (`../`). `kandalf init` sets `{app}/.worktrees/{key}`, inside the app. |
+| `worktree` | `{app}/.worktrees/{key}` | Its worktree, relative to the folder the app is in, with the same placeholders. Must contain `{key}` or `{KEY}`, and may climb at most one folder (`../`). The default is inside the app; when the app doesn't ignore that folder yet, pickup adds it to the app's `info/exclude`. `{app}-{key}` puts it beside the app. |
 | `hooks` | `true` | The board's hooks (see [Hooks](#hooks)). `false`, set by `kandalf init --no-hooks`, stops `kandalf serve` adding them. |
 | `tidy` | `true` | Archiving a story removes its worktree, branch and session, when nothing would be lost. |
 | `push` | `true` | The commit queue pushes each commit to the store's upstream, when it has one. |

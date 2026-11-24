@@ -647,6 +647,17 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 #settingsDlg .srow .sdef { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
 #settingsDlg .srow .sctl { display: flex; align-items: center; min-width: 0; }
 #settingsDlg .srow .sctl input[type=text], #settingsDlg .srow .sctl select { width: 100%; box-sizing: border-box; }
+#settingsDlg .scombo { display: flex; width: 100%; min-width: 0; }
+#settingsDlg .scombo input[type=text] { flex: 1; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+#settingsDlg .scombo .spick { flex: none; padding: 0 7px; border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; font-size: 11px; line-height: 1; }
+#settingsDlg .spicks { position: fixed; inset: auto; margin: 0; padding: 4px; box-sizing: border-box; max-height: 260px; overflow-y: auto;
+  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+#settingsDlg .spicks [role=option] { display: block; width: 100%; text-align: left; padding: 5px 8px; border: 0; border-radius: 5px; background: none; color: inherit; cursor: pointer; }
+#settingsDlg .spicks [role=option]:hover, #settingsDlg .spicks [role=option]:focus-visible { background: var(--accent-soft); outline: none; }
+#settingsDlg .spicks [aria-selected="true"] .sval { color: var(--accent); }
+#settingsDlg .spicks .sval { display: block; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+#settingsDlg .spicks .slab { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+#settingsDlg .spicks .sex { display: block; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 #settingsDlg .srow .sctl input[type=number] { width: 84px; box-sizing: border-box; }
 #settingsDlg .srow .sctl input[type=checkbox] { margin: 0; }
 #settingsDlg .srow button[data-reset] { justify-self: end; padding: 2px 8px; font-size: 12px; }
@@ -967,7 +978,9 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root #stats button { flex: 1 1 130px; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 7px 10px; white-space: nowrap; cursor: pointer; border-bottom: 3px solid var(--stat-c); }
 :root #stats button b { font-size: 22px; line-height: 1; color: var(--stat-c); font-variant-numeric: tabular-nums; }
 :root #stats button.zero { opacity: .5; }
-:root #stats button.on { outline: 2px solid var(--stat-c); outline-offset: 1px; }
+:root #stats button.on { background: var(--stat-c); border-color: var(--stat-c); color: var(--card); opacity: 1; box-shadow: inset 0 2px 5px rgba(0,0,0,.25); }  /* pressed: the board shows only these */
+:root #stats button.on b { color: var(--card); }
+:root #stats:has(button.on) button:not(.on) { opacity: .45; }
 :root[data-theme="classic"] #stats [data-stat=work] { --stat-c: var(--story); }
 :root[data-theme="classic"] #stats [data-stat=need] { --stat-c: var(--p2); }
 :root[data-theme="classic"] #stats [data-stat=ready] { --stat-c: var(--done); }
@@ -1884,6 +1897,19 @@ function scrollPlaces(root) {
 function helpMark(text) {
   return text ? `<span class="shelp" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">ⓘ</span>` : "";
 }
+// What a text setting's pick list offers, as [{value, label, example}]: the agent's models, the app's
+// branches, or a few places for worktrees, each with where PLN-12's would go in this app.
+function settingPicks(k, view) {
+  if (k === "model") return MODELS.map(value => ({ value }));
+  if (k === "trunk") return STORE_BRANCHES.map(value => ({ value }));
+  if (k !== "worktree") return [];
+  const app = String(view.readonly?.app || "myapp").split("/").filter(Boolean).pop(), key = `${KEY.toLowerCase()}-12`;
+  const at = pattern => pattern.replaceAll("{app}", app).replaceAll("{key}", key).replaceAll("{KEY}", key.toUpperCase());
+  return [["{app}/.worktrees/{key}", "Inside the project, under .worktrees/ (the default)"],
+          ["{app}-{key}", "Beside the project"],
+          ["worktrees/{app}-{key}", "In a worktrees/ folder beside the project"]]
+    .map(([value, label]) => ({ value, label, example: at(value) }));
+}
 // The settings panel: board.json's editable settings, one row each (settings.py: EDITABLE).
 function settingsHTML(view) {
   const set = view.set || {}, sections = [];
@@ -1900,8 +1926,11 @@ function settingsHTML(view) {
       const all = f.choices.includes(v) ? f.choices : [...f.choices, v];
       return `<select ${n}>${all.map(c => `<option${c === v ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
     }
-    const list = k === "model" ? MODELS : k === "trunk" ? STORE_BRANCHES : [];
-    return `<input type="text" ${n} value="${esc(String(v))}" autocomplete="off" list="settings-${esc(k)}"><datalist id="settings-${esc(k)}">${list.map(m => `<option value="${esc(m)}">`).join("")}</datalist>`;
+    const box = `<input type="text" ${n} value="${esc(String(v))}" autocomplete="off" spellcheck="false">`, list = settingPicks(k, view);
+    if (!list.length) return box;
+    const pick = o => `<button type="button" role="option" data-value="${esc(o.value)}"${o.value === v ? ' aria-selected="true"' : ""}><span class="sval">${esc(o.value)}</span>${o.label ? `<span class="slab">${esc(o.label)}</span>` : ""}${o.example ? `<span class="sex">${esc(o.example)}</span>` : ""}</button>`;
+    return `<span class="scombo">${box}<button type="button" class="spick" data-pick="${esc(k)}" aria-haspopup="listbox" aria-label="Choose ${esc(f.label)}" title="Choose">▾</button></span>`
+      + `<div class="spicks" id="picks-${esc(k)}" popover role="listbox" aria-label="${esc(f.label)}">${list.map(pick).join("")}</div>`;
   };
   const shown = x => x === true ? "on" : x === false ? "off" : String(x);
   const row = k => {
@@ -1915,7 +1944,7 @@ function settingsHTML(view) {
   const ro = view.readonly || {}, roHelp = view.readonlyHelp || {};
   const facts = [["name", "Name", ro.name], ["key", "Key", ro.key], ["port", "Port", ro.port], ["folder", "Folder", ro.folder], ["app", "App", ro.app],
     ["repos", "Repos", (ro.repos || []).map(r => r.name + (r.trunk ? ` (${r.trunk})` : "")).join(", ")], ["link", "Link", ro.link],
-    ["pickupColumn", "Pickup column", ro.pickupColumn], ["branch", "Branch", ro.branch], ["worktree", "Worktree", ro.worktree], ["hooks", "Hooks", shown(ro.hooks)]]
+    ["pickupColumn", "Pickup column", ro.pickupColumn], ["branch", "Branch", ro.branch], ["hooks", "Hooks", shown(ro.hooks)]]
     .filter(([, , v]) => v !== undefined && v !== null && v !== "");
   return (view.problem ? `<p class="snote problem">${esc(view.problem)}</p>` : "")
     + sections.map(sec => `<section><h4>${esc(sec.name)}</h4>${sec.keys.map(row).join("")}</section>`).join("")
@@ -2645,6 +2674,54 @@ async function saveSettings(changes = settingsChanges(settingsView, $("#settings
 $("#settingsBtn").addEventListener("click", openSettings);
 $("#settingsCancel").addEventListener("click", () => settingsDlg.close());
 $("#settingsForm").addEventListener("submit", e => { e.preventDefault(); saveSettings(); });  // Enter in a field saves
+// A text setting's pick list (settingPicks) opens under its field, in the top layer so the
+// panel's scrolling doesn't clip it, and follows the field as the panel scrolls; it closes on a
+// pick, a click elsewhere or Escape.
+const picksBox = list => $("#settingsForm").querySelector(`[name="${list.id.slice("picks-".length)}"]`);  // the field a pick list fills
+function placePicks(list) {
+  const r = picksBox(list).closest(".scombo").getBoundingClientRect();
+  const width = Math.max(r.width, 300), below = innerHeight - r.bottom - 12;
+  list.style.width = `${width}px`;
+  list.style.left = `${Math.max(8, Math.min(r.left, innerWidth - width - 8))}px`;
+  list.style.top = `${list.offsetHeight > below && r.top > below ? Math.max(8, r.top - 4 - list.offsetHeight) : r.bottom + 4}px`;
+}
+function openPicks(k) {
+  const list = $(`#picks-${CSS.escape(k)}`);
+  list.showPopover();
+  placePicks(list);
+  (list.querySelector('[aria-selected="true"]') || list.querySelector("[role=option]")).focus({ preventScroll: true });
+}
+$("#settingsBody").addEventListener("click", e => {
+  const pick = e.target.closest("[data-pick]"), option = e.target.closest(".spicks [role=option]");
+  if (pick) {  // a click on ▾ while its list is open closes it (the press already has, as a click outside it)
+    const list = $(`#picks-${CSS.escape(pick.dataset.pick)}`);
+    if (pick.dataset.wasOpen) { delete pick.dataset.wasOpen; if (list.matches(":popover-open")) list.hidePopover(); } else openPicks(pick.dataset.pick);
+    return;
+  }
+  if (!option) return;
+  const list = option.closest(".spicks"), box = picksBox(list);
+  box.value = option.dataset.value;
+  box.dispatchEvent(new Event("input", { bubbles: true }));  // as if typed: a pending Reset is dropped
+  list.hidePopover();
+  box.focus({ preventScroll: true });
+});
+$("#settingsBody").addEventListener("keydown", e => {
+  const list = e.target.closest(".spicks");
+  if (list && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault();
+    const all = [...list.querySelectorAll("[role=option]")], i = all.indexOf(e.target);
+    all[(i + (e.key === "ArrowDown" ? 1 : all.length - 1)) % all.length].focus();
+  } else if (e.key === "ArrowDown" && e.altKey && e.target.closest(".scombo")) {
+    e.preventDefault();
+    openPicks(e.target.closest(".scombo").querySelector("input").name);
+  }
+});
+$("#settingsBody").addEventListener("pointerdown", e => {  // before the press closes an open list, note that it was open
+  const pick = e.target.closest("[data-pick]");
+  if (pick) pick.dataset.wasOpen = $(`#picks-${CSS.escape(pick.dataset.pick)}`).matches(":popover-open") ? "1" : "";
+}, true);
+$("#settingsBody").addEventListener("scroll", () => $("#settingsBody").querySelectorAll(".spicks:popover-open").forEach(placePicks));
+settingsDlg.addEventListener("close", () => render());  // the board waited while the panel was open
 $("#settingsBody").addEventListener("click", e => {
   const b = e.target.closest("[data-reset]");
   if (!b) return;
@@ -3058,7 +3135,7 @@ showThemePick();
 
 // Pick up edits made elsewhere (an editor, another Claude session) while idle.
 setInterval(async () => {
-  if (!file || dirty || saving || dragging || editing || docEditing || askDlg.open || document.hidden) return;
+  if (!file || dirty || saving || dragging || editing || docEditing || askDlg.open || settingsDlg.open || document.hidden) return;
   try {
     const j = await (await fetch(`/api/board?file=${encodeURIComponent(file)}`)).json();
     if (j.mtime !== mtime && !dirty && !dragging && !editing && !askDlg.open) { adopt(j); render(); setStatus("Updated from disk " + new Date().toLocaleTimeString()); }
@@ -3196,7 +3273,7 @@ async function pollPickups() {
     else if (job.state === "idle" && job.waiting) flash(`${AGENT} is waiting for your input on ${job.key}: ${WAITING[job.waiting]}. Open it with: ${attachCmd(job.id)}`);
   }
   if (dragging || editing) return;
-  if (changed) render();
+  if (changed && !settingsDlg.open) render();  // not under the open panel: a redraw closes its dropdowns; closing it redraws
   for (const job of pickups.jobs) {
     if (job.state !== "waiting" || !job.behind || askedPickups.has(pickupId(job))) continue;
     askedPickups.add(pickupId(job));

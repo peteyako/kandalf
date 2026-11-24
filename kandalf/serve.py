@@ -1050,7 +1050,7 @@ def main(args=None):
     if why:
         print(why, flush=True)
     else:
-        print(f"Tiles that land in In flight go to {agent.label()} ({st.permission} mode), in worktrees beside {st.app}", flush=True)
+        print(f"Tiles that land in In flight go to {agent.label()} ({st.permission} mode), in worktrees at {pickup.worktrees_at(st)}", flush=True)
     if should_open(args.no_open):
         webbrowser.open(f"http://127.0.0.1:{port}/")
     try:

@@ -50,9 +50,11 @@ board.json:
       "branch": "{key}-{slug}",      a session's feature branch (the default): {key} is the tile's
                                      key in lower case, {KEY} as written, {slug} its title,
                                      {app} the app folder's name; e.g. "feat/{key}-{slug}"
-      "worktree": "{app}-{key}",     its worktree, relative to the folder the app is in (the
-                                     default), with the same placeholders; e.g. "wt/{app}-{key}".
-                                     Both need {key}; the worktree climbs at most one folder (../)
+      "worktree": "{app}/.worktrees/{key}",  its worktree, relative to the folder the app is in,
+                                     with the same placeholders; the default is inside the app,
+                                     kept out of its git status (pickup.keep_out); "{app}-{key}"
+                                     puts it beside the app. Both need {key}; the worktree climbs
+                                     at most one folder (../)
       "hooks": true,                 the board's hooks: kandalf serve adds them to a store without them
                                      (serve.ensure_hooks); false (kandalf init --no-hooks) leaves them out
       "tidy": true,                  archiving a story removes its worktree, feature branch and
@@ -87,6 +89,7 @@ from . import agent
 
 CONFIG = "board.json"
 HOOKS_FILE = ".claude/settings.json"  # the board's hooks, in the store
+WORKTREE = "{app}/.worktrees/{key}"  # a story's worktree, inside its repo, unless board.json says otherwise
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -191,7 +194,7 @@ class Store:
         self.parallel = max(1, int(cfg.get("parallel") or 1))  # tiles on their own with a session at work at once
         self.pickup_column = (cfg.get("pickupColumn") or "").strip()  # "": any In flight column
         self.branch_pattern = cfg.get("branch") or "{key}-{slug}"
-        self.worktree_pattern = cfg.get("worktree") or "{app}-{key}"
+        self.worktree_pattern = cfg.get("worktree") or WORKTREE
         self._commit_delay = 300 if cfg.get("commitDelay") is None else int(cfg["commitDelay"])
         self.tidy = bool(cfg.get("tidy", True))
         self.hooks = bool(cfg.get("hooks", True))  # false: kandalf init --no-hooks, and serve leaves them out

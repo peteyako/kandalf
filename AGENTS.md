@@ -25,6 +25,11 @@ This file is for any coding agent working on kandalf; `CLAUDE.md` imports it for
   `docs/plans`. `store.py` defines both. Tests build throwaway stores in temp dirs; never point
   them at a real one.
 
+## Worktrees
+
+Work on kandalf in a git worktree under `.worktrees/` (gitignored), not beside the checkout:
+`git worktree add .worktrees/<topic> -b <branch> dev`.
+
 ## Tests
 
 ```bash
