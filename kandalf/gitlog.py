@@ -218,8 +218,10 @@ def ensure_committer(store, q: dict):
         q["pid"] = p.pid
 
 
-def record(store, paths, message: str):
-    """Queue a change for the next commit and make sure a committer is waiting for it."""
+def record(store, paths, message: str, subject: bool = False):
+    """Queue a change for the next commit and make sure a committer is waiting for it. subject:
+    message is that commit's subject, in place of the one worked out from the net change when it
+    is made (the move to Plan and Build names itself)."""
     root = store.root
     if not root:
         return
@@ -227,13 +229,16 @@ def record(store, paths, message: str):
     with queue(root) as q:
         q["paths"] = sorted(set(q["paths"]) | set(rels))
         q["steps"].append(f"{time.strftime('%H:%M:%S')} {message}")
+        if subject:
+            q["subject"] = message
         q["last"] = time.time()
         ensure_committer(store, q)
 
 
 def dirty_board_files(store) -> list:
-    """Uncommitted .md files in the board's places: the boards, active/ and archive/.
-    A staged rename (an archive's git mv) gives both its paths."""
+    """Uncommitted .md files in the board's places: the boards, active/ and archive/, and an old
+    board's name the move to Plan and Build renamed away. A staged rename (an archive's git mv)
+    gives both its paths."""
     root = store.root
     out = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "-z", "--untracked-files=all"],
                          capture_output=True, text=True).stdout.split("\0")
@@ -249,18 +254,28 @@ def dirty_board_files(store) -> list:
             i += 1
     def ours(r):
         s = store.rel(r)
+        moved = s in (stores.OLD_BUILD, stores.OLD_PLAN) and not (root / r).exists()  # a board renamed by the move
         return s is not None and r.endswith(".md") and \
-            (s in store.family or (s.startswith(("active/", "archive/")) and s.count("/") == 1))
+            (s in store.family or moved or (s.startswith(("active/", "archive/")) and s.count("/") == 1))
     return [r for r in rels if ours(r)]
 
 
 def resume(store):
     """On board server start: pick up changes queued before a shutdown, crash or reboot,
-    and any board files changed on disk while nothing was watching. The timer runs from
+    and any board files changed on disk while nothing was watching, but for the renames of a
+    store still to be moved to Plan and Build (renaming.due): an old board gone, a new one not yet
+    committed, which that move commits. The timer runs from
     the latest change (a file's last write, for the ones found on disk), so a change older
     than the store's commit_delay() commits and pushes at once and a newer one waits out the rest."""
     root = store.root
     found = dirty_board_files(store)
+    from . import renaming  # renaming imports this module
+    if renaming.due(store):  # a move still to finish commits its renames itself, under its own subject
+        def renamed(r):
+            s = store.rel(r)
+            return (s in (stores.OLD_BUILD, stores.OLD_PLAN) and not (root / r).exists()) or \
+                (s in (stores.BUILD, stores.PLAN) and not head_text(root, r))
+        found = [r for r in found if not renamed(r)]
     with queue(root) as q:
         new = [r for r in found if r not in q["paths"]]
         if new:
@@ -277,7 +292,7 @@ def flush(store, q: dict) -> bool:
     root = store.root
     if not q["paths"]:
         return False
-    subject = summarize(store, q["paths"])
+    subject = q.pop("subject", None) or summarize(store, q["paths"])
     body = "\n".join(q["steps"])
     made = commit(root, q["paths"], f"{subject}\n\n{body}" if len(q["steps"]) > 1 else subject)
     q["paths"], q["steps"] = [], []

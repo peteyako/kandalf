@@ -57,6 +57,7 @@ from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
 from . import drafts  # noqa: E402  a decision's options, drafted by a session
 from . import jobs as ledger  # noqa: E402  board-pickup.json, the record of each pickup job
+from . import renaming  # noqa: E402  the move from plans.md and backlog.md to build.md and plan.md
 from . import store as stores  # noqa: E402  which store, and its settings
 from . import tiles as reader  # noqa: E402  what the board's markdown says
 from . import stamp, __version__  # noqa: E402  which kandalf this is, for the page's corner
@@ -343,10 +344,24 @@ PICKUP_RECHECK = 20  # seconds between looks at the sessions while a job waits o
 DRAFTS_ASKED = threading.Event()
 
 
+_listed = {"by": None, "at": 0.0, "sessions": None}  # the last listing recent_sessions made, by which adapter
+
+
+def recent_sessions():
+    """The sessions as SESSIONS lists them, listed again only when the last listing is more than
+    PICKUP_RECHECK seconds old: what the page's notice about the move goes by, so the page's polls
+    don't run the agent's CLI each time. The move itself lists them afresh (watch_move_turn)."""
+    if _listed["by"] is not SESSIONS or time.time() - _listed["at"] > PICKUP_RECHECK:
+        _listed.update(by=SESSIONS, at=time.time(), sessions=SESSIONS.sessions())
+    return _listed["sessions"]
+
+
 def pickup_reply(store) -> dict:
-    """What /api/pickup and /api/draft answer: pickup.summary, with the drafts (drafts.summary)
-    and why Draft options can't run (drafts.why_not, or None)."""
-    return {**pickup.summary(store), "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store)}
+    """What /api/pickup and /api/draft answer: pickup.summary (its notice about the move going by
+    recent_sessions), with the drafts (drafts.summary) and why Draft options can't run
+    (drafts.why_not, or None)."""
+    return {**pickup.summary(store, sessions=pickup.Sessions(sessions=recent_sessions)),
+            "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store)}
 
 
 def write_options(store, key: str, block: list, subject: str):
@@ -651,16 +666,55 @@ def watch_drafts_turn(store, ctx: dict):
         ctx["d_said"] = look_drafts(store, ctx["d_said"])
 
 
+def old_board_mtimes(store) -> tuple:
+    """The mtimes of the old names' two board files (plans.md, backlog.md), None for one not there."""
+    def mtime_of(path):
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return None
+    return tuple(mtime_of(store.dir / n) for n in renaming.NEW)
+
+
+def watch_move_turn(store, ctx: dict):
+    """One turn of the move to Plan and Build: when the store is due (renaming.due, the turn's one
+    check while it isn't), and neither old board changed since the turn before (the settle rule: a
+    file being written is left to finish), renaming.move, its lines on the console. A move that
+    waits (blocked) or fails is tried again PICKUP_RECHECK seconds later, so a session at work
+    isn't listed every turn; a failure is said once until it changes. The server's own writes take
+    no lock to wait for: the settle rule covers them. ctx carries m_before (the mtimes a turn ago),
+    m_next (when to try again) and m_error (the failure last said)."""
+    try:
+        if not renaming.due(store):
+            return
+        at = old_board_mtimes(store)
+        settled, ctx["m_before"] = at == ctx.get("m_before"), at
+        if not settled or time.time() < ctx.get("m_next", 0.0):
+            return
+        for line in renaming.move(store, sessions=SESSIONS):
+            pickup.log(line)
+        ctx["m_error"] = None
+        if renaming.due(store):  # it waits
+            ctx["m_next"] = time.time() + PICKUP_RECHECK
+    except Exception as e:  # a failed move must not end the watch
+        if str(e) != ctx.get("m_error"):
+            pickup.log(f"the move to Plan and Build failed: {e}")
+        ctx["m_error"], ctx["m_next"] = str(e), time.time() + PICKUP_RECHECK
+
+
 def watch_pickups(store, every: float = 2.0):
-    """Forever, from the server's start: say what is in flight, adopt what has no session when
-    pickup can run, look at the drafts once, then a watch_drafts_turn and a watch_turn every few
-    seconds, so pickup follows board.json."""
+    """Forever, from the server's start: move the store to Plan and Build if it is due and free
+    to, say what is in flight, adopt what has no session when pickup can run, look at the drafts
+    once, then a watch_move_turn, a watch_drafts_turn and a watch_turn every few seconds, so
+    pickup follows board.json."""
+    moving = {"m_before": old_board_mtimes(store)}  # at the start nothing of the server's is being written
+    watch_move_turn(store, moving)
     report_in_flight(store)
     why = pickup.why_off(store) if store.pickup else None  # main has said it
     if store.pickup and not why:
         adopt_in_flight(store)
     ctx = {"seen": None, "last": 0.0, "told": set(), "before": None, "was_on": store.pickup, "why": why,
-           "mtime": store.config_mtime, "problem": store.config_problem}
+           "mtime": store.config_mtime, "problem": store.config_problem, **moving}
     try:  # the drafts' look at the start: drafts left ending are finished, and those whose tiles went are ended
         held = drafts.live(store)
         if held:
@@ -670,6 +724,7 @@ def watch_pickups(store, every: float = 2.0):
     except Exception as e:  # never stop the server for it
         pickup.log(f"the drafts' look at the start failed: {e}")
     while True:
+        watch_move_turn(store, ctx)  # first, so the turns after it read the store as it is now
         try:
             watch_drafts_turn(store, ctx)
         except Exception as e:  # a bad drafts' turn must not end the watch, nor keep pickup's from running
@@ -685,7 +740,8 @@ def pulls(store) -> dict:
     """{board: where from}: a linked tile still on the plan board follows its partner on the
     build board. Never the other way, which would unschedule a tile because its partner changed
     kind."""
-    return {store.build: store.plan}
+    build, plan = store.boards
+    return {build: plan}
 
 # Optional, in the store: {"first": {"KEY-NN": unix seconds}} for tiles filed before the
 # store's own history began (myapp-plans: tiles filed while the board lived in the app).
@@ -982,6 +1038,7 @@ class Handler(BaseHTTPRequestHandler):
             # Only boards go in the picker; plan docs open from the links on their tiles.
             # Not the README, nor, where pickup is on, the sessions' rules (pickup.md).
             hidden = {"readme.md", pickup.RULES_FILE} if self.store.pickup else {"readme.md"}
+            boards = self.store.boards  # the two names from one look, before the files are listed
             files = sorted(p.name for p in self.plans.glob("*.md") if NAME_RE.match(p.name) and p.name.lower() not in hidden)
             if (self.plans / ARCHIVE_LOG).is_file():
                 files.append(ARCHIVE_LOG)
@@ -990,7 +1047,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
                                  "trunk": self.store.trunk, "fullSuiteOnMerge": self.store.full_suite_on_merge, "branches": local_branches(self.store),
                                  "repos": [{"name": r.name, "main": r.main} for r in self.store.repos], "build": BUILD,
-                                 "boards": {"build": self.store.build, "plan": self.store.plan}})
+                                 "boards": dict(zip(("build", "plan"), boards))})
         elif u.path == "/api/log":  # ?key=PLN-01: the last lines of that tile's session log
             view = log_view(self.store, (qs.get("key") or [""])[0])
             self.send_json(200, view) if view else self.send_json(404, {"error": "no session on that tile"})
@@ -1343,6 +1400,19 @@ load(); setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 300
 </script>"""
 
 
+def resume_store(st):
+    """What the server does with a store before it serves it: the move to Plan and Build's step
+    first (watch_move_turn), so a move that stopped part way commits its renames under its own
+    subject, then the commit queue picked up again (gitlog.resume), so changes queued before a
+    restart still get committed. The move is made here only when it needs no listing of the
+    agent's sessions (renaming.held), which can take a while before the port is bound; else it
+    is the watch's first turn's, and resume leaves it the renames of a store part moved."""
+    if not renaming.held(st):
+        watch_move_turn(st, {"m_before": old_board_mtimes(st)})
+    if st.root:
+        gitlog.resume(st)
+
+
 def ensure_hooks(st) -> list:
     """The board's hooks are part of it: a store with an app that lacks them gets them when it
     is served (init.add_hooks: in the store, committed, and in the app), unless its board.json
@@ -1366,8 +1436,7 @@ def main(args=None):
     if not st.dir.is_dir():
         raise SystemExit(f"no such folder: {st.dir}")
     Handler.store = st
-    if st.root:
-        gitlog.resume(st)  # changes queued before a restart still get committed
+    resume_store(st)
     for line in ensure_hooks(st):
         print(line, flush=True)
     why = pickup.why_off(st)  # None: pickup runs

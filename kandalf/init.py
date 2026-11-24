@@ -401,11 +401,13 @@ def header_rules(board: str) -> list:
     return rules
 
 
-def refresh_header(st, write: bool) -> list:
-    """The rules today's plans.md header has that the store's lacks, added to it (only said,
-    unless write), each after the rule it follows in the template. A rule the store already
-    has is never changed, however it is worded; the ones that differ are named."""
-    f = st.dir / "plans.md"
+def refresh_header(st, write: bool, commit: bool = True) -> list:
+    """The rules today's plans.md header has that the store's build board lacks, added to it
+    (only said, unless write), each after the rule it follows in the template. A rule the store
+    already has is never changed, however it is worded; the ones that differ are named. commit
+    False leaves the change for the caller to commit (the move to Plan and Build makes one commit
+    of everything it changes)."""
+    f = st.dir / st.build
     if not f.is_file():
         return []
     text = f.read_text(encoding="utf-8")
@@ -434,7 +436,7 @@ def refresh_header(st, write: bool) -> list:
             ends = {o: i + len(new) if i > at else i for o, i in ends.items()}
             ends[lead] = at + len(new)
         f.write_text("\n".join(lines) + sep + rest, encoding="utf-8")
-        if st.root:
+        if st.root and commit:
             from . import gitlog
             gitlog.commit(st.root, [f], "board: filing rules added to the header")
     for lead, _ in missing:
@@ -442,6 +444,32 @@ def refresh_header(st, write: bool) -> list:
     if differ:
         said.append(f"{f}: left as you have them, though today's wording differs: {', '.join(differ)}")
     return said
+
+
+def header_of(board: str) -> str:
+    """A board file's header: its text up to its first "## " column heading (all of it when it has none)."""
+    found = re.search(r"^## ", board, re.M)
+    return board[:found.start()] if found else board
+
+
+def board_headers(st) -> dict:
+    """{"build": (old, new), "plan": (old, new)}: each board's header (header_of) as the template
+    for the old names writes it for this store, and as the one for the new names does. The
+    templates still carry the old names, so the new header is made from the old: its links
+    relinked (renaming.relink), its file names and "backlog board" and "plans board" replaced by
+    the new file names and "Plan board" and "Build board"."""
+    from .renaming import relink
+    values = {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}
+    words = ((stores.OLD_BUILD, stores.BUILD), (stores.OLD_PLAN, stores.PLAN),
+             ("backlog board", "Plan board"), ("plans board", "Build board"))
+    headers = {}
+    for kind, template in (("build", stores.OLD_BUILD), ("plan", stores.OLD_PLAN)):
+        old = header_of(from_template(template, values))
+        new = relink(old)
+        for was, now in words:
+            new = new.replace(was, now)
+        headers[kind] = (old, new)
+    return headers
 
 
 def notes(st, write: bool) -> list:

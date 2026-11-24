@@ -1028,6 +1028,10 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root #stats { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; }
 :root #stats[hidden] { display: none; }
 :root:not([data-theme="classic"]) #stats { padding: 10px 24px 0; }  /* in line with the columns */
+:root #renaming { padding: 10px 20px 0; }  /* the notice about the move to Plan and Build, above every board */
+:root #renaming[hidden] { display: none; }
+:root:not([data-theme="classic"]) #renaming { padding: 10px 24px 0; }
+:root #renaming .pickup-why { margin: 0; }
 :root #stats button { flex: 1 1 130px; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 7px 10px; white-space: nowrap; cursor: pointer; border-bottom: 3px solid var(--stat-c); }
 :root #stats button b { font-size: 22px; line-height: 1; color: var(--stat-c); font-variant-numeric: tabular-nums; }
 :root #stats button.zero { opacity: .5; }
@@ -1236,6 +1240,7 @@ applyTheme(themeNow, accentNow);
   <button type="button" id="settingsBtn" title="This store's settings (board.json)" aria-label="Settings">⚙</button>
 </header>
 <nav id="stats" aria-label="Builds" hidden></nav>
+<div id="renaming" role="status" hidden></div>
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="mapView" aria-label="Story map" hidden>
@@ -1713,6 +1718,21 @@ const HINT_KEY = () => "board.pickupHintHidden." + STORE_NAME;
 function hiddenHint() { try { return localStorage.getItem(HINT_KEY()) || ""; } catch { return ""; } }
 const pickupHintHTML = sec => pickupHintShows(file, sec.name, pickups.why, hiddenHint())
   ? `<div class="pickup-why"><span>${inline(pickups.why)}</span><button type="button" data-act="hidewhy" title="Hide this note in this browser">×</button></div>` : "";
+// What the page says about the move to Plan and Build (serve: pickup.summary's "renaming"): the
+// sentence, and whether it can be hidden. A move that waits can be; a stray old file's can't.
+function renamingNotice(r) {
+  if (r && typeof r.waiting === "string" && r.waiting) return { text: r.waiting, close: true };
+  if (r && Array.isArray(r.stray) && r.stray.length && typeof r.text === "string" && r.text) return { text: r.text, close: false };
+  return null;
+}
+// The notice above the board, unless this browser hid that very sentence (× on it; a new one shows again).
+function renamingHTML(r, hidden) {
+  const n = renamingNotice(r);
+  if (!n || (n.close && n.text === hidden)) return "";
+  return `<div class="pickup-why"><span>${esc(n.text)}</span>${n.close ? `<button type="button" data-act="hiderenaming" title="Hide this note in this browser">×</button>` : ""}</div>`;
+}
+// True when the server's board names ({build, plan}, absent from an older server) are no longer the page's.
+const namesMoved = (boards, names) => !!boards && (boards.build !== names.build || boards.plan !== names.plan);
 const pickupFor = key => key ? pickups.jobs.findLast(j => j.key === key || (j.with || []).includes(key)) : undefined;
 const reposTag = repos => repos.length ? `<span class="repos" title="Its ${AGENT} session works in ${esc(repos.join(", "))}">⎇ ${esc(repos.join(", "))}</span>` : "";
 const baseTag = base => base ? `<span class="repos base" title="Cut from and merged into ${esc(base)}, not the store's trunk (${esc(STORE_TRUNK)})">⑂ ${esc(base)}</span>` : "";
@@ -2718,6 +2738,7 @@ function renderStats(stats) {
 function renderBoard() {
   const asDoc = isDocFile();
   renderStats();
+  renderRenaming();
   const asMap = mapOn();
   boardEl.hidden = asDoc || asMap; $("#docView").hidden = !asDoc; $("#search").hidden = asDoc;
   $("#mapView").hidden = !asMap; $("#viewSel").hidden = asDoc || file === ARCHIVE_LOG;
@@ -2768,6 +2789,23 @@ function renderBoard() {
     boardEl.appendChild(side);
   }
 }
+
+const RENAMING_KEY = () => "board.renamingHidden." + STORE_NAME;
+function hiddenRenaming() { try { return localStorage.getItem(RENAMING_KEY()) || ""; } catch { return ""; } }
+function renderRenaming() {
+  const el = $("#renaming"), html = renamingHTML(pickups.renaming, hiddenRenaming());
+  el.hidden = !html;
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+$("#renaming").addEventListener("click", e => {
+  const n = renamingNotice(pickups.renaming);
+  if (!e.target.closest('[data-act="hiderenaming"]') || !n) return;
+  try { localStorage.setItem(RENAMING_KEY(), n.text); } catch {}
+  renderRenaming();
+});
+// The store was moved while the page was open: start again on the board's new name, so nothing read
+// under the old names (the board, its tile index, where its tiles move to) is kept.
+const reloadOnto = (names, files = []) => location.replace("?file=" + encodeURIComponent(ownName(file || names.build, names, files)));
 
 let renderEdges = new Map(), renderIndex = new Map();  // linkEdges() and tileIndex() as of the last render
 // The greyed stub of a master that isn't in this column, holding its sub-stories that are.
@@ -4531,11 +4569,7 @@ async function loadStoreFacts() {
   applyNames(names);
   j.files = boardOrder(j.files, names);
   lastBoard = lastBoard ? ownName(lastBoard, names, j.files) : names.build;
-  if (file && ownName(file, names, j.files) !== file) {  // the store was moved while the page was open
-    file = ownName(file, names, j.files);
-    try { localStorage.setItem("board.file", file); } catch {}
-    history.replaceState(null, "", "?file=" + encodeURIComponent(file));
-  }
+  if (file && ownName(file, names, j.files) !== file) { reloadOnto(names, j.files); return j; }  // moved while open
   $("#storeName").textContent = STORE_NAME;
   $("#fileSel").innerHTML = j.files.map(f => `<button type="button" role="tab" data-file="${esc(f)}" title="${esc(f)}">${esc(boardLabel(f, NAMES))}</button>`).join("");
   $("#fileSel").title = j.dir;
@@ -4627,11 +4661,12 @@ setInterval(async () => {
 // Pickups change without the board file changing, so they are polled on their own.
 const toldPickups = new Set(), askedPickups = new Set();
 let pickupsLoaded = false;
+let pickupsAskedOn;  // the file the pickup reply was last asked for on
 const pickupId = job => `${job.key}@${job.at}`;
 async function postPickup(body, failed = `${AGENT} wasn't started`) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
-  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null }; render(); }
+  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, boards: j.boards, renaming: j.renaming ?? null }; render(); }
   return r.ok ? j : (flash(`${failed}: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });
@@ -4744,8 +4779,15 @@ async function pollPickups() {
   // the map shows sessions from any board; a board with a decision column shows its drafts
   const decisions = !!file && !!doc && !isDocFile() && file !== ARCHIVE_LOG && doc.sections.some(s => isDecisionCol(s.name));
   const { poll, stories } = pollsFor(file, mapOn(), decisions);
-  if (!poll || document.hidden) return;
+  // A board the poll doesn't run on asks once when it opens, and again while there is a notice about the move.
+  const again = pickupsAskedOn !== file || !!renamingNotice(pickups.renaming);
+  if ((!poll && !again) || document.hidden) return;
+  pickupsAskedOn = file;
   const next = await (await fetch("/api/pickup")).json();
+  if (namesMoved(next.boards, NAMES)) {  // moved: start again on the new names, once nothing is unsaved
+    if (pollIdle()) reloadOnto(next.boards); else pickupsAskedOn = undefined;  // else ask again on the next poll
+    return;
+  }
   const changed = JSON.stringify(next) !== JSON.stringify(pickups), first = !pickupsLoaded;
   const before = editing && dlg.open ? JSON.stringify(draftOf(cardKey(editing.card))) : "";
   pickups = next;

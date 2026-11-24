@@ -417,6 +417,17 @@ PAUSE = """The Pause button on the plans board stopped your session to put {key}
 NUDGE = """You looked stuck, so the Continue button on the plans board stopped your session and started it again. Carry on with {key} from where you left off: check `git status` and the tile first, since you may have been stopped mid-step. If a command hung or you were waiting for an answer, don't wait again: take another way, or say on the tile's "Handoff:" line what you need. Keep the tile's "Handoff:" line current as before."""
 
 
+def told_first(store, job, text):
+    """What an existing session is told (text; None: RESUME, resume's default), after the line
+    saying the boards were renamed when its job started before the store's move (renaming.told),
+    and a blank line. text as it is when there is no such line."""
+    from . import renaming
+    line = renaming.told(store, job)
+    if not line:
+        return text
+    return f"{line}\n\n{text if text is not None else RESUME.format(key=job['key'])}"
+
+
 def _git(repo: Path, *args) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=60)
 
@@ -591,7 +602,8 @@ def switch(store, job, model: str) -> dict:
             agent.stop(job["id"])
     except (OSError, subprocess.SubprocessError) as e:
         return {"state": "failed", "error": str(e)}
-    return resume(store, {**job, "session": session, "model": model}, SWITCH.format(model=model, key=job["key"]))
+    return resume(store, {**job, "session": session, "model": model},
+                  told_first(store, job, SWITCH.format(model=model, key=job["key"])))
 
 
 REPOS_CHANGED = """The plans board changed this story's repos to {repos}; your session was restarted with them. Your worktrees, all on the branch {branch}:
@@ -638,7 +650,7 @@ def _add_repos(store, job, repos, session) -> dict:
     text = REPOS_CHANGED.format(repos=", ".join(c["name"] for c in cuts), branch=name, lines=lines, key=job["key"])
     if job.get("model_was") and job.get("model") and job["model_was"] != job["model"]:
         text += f" Your model is now {job['model']} too."
-    return {**resume(store, {**job, "session": session, "repos": every}, text), "repos": every, "branch": name}
+    return {**resume(store, {**job, "session": session, "repos": every}, told_first(store, job, text)), "repos": every, "branch": name}
 
 
 def session_screen(sid: str) -> str:
@@ -983,7 +995,7 @@ def _pause(store, job, sessions, at, why: str) -> bool:
         log(f"{key} session {job['id']} could not be stopped to pause it ({why}): {e}")
         return False
     job.pop("waiting", None)
-    told = sessions.resume(store, job, PAUSE.format(key=key)) if job.get("session") else {"state": "failed"}
+    told = sessions.resume(store, job, told_first(store, job, PAUSE.format(key=key))) if job.get("session") else {"state": "failed"}
     if told["state"] == "started":
         _report(store, job, ledger.begin(job, told, at, f"paused ({why}): told to write its handoff and stop"), sessions)
         ledger.pausing(job)
@@ -1151,7 +1163,7 @@ def reply(store, key: str, text: str, actions=(), *, sessions: Sessions = SESSIO
                 sessions.stop(job["id"])
             except (OSError, subprocess.SubprocessError) as e:
                 return f"its session couldn't be stopped to take the reply: {e}"
-        told = sessions.resume(store, job, reply_text(store, job, text, actions, interrupted, snap))
+        told = sessions.resume(store, job, told_first(store, job, reply_text(store, job, text, actions, interrupted, snap)))
         if told["state"] != "started":
             why = told.get("error") or "the conversation couldn't be resumed"
             if job["state"] in ("started", "idle"):  # it was stopped to take the reply: it is gone now
@@ -1203,7 +1215,7 @@ def restart(store, key: str, *, sessions: Sessions = SESSIONS, nudge=False) -> b
         elif job.get("session") and not moved and any(cut_of(store, job, r) is None for r in repos):
             again = _add_repos(store, {**job, "repos": _cuts_of(store, job)}, repos, job["session"])  # repos added to a stopped story's line
         else:
-            text = NUDGE.format(key=key) if stuck else None
+            text = told_first(store, job, NUDGE.format(key=key) if stuck else None)
             again = sessions.resume(store, job, text) if job.get("session") and not moved else {"state": "failed"}
         if again["state"] == "started":
             _report(store, job, ledger.begin(job, again, sessions.now(), "nudged to continue" if stuck else "resumed"), sessions)
@@ -1573,11 +1585,23 @@ def status(store, key: str, tile_text: str, *, sessions: Sessions = SESSIONS):
     return f"Status {stamp}: {said}" + (f' On its screen (rough): "{showing}".' if showing else "")
 
 
-def summary(store) -> dict:
+def seen_sessions(state: dict) -> dict:
+    """The sessions as the board last saw them, from the ledger's state: {id: "busy"} for a job at
+    work and a draft drafting, "idle" for any other job with a session. A listing that runs no CLI."""
+    seen = {j["id"]: "busy" if j["state"] == "started" else "idle" for j in state["jobs"] if j.get("id")}
+    seen.update({d["id"]: "busy" for d in state.get("drafts", []) if d.get("state") == "working" and d.get("id")})
+    return seen
+
+
+def summary(store, *, sessions: Sessions = None) -> dict:
     """What the page shows: the jobs, without the tiles' text, and whether pickup is on (why:
     why_off's sentence when it is off). A story ready for review whose session isn't at work
     carries "empty" when it has nothing to merge (nothing_to_merge): its review is Close. Each job
-    carries its "view" (ledger.view): its label and the actions open to it."""
+    carries its "view" (ledger.view): its label and the actions open to it. "boards" names the
+    store's two board files ({build, plan}), and "renaming" is what the page says about the move
+    to Plan and Build (renaming.notice), with the sessions as listed by sessions, or by default
+    as the ledger last saw them (seen_sessions)."""
+    from . import renaming
     state = ledger.Ledger(store).read()
     jobs = [{k: v for k, v in j.items() if k != "text"} for j in state["jobs"]]
     for j in jobs:
@@ -1586,4 +1610,7 @@ def summary(store) -> dict:
     for j in jobs:
         j["view"] = ledger.view(j)
     why = why_off(store)
-    return {"enabled": why is None, "why": why, "jobs": jobs, "blocked": state.get("blocked", {})}
+    build, plan = store.boards
+    notice = renaming.notice(store, sessions=sessions or Sessions(sessions=lambda: seen_sessions(state)))
+    return {"enabled": why is None, "why": why, "jobs": jobs, "blocked": state.get("blocked", {}),
+            "boards": {"build": build, "plan": plan}, "renaming": notice}

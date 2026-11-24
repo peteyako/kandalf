@@ -584,5 +584,67 @@ class Watch(unittest.TestCase):
         self.ctx["d_last"] -= serve.PICKUP_RECHECK + 1
         self.assertEqual(self.draft_turns(st, 3), 0)
 
+    def move_turns(self, st, n=1):
+        for _ in range(n):
+            serve.watch_move_turn(st, self.ctx)
+
+    def test_a_due_store_is_moved_at_the_top_of_a_turn(self):
+        st = self.store({"pickup": False})
+        jobs.save(st, {"inflight": [], "jobs": [{"key": "PLN-80", "state": "started", "id": "s1", "started": 1}]})
+        listing, order = {"s1": "busy"}, []
+
+        class Stop(Exception):
+            pass
+
+        def sleep(seconds):
+            if listing["s1"] == "idle":
+                raise Stop
+            listing["s1"] = "idle"  # its turn ends during the first sleep
+
+        real = serve.watch_move_turn
+        with mock.patch.object(serve, "SESSIONS", pickup.Sessions(sessions=lambda: dict(listing))), \
+                mock.patch.object(serve, "PICKUP_RECHECK", 0), \
+                mock.patch.object(serve, "watch_move_turn", lambda store, ctx: order.append(("move", store.build)) or real(store, ctx)), \
+                mock.patch.object(serve, "watch_drafts_turn", lambda store, ctx: order.append(("drafts", store.build))), \
+                mock.patch.object(serve, "watch_turn", lambda store, ctx: order.append(("turn", store.build))), \
+                mock.patch.object(serve, "report_in_flight", lambda store: None), \
+                mock.patch.object(serve.time, "sleep", sleep), mock.patch.object(pickup, "log"):
+            with self.assertRaises(Stop):
+                serve.watch_pickups(st)
+        self.assertEqual(order, [("move", "plans.md"),  # at the start: its session is busy
+                                 ("move", "plans.md"), ("drafts", "plans.md"), ("turn", "plans.md"),
+                                 ("move", "plans.md"), ("drafts", "build.md"), ("turn", "build.md")])
+        self.assertEqual(st.boards, ("build.md", "plan.md"))
+
+    def test_a_store_whose_board_changed_since_the_previous_turn_waits_a_turn(self):
+        st = self.store({"pickup": False})
+        aged(self.dir / "plans.md")
+        self.ctx["m_before"] = serve.old_board_mtimes(st)  # as the watch starts
+        (self.dir / "plans.md").write_text("# Plans\n\n## In flight\n\n- [ ] PLN-80 **On its own.** Edited.\n", encoding="utf-8")
+        with mock.patch.object(pickup, "log"):
+            self.move_turns(st)
+            self.assertEqual(st.build, "plans.md")
+            self.move_turns(st)
+        self.assertEqual(st.build, "build.md")
+        self.assertIn("Edited.", (self.dir / "build.md").read_text(encoding="utf-8"))
+
+    def test_a_store_not_due_costs_one_check_and_no_listing(self):
+        st = self.store({"pickup": False})
+        with mock.patch.object(pickup, "log"):
+            serve.renaming.move(st, sessions=pickup.Sessions(sessions=lambda: {}), record=mock.Mock())
+        with mock.patch.object(serve.renaming, "due", wraps=serve.renaming.due) as due, \
+                mock.patch.object(serve.renaming, "move", side_effect=AssertionError("moved again")), \
+                mock.patch.object(serve, "SESSIONS", pickup.Sessions(sessions=mock.Mock(side_effect=AssertionError("listed")))):
+            self.move_turns(st, 3)
+        self.assertEqual(due.call_count, 3)
+
+    def test_a_move_that_fails_is_said_once_and_does_not_end_the_watch(self):
+        st = self.store({"pickup": False})
+        self.ctx["m_before"] = serve.old_board_mtimes(st)
+        with mock.patch.object(serve.renaming, "move", side_effect=OSError("the disk is full")), \
+                mock.patch.object(serve, "PICKUP_RECHECK", 0), mock.patch.object(pickup, "log") as log:
+            self.move_turns(st, 3)
+        self.assertEqual([c.args[0] for c in log.call_args_list], ["the move to Plan and Build failed: the disk is full"])
+
 if __name__ == "__main__":
     unittest.main()

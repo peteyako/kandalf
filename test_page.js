@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -1502,4 +1502,44 @@ test("a board's label asked for with no names uses the page's current ones", () 
     assert.equal(page.boardLabel("build.md"), "Build");
     assert.equal(page.boardLabel("plan.md"), "Plan");
   } finally { page.setNames(OLD_NAMES); }
+});
+
+test("a move that waits says what for, and the note can be hidden", () => {
+  const waiting = { waiting: "These boards will be renamed Plan and Build once PLN-41's session finishes its turn." };
+  assert.deepEqual(page.renamingNotice(waiting), { text: waiting.waiting, close: true });
+  const html = page.renamingHTML(waiting, "");
+  assert.match(html, /once PLN-41's session finishes its turn\./);
+  assert.match(html, /data-act="hiderenaming"/);
+  assert.equal(page.renamingHTML(waiting, waiting.waiting), "");  // hidden in this browser: that very sentence
+  assert.notEqual(page.renamingHTML({ waiting: "These boards will be renamed Plan and Build once PLN-42's session finishes its turn." }, waiting.waiting), "");
+});
+
+test("a stray old file's notice names it and cannot be hidden", () => {
+  const stray = { stray: ["plans.md"], text: "plans.md is back in this store, but the board is build.md now. Move anything new into build.md and delete plans.md." };
+  assert.deepEqual(page.renamingNotice(stray), { text: stray.text, close: false });
+  const html = page.renamingHTML(stray, stray.text);
+  assert.match(html, /plans\.md is back in this store, but the board is build\.md now\./);
+  assert.doesNotMatch(html, /<button/);
+});
+
+test("a store with nothing to say about the move shows no notice", () => {
+  for (const r of [null, undefined, {}]) {
+    assert.equal(page.renamingNotice(r), null);
+    assert.equal(page.renamingHTML(r, ""), "");
+  }
+});
+
+test("the page sees when the server's board names are no longer its own", () => {
+  assert.equal(page.namesMoved({ build: "build.md", plan: "plan.md" }, OLD_NAMES), true);
+  assert.equal(page.namesMoved({ build: "build.md", plan: "backlog.md" }, OLD_NAMES), true);
+  assert.equal(page.namesMoved({ build: "plans.md", plan: "backlog.md" }, OLD_NAMES), false);
+  assert.equal(page.namesMoved(undefined, OLD_NAMES), false);  // an older server says nothing
+});
+
+test("a store on the old names with its own build.md keeps that file as a file of its own", () => {
+  const files = ["plans.md", "backlog.md", "build.md", "archive/archived.md"];
+  assert.equal(page.ownName("build.md", OLD_NAMES, files), "build.md");
+  assert.equal(page.ownName("plans.md", OLD_NAMES, files), "plans.md");
+  assert.deepEqual(page.pickable(files, OLD_NAMES), files);
+  assert.deepEqual(page.boardOrder(files, OLD_NAMES).map(f => page.boardLabel(f, OLD_NAMES)), ["Plan", "Build", "Archive", "build.md"]);
 });

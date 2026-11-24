@@ -16,7 +16,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from kandalf import checkhook, pln, serve
+from kandalf import checkhook, jobs, pln, serve
 from kandalf import store as stores
 from kandalf import tiles as reader
 
@@ -68,6 +68,13 @@ def folder(*names) -> Path:
     return d
 
 
+def moved(d: Path) -> Path:
+    """The folder with the record of the move to Plan and Build in its ledger."""
+    jobs.save(stores.Store(d), {"inflight": None, "jobs": [], "renamed": {"at": 1}})
+    stores.forget_moved()
+    return d
+
+
 def names_of(st) -> dict:
     return {"build": st.build, "plan": st.plan, "on_old_names": st.on_old_names,
             "half_moved": st.half_moved, "strays": st.strays}
@@ -115,14 +122,67 @@ class Names(unittest.TestCase):
         self.assertFalse(st.half_moved)
 
     def test_a_plans_md_beside_build_md_is_a_stray(self):
-        st = stores.Store(folder("build.md", "plan.md", "plans.md"))
+        st = stores.Store(moved(folder("build.md", "plan.md", "plans.md")))
         self.assertEqual((st.build, st.strays), ("build.md", ["plans.md"]))
 
     def test_a_backlog_md_beside_plan_md_is_a_stray(self):
         st = stores.Store(folder("build.md", "plan.md", "backlog.md"))
         self.assertEqual((st.plan, st.strays), ("plan.md", ["backlog.md"]))
-        both = stores.Store(folder("build.md", "plan.md", "plans.md", "backlog.md"))
+        both = stores.Store(moved(folder("build.md", "plan.md", "plans.md", "backlog.md")))
         self.assertEqual(both.strays, ["plans.md", "backlog.md"])
+
+    def test_an_old_store_with_its_own_build_md_stays_on_the_old_names(self):
+        st = stores.Store(folder("plans.md", "backlog.md", "build.md", "board.json"))
+        self.assertEqual(names_of(st), {"build": "plans.md", "plan": "backlog.md", "on_old_names": True,
+                                        "half_moved": False, "strays": []})
+        self.assertEqual(st.family, ("plans.md", "backlog.md", "archive/archived.md"))
+        self.assertEqual((st.board("build.md"), st.board("plans.md"), st.board("plan.md")), ("build.md", "plans.md", "backlog.md"))
+
+    def test_build_md_beside_plans_md_is_the_board_once_the_move_is_recorded(self):
+        st = stores.Store(moved(folder("plans.md", "backlog.md", "build.md", "board.json")))
+        self.assertEqual(names_of(st), {"build": "build.md", "plan": "backlog.md", "on_old_names": False,
+                                        "half_moved": True, "strays": ["plans.md"]})
+        self.assertEqual(st.board("plans.md"), "build.md")
+
+    def test_a_folder_that_is_not_a_repo_with_build_md_plan_md_and_plans_md_was_moved(self):
+        st = stores.Store(folder("build.md", "plan.md", "plans.md", "board.json"))
+        self.assertIsNone(st.root)
+        self.assertEqual((st.boards, st.strays), (("build.md", "plan.md"), ["plans.md"]))
+
+    def test_a_folder_that_is_not_a_repo_with_both_build_boards_and_backlog_md_was_not_moved(self):
+        st = stores.Store(folder("plans.md", "backlog.md", "build.md", "board.json"))
+        self.assertEqual((st.boards, st.strays), (("plans.md", "backlog.md"), []))
+        both = stores.Store(folder("plans.md", "backlog.md", "build.md", "plan.md"))
+        self.assertEqual(both.boards, ("plans.md", "backlog.md"))  # neither side says so: not moved
+
+    def test_whether_a_folder_with_both_build_boards_was_moved_is_asked_again_once_a_file_changes(self):
+        d = folder("build.md", "plan.md", "plans.md")
+        st = stores.Store(d)
+        self.assertEqual(st.boards, ("build.md", "plan.md"))
+        (d / "backlog.md").write_text(PLAN, encoding="utf-8")
+        self.assertEqual(st.boards, ("plans.md", "backlog.md"))
+
+    def test_whether_a_repo_with_both_build_boards_was_moved_is_asked_of_git_once_for_a_while(self):
+        d = folder("plans.md", "backlog.md", "build.md")
+        subprocess.run(["git", "-C", str(d), "init", "-q"], check=True)
+        st = stores.Store(d)
+        stores.forget_moved()
+        real, asked = subprocess.run, []
+
+        def run(cmd, *a, **kw):
+            if "ls-tree" in cmd:
+                asked.append(cmd)
+            return real(cmd, *a, **kw)
+
+        with mock.patch.object(stores.subprocess, "run", run):
+            for _ in range(5):
+                self.assertEqual(st.boards, ("plans.md", "backlog.md"))
+        self.assertEqual(len(asked), 1)
+
+    def test_a_ledger_that_cannot_be_read_is_no_record_of_the_move(self):
+        d = folder("plans.md", "backlog.md", "build.md")
+        (d / ".board-pickup.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(stores.Store(d).boards, ("plans.md", "backlog.md"))
 
     def test_an_old_store_has_no_strays(self):
         self.assertEqual(stores.Store(folder("plans.md", "backlog.md", "plan.md")).strays, [])
@@ -145,7 +205,7 @@ class Names(unittest.TestCase):
 
     def test_an_old_name_on_a_new_store_is_the_present_board_stray_or_not(self):
         self.assertEqual(stores.Store(folder("build.md", "plan.md")).board("plans.md"), "build.md")
-        self.assertEqual(stores.Store(folder("build.md", "plan.md", "plans.md")).board("plans.md"), "build.md")
+        self.assertEqual(stores.Store(moved(folder("build.md", "plan.md", "plans.md"))).board("plans.md"), "build.md")
         self.assertEqual(stores.Store(folder("build.md", "plan.md", "backlog.md")).board("backlog.md"), "plan.md")
 
     def test_the_rule_is_one_function_of_the_files_there(self):
@@ -153,6 +213,8 @@ class Names(unittest.TestCase):
         self.assertEqual(stores.names({"plans.md"}), ("plans.md", "backlog.md"))
         self.assertEqual(stores.names({"build.md", "backlog.md"}), ("build.md", "backlog.md"))
         self.assertEqual(stores.names({"build.md", "plan.md", "backlog.md"}), ("build.md", "plan.md"))
+        self.assertEqual(stores.names({"build.md", "plans.md", "backlog.md"}), ("plans.md", "backlog.md"))  # no record: build.md is a file of its own
+        self.assertEqual(stores.names({"build.md", "plans.md", "plan.md"}, lambda: True), ("build.md", "plan.md"))
 
     def test_a_snapshot_of_plans_md_on_an_empty_store_reads_it_as_the_build_board(self):
         st = stores.Store(folder())

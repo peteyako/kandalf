@@ -82,6 +82,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,12 +125,14 @@ def default_trunk(repo) -> str:
     return "dev" if repo and Path(repo).is_dir() and has_branch(repo, "dev") else "main"
 
 
-def names(there) -> tuple:
+def names(there, moved=lambda: False) -> tuple:
     """(build, plan): the two board file names of a folder whose files are there (any container
-    of file names). build.md there means the new names, else plans.md there the old ones, and
-    neither the new ones. On the new names the plan board is plan.md, or backlog.md while it is
-    there and plan.md is not (a store half moved)."""
-    if BUILD not in there and OLD_BUILD in there:
+    of file names). build.md there and not plans.md means the new names, plans.md and not
+    build.md the old ones, and neither the new ones. With both there, the folder is on the new
+    names only when moved() says the store was moved (Store.moved: plans.md is then a stray, else
+    build.md is a file of the person's own). On the new names the plan board is plan.md, or
+    backlog.md while it is there and plan.md is not (a store half moved)."""
+    if OLD_BUILD in there and (BUILD not in there or not moved()):
         return OLD_BUILD, OLD_PLAN
     if PLAN in there or OLD_PLAN not in there:
         return BUILD, PLAN
@@ -144,6 +147,26 @@ class _Folder:
 
     def __contains__(self, name) -> bool:
         return (self.folder / name).is_file()
+
+
+MOVED_FOR = 2.0  # seconds Store.moved's answer is kept while the board files it went by are as they were
+_moved = {}  # store folder: (the board files' state, when, the answer)
+
+
+def forget_moved():
+    """Forget Store.moved's kept answers: for the tests, and for the move once it records itself."""
+    _moved.clear()
+
+
+def _board_files(folder: Path) -> tuple:
+    """The four board file names' state in a folder, (name, mtime or None) each: what a kept
+    answer of Store.moved goes by, so a file that comes, goes or changes is seen at once."""
+    def mtime(name):
+        try:
+            return (folder / name).stat().st_mtime_ns
+        except OSError:
+            return None
+    return tuple((name, mtime(name)) for name in (BUILD, OLD_BUILD, PLAN, OLD_PLAN))
 
 
 def git_root(path: Path):
@@ -256,22 +279,68 @@ class Store:
             problem = problem or why
         return repos, problem
 
+    def moved(self) -> bool:
+        """Whether a store with both build.md and plans.md was moved to Plan and Build (plans.md
+        then came back, a stray) or not (build.md is a file of the person's own); names() asks it
+        only then. In this order: the ledger records the move; else, in a git repo, git has
+        build.md and not plans.md in HEAD (moved) or has plans.md (not moved); else, by the plan
+        board, plan.md there and backlog.md not (moved) or anything else (not moved). The ledger
+        isn't cloned, and is written last, so a store moved elsewhere, or whose record was lost,
+        is still known as moved. The answer is kept for MOVED_FOR seconds, while the board files
+        are as they were."""
+        files, now = _board_files(self.dir), time.monotonic()
+        kept = _moved.get(self.dir)
+        if kept and kept[0] == files and now - kept[1] < MOVED_FOR:
+            return kept[2]
+        answer = self._moved()
+        _moved[self.dir] = (files, now, answer)
+        return answer
+
+    def _moved(self) -> bool:
+        if self._recorded():
+            return True
+        if self.root:
+            head = self._in_head(BUILD, OLD_BUILD)
+            if OLD_BUILD in head:
+                return False
+            if BUILD in head:
+                return True
+        there = _Folder(self.dir)
+        return PLAN in there and OLD_PLAN not in there
+
+    def _recorded(self) -> bool:
+        """True when the store's ledger holds the record of the move. Read without the ledger's
+        lock (a save replaces the file whole); a ledger missing or unreadable is no record."""
+        from . import jobs  # jobs, through gitlog, imports this module
+        try:
+            state = json.loads(jobs.state_path(self).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return isinstance(state, dict) and bool(state.get("renamed"))
+
+    def _in_head(self, *names) -> set:
+        """Which of these store files git has in HEAD (none when there is no HEAD yet)."""
+        rels = {(self.dir / n).relative_to(self.root.resolve()).as_posix(): n for n in names}
+        r = subprocess.run(["git", "-C", str(self.root), "ls-tree", "--name-only", "HEAD", "--", *rels],
+                           capture_output=True, text=True)
+        return {rels[line] for line in r.stdout.splitlines() if line in rels} if r.returncode == 0 else set()
+
     # The board names are looked for in the folder each time they are asked for, never kept, so
     # a store moved while the server runs is seen on its new names at once.
     @property
     def build(self) -> str:
         """The Build board's file name: build.md, or plans.md on a store not yet moved."""
-        return names(_Folder(self.dir))[0]
+        return self.boards[0]
 
     @property
     def plan(self) -> str:
         """The Plan board's file name: plan.md, or backlog.md on a store not yet moved or half moved."""
-        return names(_Folder(self.dir))[1]
+        return self.boards[1]
 
     @property
     def boards(self) -> tuple:
-        """(build, plan)."""
-        return names(_Folder(self.dir))
+        """(build, plan), by names(), with the ledger asked when both build.md and plans.md are there."""
+        return names(_Folder(self.dir), self.moved)
 
     @property
     def family(self) -> tuple:
