@@ -21,4 +21,4 @@ packages = ["kandalf"]
 version = { attr = "kandalf.__version__" }
 
 [tool.setuptools.package-data]
-kandalf = ["board.html", "marked.min.js", "check.js", "favicon.ico", "favicon.svg", "fonts/*.woff2", "templates/*.md"]
+kandalf = ["board.html", "marked.min.js", "check.js", "favicon.ico", "favicon.svg", "fonts/*.woff2", "templates/*.md", "templates/old/*.md"]

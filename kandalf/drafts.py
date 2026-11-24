@@ -152,7 +152,7 @@ def prompt(store, draft: dict, tile: str, context: str, blocks: list, again: boo
     context, the person's note when there is one, the rules, and the research doc's path as the
     session reaches it. again: a redraft, which points at the last draft."""
     path = f"docs/{store.link}/{draft['doc']}"
-    out = [f"You are researching options for {draft['key']} \"{draft['title']}\" on the {store.name} plans board. "
+    out = [f"You are researching options for {draft['key']} \"{draft['title']}\" on the {store.name} Plan board. "
            f"A person has to decide it, and your research doc is what they decide from. The tile reads:", "", tile]
     if context:
         out += ["", "It is part of a larger story, whose tile reads:", "", context]

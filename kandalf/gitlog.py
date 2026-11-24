@@ -1,4 +1,4 @@
-"""Commit board changes to the plans repo, batched, and push each commit.
+"""Commit board changes to the store, batched, and push each commit.
 
 A change is saved to disk at once but committed later: the board server and the
 Claude Code hook (`kandalf hook autocommit`) call record(), which queues the paths it
@@ -85,11 +85,11 @@ def summarize(store, rels) -> str:
             parts += tile_changes(store, Path(rel).name, head_text(root, rel), now)
         elif f.is_file() and not (srel and srel.startswith("archive/") and f"active/{Path(rel).name}" in srels):
             docs.append(rel)  # a doc moved by an archive is covered by "PLN-NN archived"
-    # A tile archived shows as "off plans.md" plus "added to Archived": say it once.
+    # A tile archived shows as "off <file>" plus "added to Archived": say it once.
     archived = {p.split()[0] for p in parts if p.endswith("added to Archived")}
     parts = [p for p in parts if not (p.split()[0] in archived and " off " in p)]
     parts = [f"{p.split()[0]} archived" if p.split()[0] in archived else p for p in parts]
-    # A tile moved between boards (promoted from backlog.md) shows as "off <file>" plus
+    # A tile moved between boards (promoted from the Plan board) shows as "off <file>" plus
     # "added to <column>": say it once, as "PLN-NN <file> → <column>".
     offs = {p.split()[0]: p.split(" off ", 1)[1] for p in parts if " off " in p}
     adds = {p.split()[0]: p.split(" added to ", 1)[1] for p in parts if " added to " in p}

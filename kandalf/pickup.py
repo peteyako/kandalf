@@ -1,6 +1,6 @@
 """Pickup: a tile that lands in In flight is handed to Claude Code for development.
 
-The board server watches the store's plans.md (serve.py: watch_pickups). When a keyed tile
+The board server watches the store's Build board (serve.py: watch_pickups). When a keyed tile
 appears in the In flight column, however it got there (the board, an editor, an agent),
 this starts a background Claude Code session for it:
 
@@ -384,9 +384,9 @@ def prompt(store, job, branch_name: str, path: Path, again: bool = False) -> str
     if again:
         why = ("was paused from the board, and wrote what it left on the tile's \"Handoff:\" line before it stopped; "
                "you carry on from there" if again == "paused" else "has closed; it can't be resumed, so you carry on from what it left")
-        opening = f"""You are taking over {job['key']} "{job['title']}" on the {store.name} plans board. An earlier Claude session was developing it and {why}.
+        opening = f"""You are taking over {job['key']} "{job['title']}" on the {store.name} Build board. An earlier Claude session was developing it and {why}.
 
-When it was picked up, {tiles} read as below. The board has moved on since: read the tile as it is now in {store.dir / 'plans.md'}, above all its "Handoff:" line and which sub-tasks are ticked.
+When it was picked up, {tiles} read as below. The board has moved on since: read the tile as it is now in {store.dir / store.build}, above all its "Handoff:" line and which sub-tasks are ticked.
 
 {told}
 
@@ -394,9 +394,9 @@ You are in that session's git worktree of {where} at {path}, on branch {branch_n
 
 First find where it stopped: `git log {trunk}..HEAD`, `git status` and the tile. Uncommitted changes in the worktree are its unfinished work: read them before you keep or drop them. Then carry on from there; don't redo what is done."""
     else:
-        opening = f"""You are picking up {job['key']} "{job['title']}" from the {store.name} plans board: it was just moved to In flight, which is the signal to start developing it.
+        opening = f"""You are picking up {job['key']} "{job['title']}" from the {store.name} Build board: it was just moved to In flight, which is the signal to start developing it.
 
-From {store.dir / 'plans.md'}, {tiles}:
+From {store.dir / store.build}, {tiles}:
 
 {told}
 
@@ -405,16 +405,16 @@ You are in a fresh git worktree of {where} at {path}, on branch {branch_name}, c
 Before anything else, check nobody else has this: if the tile already notes a different branch or worktree, or another session is plainly working on it, stop and say so."""
     return f"""{opening}{repos_paragraph(store, job, branch_name, path)}
 
-Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Read the plan doc the tile links, if it links one.
+Follow this repo's CLAUDE.md and the filing rules in the header of {store.build}, the Build board. Read the plan doc the tile links, if it links one.
 
 {handoff(store, job['key'])}{tests_paragraph(job)}
 
 When every sub-task is ticked and every gate this repo asks for has passed, mark the story ready: add one indented line to the tile, starting `**Ready for review:**`, with the gate results, how many commits are on the branch, and what the reviewer should look at first. That line is what makes the board outline the tile for review; take it off again if you go back to work on the story. Then stop. Don't merge, don't squash, don't push, and don't move the tile to Done: those are the reviewer's to do."""
 
 
-RESUME = """Your session was stopped or interrupted, and has been restarted from the plans board. Carry on with {key} from where you left off: check `git status` and the tile first, since either may have changed while you were away. Keep the tile's "Handoff:" line current as before."""
-PAUSE = """The Pause button on the plans board stopped your session to put {key} aside. A new session will take it over later, perhaps on another day, with only the tile and this branch to go on, so don't start anything new. Finish or undo the step you are on, commit what is worth keeping on this branch, then rewrite the tile's "Handoff:" line in full: what is done, what is uncommitted and why, what comes next, and anything not yet decided. Then stop."""
-NUDGE = """You looked stuck, so the Continue button on the plans board stopped your session and started it again. Carry on with {key} from where you left off: check `git status` and the tile first, since you may have been stopped mid-step. If a command hung or you were waiting for an answer, don't wait again: take another way, or say on the tile's "Handoff:" line what you need. Keep the tile's "Handoff:" line current as before."""
+RESUME = """Your session was stopped or interrupted, and has been restarted from the Build board. Carry on with {key} from where you left off: check `git status` and the tile first, since either may have changed while you were away. Keep the tile's "Handoff:" line current as before."""
+PAUSE = """The Pause button on the Build board stopped your session to put {key} aside. A new session will take it over later, perhaps on another day, with only the tile and this branch to go on, so don't start anything new. Finish or undo the step you are on, commit what is worth keeping on this branch, then rewrite the tile's "Handoff:" line in full: what is done, what is uncommitted and why, what comes next, and anything not yet decided. Then stop."""
+NUDGE = """You looked stuck, so the Continue button on the Build board stopped your session and started it again. Carry on with {key} from where you left off: check `git status` and the tile first, since you may have been stopped mid-step. If a command hung or you were waiting for an answer, don't wait again: take another way, or say on the tile's "Handoff:" line what you need. Keep the tile's "Handoff:" line current as before."""
 
 
 def told_first(store, job, text):
@@ -588,7 +588,7 @@ def resume(store, job, text: str = None) -> dict:
                    extra_dirs(store, job))
 
 
-SWITCH = """The plans board changed this story's model to {model}, so your session was stopped and restarted on it; a running session can't be told to change model any other way. Carry on with {key} from where you left off: check `git status` and the tile first, in case you were stopped mid-step. Keep the tile's "Handoff:" line current as before."""
+SWITCH = """The Build board changed this story's model to {model}, so your session was stopped and restarted on it; a running session can't be told to change model any other way. Carry on with {key} from where you left off: check `git status` and the tile first, in case you were stopped mid-step. Keep the tile's "Handoff:" line current as before."""
 
 
 def switch(store, job, model: str) -> dict:
@@ -606,7 +606,7 @@ def switch(store, job, model: str) -> dict:
                   told_first(store, job, SWITCH.format(model=model, key=job["key"])))
 
 
-REPOS_CHANGED = """The plans board changed this story's repos to {repos}; your session was restarted with them. Your worktrees, all on the branch {branch}:
+REPOS_CHANGED = """The Build board changed this story's repos to {repos}; your session was restarted with them. Your worktrees, all on the branch {branch}:
 {lines}
 
 Carry on with {key} from where you left off: check `git status` and the tile first, in case you were stopped mid-step. Commit in each repo's own worktree, never in a repo's own checkout. Keep the tile's "Handoff:" line current as before."""
@@ -1029,7 +1029,7 @@ def still_to_merge(store, job, snap):
 
 
 CLOSES = ("""Then, if nothing on the story is outstanding (every sub-task is ticked and every step above went through), close it: """
-          """move the tile to the top of Done (the board's column for finished stories), with whatever the header of plans.md asks of """
+          """move the tile to the top of Done (the board's column for finished stories), with whatever the header of the Build board asks of """
           """a closed story. If anything is outstanding, leave the tile in In flight and say what on its "Handoff:" line. Then stop.""")
 
 
@@ -1059,9 +1059,9 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, sna
     (still_to_merge), and says the suite waits if it isn't. A master only in the archive counts as
     none: the story's own tile owns the suite."""
     key = job["key"]
-    said = f"The person on the plans board has replied about {key}" + (":\n\n" + text if text else ".")
+    said = f"The person on the Build board has replied about {key}" + (":\n\n" + text if text else ".")
     if interrupted:
-        return (f"You were interrupted: the person on the plans board stopped your session with a message about {key}:\n\n{text}\n\n"
+        return (f"You were interrupted: the person on the Build board stopped your session with a message about {key}:\n\n{text}\n\n"
                 "Act on it, then carry on with the story from where you were: check `git status` and the tile first, since you were "
                 "stopped mid-step. Keep the tile's \"Handoff:\" line current. " + RERUN + " Don't squash, merge or push: those stay with the reviewer.")
     if CLOSE in actions:
@@ -1109,7 +1109,7 @@ def reply_text(store, job, text: str, actions=(), interrupted: bool = False, sna
                  f"If it fails, stop before any step after it and say what failed on that line and on this tile's \"Handoff:\" line.")
         left = still_to_merge(store, job, snap) if master else []
         if left is None:  # no index: the session checks the board itself
-            steps["suite"] = (f"If every other sub-story of {master} is in Done or archived (plans.md, backlog.md and archive/archived.md say), "
+            steps["suite"] = (f"If every other sub-story of {master} is in Done or archived ({store.build}, {store.plan} and archive/archived.md say), "
                               f"{key} is the last to merge: {suite[0].lower()}{suite[1:]} If some are still to merge, run only the tests for what "
                               f"{key} changes: the full suite waits for the last of them.")
         elif not left:  # the last of them, or a story on its own

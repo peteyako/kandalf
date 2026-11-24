@@ -108,27 +108,27 @@ class Fake(pickup.Sessions):
 # sub-story job, new and taking over. Pinned byte for byte, so the house rules moving to
 # templates/pickup.md changes nothing for a store that has none.
 PROMPT_OPENINGS = {
-    ("plain", False): """You are picking up PLN-80 "On its own" from the plans plans board: it was just moved to In flight, which is the signal to start developing it.
+    ("plain", False): """You are picking up PLN-80 "On its own" from the plans Build board: it was just moved to In flight, which is the signal to start developing it.
 
-From /x/plans/plans.md, this tile:
+From /x/plans/build.md, this tile:
 
 - [ ] PLN-80 **On its own.**
 
 You are in a fresh git worktree of the app at /x/app-wt, on branch b-name, cut from main. The plans store is linked in at docs/plans.
 
 Before anything else, check nobody else has this: if the tile already notes a different branch or worktree, or another session is plainly working on it, stop and say so.""",
-    ("plain", True): """You are taking over PLN-80 "On its own" on the plans plans board. An earlier Claude session was developing it and has closed; it can't be resumed, so you carry on from what it left.
+    ("plain", True): """You are taking over PLN-80 "On its own" on the plans Build board. An earlier Claude session was developing it and has closed; it can't be resumed, so you carry on from what it left.
 
-When it was picked up, this tile read as below. The board has moved on since: read the tile as it is now in /x/plans/plans.md, above all its "Handoff:" line and which sub-tasks are ticked.
+When it was picked up, this tile read as below. The board has moved on since: read the tile as it is now in /x/plans/build.md, above all its "Handoff:" line and which sub-tasks are ticked.
 
 - [ ] PLN-80 **On its own.**
 
 You are in that session's git worktree of the app at /x/app-wt, on branch b-name (cut from main). The plans store is linked in at docs/plans.
 
 First find where it stopped: `git log main..HEAD`, `git status` and the tile. Uncommitted changes in the worktree are its unfinished work: read them before you keep or drop them. Then carry on from there; don't redo what is done.""",
-    ("sub", False): """You are picking up PLN-75 "Theme switch: the System option!" from the plans plans board: it was just moved to In flight, which is the signal to start developing it.
+    ("sub", False): """You are picking up PLN-75 "Theme switch: the System option!" from the plans Build board: it was just moved to In flight, which is the signal to start developing it.
 
-From /x/plans/plans.md, this tile, a sub-story of PLN-70, whose tile follows it for you to read. Do only PLN-75: the other sub-stories of PLN-70 have sessions of their own, some at work beside you now:
+From /x/plans/build.md, this tile, a sub-story of PLN-70, whose tile follows it for you to read. Do only PLN-75: the other sub-stories of PLN-70 have sessions of their own, some at work beside you now:
 
 - [ ] PLN-75 **Theme switch: the `System` option!**
   Part of PLN-70.
@@ -138,9 +138,9 @@ From /x/plans/plans.md, this tile, a sub-story of PLN-70, whose tile follows it 
 You are in a fresh git worktree of the app at /x/app-wt, on branch b-name, cut from main. The plans store is linked in at docs/plans.
 
 Before anything else, check nobody else has this: if the tile already notes a different branch or worktree, or another session is plainly working on it, stop and say so.""",
-    ("sub", True): """You are taking over PLN-75 "Theme switch: the System option!" on the plans plans board. An earlier Claude session was developing it and has closed; it can't be resumed, so you carry on from what it left.
+    ("sub", True): """You are taking over PLN-75 "Theme switch: the System option!" on the plans Build board. An earlier Claude session was developing it and has closed; it can't be resumed, so you carry on from what it left.
 
-When it was picked up, this tile, a sub-story of PLN-70, whose tile follows it for you to read. Do only PLN-75: the other sub-stories of PLN-70 have sessions of their own, some at work beside you now read as below. The board has moved on since: read the tile as it is now in /x/plans/plans.md, above all its "Handoff:" line and which sub-tasks are ticked.
+When it was picked up, this tile, a sub-story of PLN-70, whose tile follows it for you to read. Do only PLN-75: the other sub-stories of PLN-70 have sessions of their own, some at work beside you now read as below. The board has moved on since: read the tile as it is now in /x/plans/build.md, above all its "Handoff:" line and which sub-tasks are ticked.
 
 - [ ] PLN-75 **Theme switch: the `System` option!**
   Part of PLN-70.
@@ -153,7 +153,7 @@ First find where it stopped: `git log main..HEAD`, `git status` and the tile. Un
 }
 PROMPT_TAIL = """
 
-Follow this repo's CLAUDE.md and the filing rules in the header of plans.md. Read the plan doc the tile links, if it links one.
+Follow this repo's CLAUDE.md and the filing rules in the header of build.md, the Build board. Read the plan doc the tile links, if it links one.
 
 Keep the tile able to hand the work over. Your session can be closed at any moment, and a new one will have only the tile and this branch to go on:
 - Commit as you go, so no finished work lives only in this session.
@@ -254,6 +254,19 @@ class Reading(unittest.TestCase):
                 want = PROMPT_OPENINGS[(name, again)] + tail.replace("{key}", job["key"])
                 self.assertEqual(pickup.prompt(st, job, "b-name", Path("/x/app-wt"), again), want, (name, again))
 
+
+    def test_a_session_started_on_a_new_names_store_is_told_build_md(self):
+        for names, want, other in (("build.md", "build.md", "plans.md"), ("plans.md", "plans.md", "build.md")):
+            folder = Path(tempfile.mkdtemp())
+            (folder / names).write_text("## In flight\n")
+            st = stores.Store(folder)
+            job = {"key": "PLN-80", "title": "On its own", "with": [], "text": "- [ ] PLN-80 **On its own.**"}
+            for again in (False, True):
+                text = pickup.prompt(st, job, "b", Path("/x/wt"), again)
+                self.assertIn(str(folder / want), text)
+                self.assertIn(f"header of {want}", text)
+                self.assertNotIn(other, text)
+                self.assertNotIn("backlog.md", text)
 
     def test_every_story_is_told_to_run_only_the_tests_for_what_it_changes(self):
         st = stores.Store(tempfile.mkdtemp())

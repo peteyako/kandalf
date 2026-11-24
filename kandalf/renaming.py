@@ -32,6 +32,7 @@ from . import jobs
 from .store import ARCHIVE_LOG, BUILD, OLD_BUILD, OLD_PLAN, PLAN, forget_moved
 
 NEW = {OLD_BUILD: BUILD, OLD_PLAN: PLAN}  # each old board file's new name
+TITLES = {"# Plans": "# Build", "# Backlog": "# Plan"}  # a board's old title and its new one
 
 IN_THE_WAY = "{name} is in the way: these boards can't be renamed Plan and Build until it is moved or renamed."
 UNLISTED = "These boards will be renamed Plan and Build once the agent's sessions can be listed."
@@ -218,9 +219,10 @@ def _write(store, path: Path, text: str):
 
 
 def _linked_files(store, build: str, plan: str) -> list:
-    """What the links are rewritten in: the two boards, the archive log and the plan docs in
-    active/ and archive/, as paths in the store."""
+    """What the links are rewritten in: the two boards, the archive log, any other markdown file at
+    the top of the store (its own README) and the plan docs in active/ and archive/, as paths in the store."""
     names = [build, plan, ARCHIVE_LOG]
+    names += sorted(p.name for p in store.dir.glob("*.md") if p.is_file())
     for folder in ("active", "archive"):
         names += sorted(f"{folder}/{p.name}" for p in (store.dir / folder).glob("*.md") if p.is_file())
     return list(dict.fromkeys(names))
@@ -278,6 +280,21 @@ def move(store, *, sessions, record=gitlog.record) -> list:
         return _move(store, record)
 
 
+def _plain(header: str) -> str:
+    """A header as compared with another: its links relinked and its trailing blank space dropped."""
+    return relink(header).rstrip()
+
+
+def _retitle(text: str) -> str:
+    """The board's text with its first heading line renamed when it is exactly the old board's
+    name (# Plans or # Backlog); any other title is left alone."""
+    lines = text.split("\n")
+    at = next((n for n, line in enumerate(lines) if line.startswith("# ")), None)
+    if at is not None and lines[at] in TITLES:
+        lines[at] = TITLES[lines[at]]
+    return "\n".join(lines)
+
+
 def _move(store, record) -> list:
     from . import init
     folder, touched, said = store.dir, [], []
@@ -297,27 +314,36 @@ def _move(store, record) -> list:
     if renamed:
         said.append(" and ".join(renamed) + ": the boards are Plan and Build")
     build, plan = store.boards
-    board = folder / build
-    before = board.read_text(encoding="utf-8") if board.is_file() else None
-    # Of what the header's refresh says, only the rules it added: its "left as you have them" is
-    # about rules whose links the relinking below rewrites, in a header the next step may replace.
-    said += [line for line in init.refresh_header(store, True, commit=False) if " added to the header" in line]
-    for repo in store.repos:
-        if repo.path.is_dir():
-            said += init.refresh_notes(repo.path, store.link, True)
-    if before is not None and board.read_text(encoding="utf-8") != before:
-        touched.append(board)
-    headers = init.board_headers(store)
+    # The headers first, so a header still as an old template wrote it is replaced whole before
+    # the filing rules update could add rules to it and make it look edited.
+    headers, olds = init.board_headers(store), init.old_headers(store)
     for kind, name in (("build", build), ("plan", plan)):
         f = folder / name
         if not f.is_file():
             continue
         text = f.read_text(encoding="utf-8")
-        head, (old, new) = init.header_of(text), headers[kind]
-        if head != new and relink(head) == relink(old):
+        head, new = init.header_of(text), headers[kind][1]
+        if _plain(head) != _plain(new) and any(_plain(head) == _plain(old) for old in olds[kind]):
             _write(store, f, new + text[len(head):])
             said.append(f"the header of {name} now says Plan and Build")
             touched.append(f)
+            text = f.read_text(encoding="utf-8")
+        titled = _retitle(text)
+        if titled != text:
+            _write(store, f, titled)
+            said.append(f"the title of {name} now says {titled.split(chr(10), 1)[0][2:]}")
+            if f not in touched:
+                touched.append(f)
+    board = folder / build
+    before = board.read_text(encoding="utf-8") if board.is_file() else None
+    # Of what the header's refresh says, only the rules it added: its "left as you have them" is
+    # about rules whose links the relinking below rewrites.
+    said += [line for line in init.refresh_header(store, True, commit=False) if " added to the header" in line]
+    for repo in store.repos:
+        if repo.path.is_dir():
+            said += init.refresh_notes(repo.path, store.link, True, store.boards)
+    if before is not None and board.read_text(encoding="utf-8") != before and board not in touched:
+        touched.append(board)
     # After the notes update and the headers, so what they wrote is relinked too.
     linked, relinked = _linked_files(store, build, plan), []
     for name in linked:
@@ -343,10 +369,16 @@ def _move(store, record) -> list:
     # Last of all: a move that stops before this is due again, and the run that finishes it
     # finds everything done, queues what is still uncommitted (nothing, once committed) and records it.
     if store.boards == (BUILD, PLAN):
-        with jobs.Ledger(store).change() as state:
-            state.setdefault("renamed", {"at": int(time.time())})
-        forget_moved()
+        record_move(store)
     return said
+
+
+def record_move(store):
+    """Record in the store's ledger that it is on Plan and Build (the first time wins). A store made
+    by `kandalf init` gets it as it is made, so it is never due."""
+    with jobs.Ledger(store).change() as state:
+        state.setdefault("renamed", {"at": int(time.time())})
+    forget_moved()
 
 
 # ---------- what is said ----------

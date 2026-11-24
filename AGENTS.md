@@ -20,9 +20,9 @@ This file is for any coding agent working on kandalf; `CLAUDE.md` imports it for
   them, not a test on one side only. `test_tiles.py` and `test_jobs.py` run them in Python,
   `test_page.js` in the page.
 - **`claude_code.py` is the only module that runs `claude`, `copilot_cli.py` the only one that runs `copilot`, `agy_cli.py` the only one that runs `agy`.** Keep every CLI call behind them; `agent.py` picks one by board.json's `agent`.
-- **Store vs app.** A store (`<repo>-plans`) is its own git repo holding `plans.md`,
-  `backlog.md`, plan docs and `board.json`; the app is the code repo it links into at
-  `docs/plans`. `store.py` defines both. Tests build throwaway stores in temp dirs; never point
+- **Store vs app.** A store (`<repo>-plans`) is its own git repo holding `build.md`
+  (the Build board), `plan.md` (the Plan board), plan docs and `board.json`; the app is the code repo it links into at
+  `docs/plans`. `store.py` defines both and is the one place the four board file names are written (`build.md`, `plan.md` and the old `plans.md`, `backlog.md`); `renaming.py` is the one module that renames a store's boards. Tests build throwaway stores in temp dirs; never point
   them at a real one.
 
 ## Worktrees
@@ -50,7 +50,7 @@ then installs the package and runs `kandalf --help`. New package files go in
 ## Writing style
 
 - Docstrings and comments are plain sentences about what a thing is or does, e.g. "The keyed
-  tiles in the plans board's In flight column". Test names read the same way
+  tiles in the Build board's In flight column". Test names read the same way
   (`test_a_tile_that_lands_in_flight_is_started_at_once`).
 - Each user-visible change gets a line under `## Unreleased` at the top of `CHANGELOG.md` (start one above the latest release if it isn't there). Update the README
   when you change a command, a `board.json` key (the config table) or what pickup does.

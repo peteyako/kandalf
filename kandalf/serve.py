@@ -71,7 +71,7 @@ DOC_RE = re.compile(r"^(active/)?[A-Za-z0-9][A-Za-z0-9._-]*\.md$")  # a plan doc
 ARCHIVE_LOG = reader.ARCHIVE_LOG
 ARCHIVE_HEAD = """# Archived plans
 
-Tiles dragged to the Archive column on the plans board, newest first. Their plan docs are in this folder.
+Tiles dragged to the Archive column on the Build board, newest first. Their plan docs are in this folder.
 
 ## Archived
 """
@@ -1261,12 +1261,12 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/move":
             p = self.target(parse_qs(u.query))
             if p is None or not p.is_file() or p.parent != self.plans or p.name not in moves(self.store):
-                return self.send_json(404, {"error": "only plans.md and backlog.md tiles move between boards"})
+                return self.send_json(404, {"error": "only the Build and Plan boards' tiles move between boards"})
             return self.move(p)
         if u.path == "/api/pull":
             p = self.target(parse_qs(u.query))
             if p is None or not p.is_file() or p.parent != self.plans or p.name not in pulls(self.store):
-                return self.send_json(404, {"error": "only plans.md pulls linked tiles in"})
+                return self.send_json(404, {"error": "only the Build board pulls linked tiles in"})
             return self.pull(p)
         if u.path == "/api/pickup":  # {key}: start a waiting job now, in parallel; {key, restart: true}: the Restart button; {key, continue: true}: the Continue button; {key, pause: true}: the Pause button
             data = self.read_body()

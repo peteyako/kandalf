@@ -8,7 +8,7 @@ It's a local kanban board for planning work for AI agents, served on your machin
 
 **Why it exists.** kandalf is for organising planning sessions: the plans you write with an agent, the stories they break into, and what becomes of each. Plans already live as markdown files, so that is all kandalf keeps. The board is one more markdown file, readable and editable by hand, and each plan doc sits beside it as it was written. No database, nothing to import or sync, and nothing to install beyond Python 3.10+ and git.
 
-Plans pass both ways between kandalf and your agent. Plan in a Claude Code, GitHub Copilot CLI or Antigravity CLI session in your repo, then say "add a story to kandalf": `kandalf init` taught the repo's agents how, with a section in its `AGENTS.md` and `CLAUDE.md`, so the session writes the plan doc into the store and files its tile on the backlog. The other way, plan on the board and hand it to an agent.
+Plans pass both ways between kandalf and your agent. Plan in a Claude Code, GitHub Copilot CLI or Antigravity CLI session in your repo, then say "add a story to kandalf": `kandalf init` taught the repo's agents how, with a section in its `AGENTS.md` and `CLAUDE.md`, so the session writes the plan doc into the store and files its tile on the Plan board. The other way, plan on the board and hand it to an agent.
 
 On top of the files sits just enough process to help things along. Drag a story to In flight and a background Claude Code, Copilot or Antigravity session starts on it, in its own git worktree, given the tile and the plan doc it links. Its progress shows on the tile, `kandalf attach` opens the session to carry on by hand, and when it's ready for review you squash, merge and close it from the board.
 
@@ -38,7 +38,7 @@ kandalf init --example      # a plans store beside the repo, with a sample story
 kandalf serve               # the board, on http://127.0.0.1:7788 (or the port init picked), opened in your browser
 ```
 
-`kandalf init` makes a folder beside your repo, named for the name you give it (`<repo>-plans` if you keep the default): a git repo of its own holding the board and its plan docs. It picks a free port and a key prefix, and links the store into your repo at `docs/plans` (a gitignored symlink). You get a board with the columns Bugs, To do, In flight and Done, a sample master story with two sub-stories, and a backlog board.
+`kandalf init` makes a folder beside your repo, named for the name you give it (`<repo>-plans` if you keep the default): a git repo of its own holding the two boards and its plan docs. It picks a free port and a key prefix, and links the store into your repo at `docs/plans` (a gitignored symlink). You get a Build board (`build.md`) with the columns Bugs, To do, In flight and Done, a sample master story with two sub-stories, and a Plan board (`plan.md`) for work not yet scheduled.
 
 ### Let agents pick up stories
 
@@ -113,11 +113,22 @@ The `permission` setting maps onto Antigravity's flags:
 
 A store set to `plan` cannot draft options.
 
+## Coming from 1.2
+
+Up to 1.2 the two boards were `plans.md` and `backlog.md`. They are now the Build board, `build.md`, and the Plan board, `plan.md`. The first time `kandalf serve` runs on an existing store it renames `plans.md` to `build.md` and `backlog.md` to `plan.md` in one commit (`board: plans.md → build.md, backlog.md → plan.md`), and fixes the links between the boards and the plan docs to match. There is nothing to run. The store keeps working on the old names until then.
+
+- **It waits** while an agent session is in the middle of a turn, while the agent's sessions can't be listed, while a file of your own called `build.md` or `plan.md` is in the way, and while `board.json` can't be read. The page says which.
+- **Sessions started before** the rename are told the new names at the top of the next message they get.
+- **If an old file comes back** (an agent or a script wrote `plans.md` again), the page and the edit hook say so. Nothing is merged or deleted for you: move anything new into the new file and delete the old one.
+- **A header still as kandalf wrote it** (any release's) is replaced whole by the new one. **A header you have edited** keeps its own wording: links are repointed, sentences are not, so read it once and change "backlog board" and "plans board" by hand. A board's title, `# Plans` or `# Backlog`, becomes `# Build` or `# Plan` either way; any other title is left alone.
+- **The store's own README**, and any other markdown file at the top of the store, has its links to the old files repointed; its sentences are not touched.
+- **Rules or notes of your own** that name the old files (a rule in `~/.claude`, a script) need a hand edit. A bookmark such as `?file=plans.md` is mapped to the new board for you, and `kandalf check docs/plans/plans.md` checks the store's present file.
+
 ## What a session does with a story
 
 ### Pickup
 
-While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a keyed tile that lands in the In flight column of `plans.md` is picked up, however it got there: dragged on the board, edited in by hand, or moved by an agent. The server:
+While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a keyed tile that lands in the In flight column of `build.md` is picked up, however it got there: dragged on the board, edited in by hand, or moved by an agent. The server:
 
 1. **Cuts a worktree** on a new branch from the trunk, or from the branch the tile's `Base:` line names. For PLN-74, that's worktree `myapp/.worktrees/pln-74` on branch `pln-74-colour-tokens`. `"branch"` and `"worktree"` in `board.json` change the names; `"worktree": "{app}-{key}"` puts it beside the app (`myapp-pln-74`), the default before. The store is linked in at `docs/plans` there too.
 2. **Starts a background session** in it, given the tile and told to follow the repo's rules, tick sub-tasks with their commits as they land, keep a `Handoff:` line on the tile, and stop before merging or pushing.
@@ -125,7 +136,7 @@ While `kandalf serve` runs for a store with an `app` and `"pickup": true`, a key
 
 A tile with a `Repos: api, web` line gets a worktree in each repo, all on the same branch, each placed by the `worktree` pattern for its own repo (`api/.worktrees/pln-74` and `web/.worktrees/pln-74` in a store made by `kandalf init`). The session starts in the first and gets the others with `--add-dir`; its prompt lists them. The store is linked in only where that repo's checkout links it.
 
-When the server starts, it also picks up any tile already in flight that never had a session (no session line and no sub-stories). Unkeyed tiles, and tiles that say `No pickup`, are never picked up; take the words out and the tile is picked up on the next look. The server's startup list says when `No pickup` is why a tile has no session. A tile that says `Blocked by PLN-30` waits the same way: while a blocker isn't done it stays in In flight without a session, the console says so once, the startup list and the tile (`waits for PLN-30`) say what for, and it is picked up on the first look after its last blocker is done (a change to `backlog.md` or the archive log brings a look, as one to `plans.md` does, so deciding a backlog tile starts what it blocked). A story that already has a session carries on if a `Blocked by` line is added, and one paused in place stays paused. A story still queued gives up its place when a `Blocked by` line is added, and is queued again at the back once its blockers are done; one waiting to be taken over from its handoff is paused again, and taken over in turn once unblocked. When a story is picked up, its session is given the tiles of its decided blockers (the ones with a `**Decision …**` line) to follow.
+When the server starts, it also picks up any tile already in flight that never had a session (no session line and no sub-stories). Unkeyed tiles, and tiles that say `No pickup`, are never picked up; take the words out and the tile is picked up on the next look. The server's startup list says when `No pickup` is why a tile has no session. A tile that says `Blocked by PLN-30` waits the same way: while a blocker isn't done it stays in In flight without a session, the console says so once, the startup list and the tile (`waits for PLN-30`) say what for, and it is picked up on the first look after its last blocker is done (a change to `plan.md` or the archive log brings a look, as one to `build.md` does, so deciding a tile on the Plan board starts what it blocked). A story that already has a session carries on if a `Blocked by` line is added, and one paused in place stays paused. A story still queued gives up its place when a `Blocked by` line is added, and is queued again at the back once its blockers are done; one waiting to be taken over from its handoff is paused again, and taken over in turn once unblocked. When a story is picked up, its session is given the tiles of its decided blockers (the ones with a `**Decision …**` line) to follow.
 
 If a session can't be started, the tile shows **not started** with the reason, and a **Retry** button.
 
@@ -201,7 +212,7 @@ One tile works at a time unless `"parallel"` in `board.json` allows more. When t
 
 ### Stats
 
-While pickup is on, a strip under the plans board's header counts the stories:
+While pickup is on, a strip under the Build board's header counts the stories:
 
 - **at work**
 - **need you**: the session asked something, ended on an error, is gone, or couldn't be started
@@ -230,10 +241,10 @@ Each of these has a field in the tile's dialog that writes a line on the tile (s
 
 Leave pickup off and it's a markdown kanban.
 
-- **Columns and tiles.** `plans.md` is the board: one `## ` column per status, one `- ` tile per plan. Drag a tile to change its status, or edit it in place. A tile can have a priority, an estimate and tick-box sub-tasks. If the file changed on disk since your page loaded it, the server refuses to save over it and reloads it instead.
+- **Columns and tiles.** `build.md` is the Build board: one `## ` column per status, one `- ` tile per plan. Drag a tile to change its status, or edit it in place. A tile can have a priority, an estimate and tick-box sub-tasks. If the file changed on disk since your page loaded it, the server refuses to save over it and reloads it instead.
 - **Plan docs.** Longer plans live in `active/` (`YYYY-MM-DD-slug.md`), linked from the tile. A key written anywhere in a tile's text ("after PLN-41") jumps to that tile, and a tile's dialog lists what it's Related to.
-- **Backlog and Promote.** `backlog.md` is a second board of unscheduled tiles, one column per kind of work. Drop a tile on Promote and it moves to the top of To do, with a key if it had none. On the plans board, Back to backlog lists the backlog's columns. A tile in a column whose name says decision (Design decision, Decisions, Decide) is answered, not promoted: its card has an Answer box, and **Decide** writes the answer on the tile as a `**Decision <date>:**` line (folded to one line), ticks the tile and archives it, then names the stories it unblocked. A story that waits on a decision says `Blocked by` and its key.
-- **Draft options.** A tile in a decision column, on plans or backlog, has a **Draft options** button on its card, with an optional one-line note saying what to look at. It cuts a throwaway detached worktree (no branch) of each repo the tile's `Repos:` line names, else of the main repo, and starts one background session of the store's agent in the first, which researches the question and writes one research doc, `active/<date>-<key>-options.md`, in the store. When the session finishes, the board reads the doc and writes an options block onto the tile: an `**Options <date>:**` line (which option is recommended, a link to the research doc, and `Asked: <note>` when a note was given) and up to four `- **A. Title.** summary` lines. The card lists them above the Answer box, each with **Use**, which copies the option into the Answer box to edit (it asks first if you typed something else). Nothing is decided until **Decide**. A hand-written options block in the same shape is listed the same way, with no draft.
+- **Plan and Promote.** `plan.md` is the Plan board, a second board of unscheduled tiles, one column per kind of work. Drop a tile on Promote and it moves to the top of To do on the Build board, with a key if it had none. On the Build board, Back to Plan lists the Plan board's columns. A tile in a column whose name says decision (Design decision, Decisions, Decide) is answered, not promoted: its card has an Answer box, and **Decide** writes the answer on the tile as a `**Decision <date>:**` line (folded to one line), ticks the tile and archives it, then names the stories it unblocked. A story that waits on a decision says `Blocked by` and its key.
+- **Draft options.** A tile in a decision column, on the Plan or Build board, has a **Draft options** button on its card, with an optional one-line note saying what to look at. It cuts a throwaway detached worktree (no branch) of each repo the tile's `Repos:` line names, else of the main repo, and starts one background session of the store's agent in the first, which researches the question and writes one research doc, `active/<date>-<key>-options.md`, in the store. When the session finishes, the board reads the doc and writes an options block onto the tile: an `**Options <date>:**` line (which option is recommended, a link to the research doc, and `Asked: <note>` when a note was given) and up to four `- **A. Title.** summary` lines. The card lists them above the Answer box, each with **Use**, which copies the option into the Answer box to edit (it asks first if you typed something else). Nothing is decided until **Decide**. A hand-written options block in the same shape is listed the same way, with no draft.
   - **Draft again** takes a note and replaces the draft: the new session is told the note and to revise the last draft. **Stop** ends a draft. `kandalf attach KEY` opens a draft's session in a terminal (a story's session wins when the key has both). When the research doc changes later, because an attached session revises it or you edit it by hand, the tile's options follow.
   - The tile's tag says where a draft stands: `queued to draft`, `drafting options · 12m`, `options ready`, `draft needs you`, `draft gave no options` or `draft lost`. A draft needs you when its session stopped on a question, a permission prompt or an error, or when a redraft finished without changing the research doc.
   - One draft works at a time and the others queue. Drafts are apart from the story queue: they don't count against `sessions` or `parallel`, and stories don't wait for them.
@@ -247,17 +258,17 @@ Leave pickup off and it's a markdown kanban.
 
 ## The map
 
-**Map**, beside **Board** in the header, shows the same stories as a map. Every keyed story on plans, backlog and the archive is on it, whichever board is open.
+**Map**, beside **Board** in the header, shows the same stories as a map. Every keyed story on the Build board, the Plan board and the archive is on it, whichever board is open.
 
 - **Masters and sub-stories.** A master is a hub with its sub-stories round it. The ring on the hub fills as they are done, and the list on the left sorts masters into moving, not started and finished.
 - **Lines.** A dashed line joins two stories when one mentions the other's key; a solid one joins linked tiles, which move together. A blocker and the story it blocks are joined too, and the panel lists what blocks a story and what it blocks.
-- **Colour** says where a story is: backlog, planned (on the plans board, not yet in flight), in flight, or done. An archived story is done. With pickup on, a story at work has a turning ring, and one that needs you is red.
+- **Colour** says where a story is: Plan, to build (on the Build board, not yet in flight), in flight, or done. An archived story is done. With pickup on, a story at work has a turning ring, and one that needs you is red.
 - **Next up.** Stories that pulse are the ones to look at: any that needs you or is ready for review, the sub-stories not yet started of a master that is already moving, and a planned story that stands alone. A story that is blocked doesn't pulse.
 - **Domains.** Stories are grouped into a region per domain, and the chips at the top show one domain only. A story's domain is its own `Domain:` line, else its master's, else the first word before the colon in its title (`Admin: analytics`) when two masters or three stories start with that word.
 - **Getting around.** Click a story to bring it to the middle with everything it is joined to; the panel lists those, each a click to hop to, and **Open tile** opens its card on its board. Esc steps back the way you came. Drag to pan, scroll to zoom, and type in the filter box to fade everything that doesn't match. With pickup on, the strip above the map counts the stories in each state, and pressing one fades the rest.
 - **Arranging.** Hold Ctrl (or ⌘) and drag a master's circle to move its cluster, or a region to move a whole domain; with Alt as well, one sub-story. The arrangement is kept in your browser, per store, and **Reset layout** forgets it. Arranging changes no file.
 - **Selecting.** Shift-click a story to select it or take it out of the selection (it doesn't focus the story, and a story the filter, the strip or the domain scope has faded can't be selected, and one faded after it was selected leaves the selection), or Shift-drag a box from empty space to add the shown stories inside it. Esc, a click on empty space, or changing the filter or the domain scope clears the selection. Drag a selected story (no Ctrl or ⌘) and the whole selection goes with it, a selected master's sub-stories moving with it on screen. The region under the pointer lights up; let go over it and the selection is filed in that domain. Let go anywhere else, or press Esc, and nothing is written and the selection stays.
-- **Filing.** A drop writes one `Domain:` line per family: a story's own, or for a sub-story its top master's (adding it, replacing it, or taking it off when you drop on **No domain**), and nothing else, on plans, backlog or the archive, whichever board is open, as one commit (`board: 6 stories → Billing`). Families stay whole: dropping any story of a family files its top master, and its sub-stories follow, except one with a `Domain:` line of its own. `Part of` is never changed, and the map can't change or add a story's parent. A story that is in a domain only by its title (`Admin: analytics`) can be filed elsewhere, but dropping it on **No domain** changes nothing, and the page says so. The page says what it did (`PLN-70 and its 4 sub-stories → Billing`), and **Undo** appears in the map's bar until the next drop that files something or a reload. Undo is refused when a filed story's domain has been changed since (on its card, by an agent or in an editor), whichever board it is on: the server checks it against the files at the moment you press Undo, so that edit isn't lost, and the map then shows what is on disk. A drop is refused with "Save the board first." while the open board has unsaved edits.
+- **Filing.** A drop writes one `Domain:` line per family: a story's own, or for a sub-story its top master's (adding it, replacing it, or taking it off when you drop on **No domain**), and nothing else, on the Build board, the Plan board or the archive, whichever board is open, as one commit (`board: 6 stories → Billing`). Families stay whole: dropping any story of a family files its top master, and its sub-stories follow, except one with a `Domain:` line of its own. `Part of` is never changed, and the map can't change or add a story's parent. A story that is in a domain only by its title (`Admin: analytics`) can be filed elsewhere, but dropping it on **No domain** changes nothing, and the page says so. The page says what it did (`PLN-70 and its 4 sub-stories → Billing`), and **Undo** appears in the map's bar until the next drop that files something or a reload. Undo is refused when a filed story's domain has been changed since (on its card, by an agent or in an editor), whichever board it is on: the server checks it against the files at the moment you press Undo, so that edit isn't lost, and the map then shows what is on disk. A drop is refused with "Save the board first." while the open board has unsaved edits.
 - **New domain.** **+ New domain** in the map's bar asks for a name and adds an empty region to drop stories into. A name starts with a letter or a digit, is at most 39 characters, has no backtick or line break, and doesn't end in a full stop; a bad name is refused with the reason. A name that matches a domain already on the map, ignoring case, is that domain. An empty domain is kept in your browser, per store, with the arrangement across reloads until a story is in it, and **Reset layout** clears it; the files know a domain only through the tiles that carry it.
 - **Help.** The **(i)** at the end of the map's bar shows a short guide to all of this while you hover it, or focus it with Tab or a tap.
 
@@ -265,7 +276,7 @@ Moving a story between columns and editing its card are done on the board; the m
 
 ## Keeping the filing rules current
 
-Agents file stories by two sets of instructions that `kandalf init` wrote once: the header of `plans.md`, and a note in each linked repo's `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` (between `<!-- kandalf -->` marks). An upgrade of kandalf doesn't touch either. `kandalf notes` says what is behind, and `kandalf notes --update` brings it up to date:
+Agents file stories by two sets of instructions that `kandalf init` wrote once: the header of `build.md`, and a note in each linked repo's `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` (between `<!-- kandalf -->` marks). An upgrade of kandalf doesn't touch either. `kandalf notes` says what is behind, and `kandalf notes --update` brings it up to date:
 
 - **The header** gains the rules it lacks, each where the template has it, and the store commits the change. A rule you already have is never changed, however you worded it; the ones whose wording differs from today's are listed for you to compare.
 - **The note** in each repo is replaced with today's. The files aren't committed for you.
@@ -297,7 +308,7 @@ Write these in a tile and the board acts on them.
 | `**Ready for review:** ...` (own line) | The story is finished and waits for you. The tile is outlined green. Anyone's line counts, not only a session's. |
 | A branch in backticks with a slash in its name (`` `feat/x` ``) on a Done tile, or the branch on its session line | The tile is outlined red until that branch is merged into the trunk (or the story's `Base:` branch) of each repo the tile names: its session line's repos, else its `Repos:` line's, else the main repo. Only in a column named Done. |
 
-Only the board applies links and sub-story moves. A tile moved by hand, in an editor or by an agent, moves alone. The filing rules are in the header of each store's `plans.md`.
+Only the board applies links and sub-story moves. A tile moved by hand, in an editor or by an agent, moves alone. The filing rules are in the header of each store's `build.md`.
 
 ## Settings
 
@@ -351,7 +362,7 @@ kandalf key next            the next free tile key
 kandalf key assign          key every tile that has none, oldest first
 kandalf commit status       what's queued, and when it will commit
 kandalf commit now          commit and push the queue right away
-kandalf check FILE...       would the board open this file view-only? names the first bad line, and a second In flight or Done column
+kandalf check FILE...       would the board open this file view-only? (an old name, plans.md, checks the store's present file) names the first bad line, and a second In flight or Done column
 kandalf where               which store, its key, port, app and repo
 kandalf attach ID|KEY       open a story's session, or a draft's when the key has no story session (for Claude, `claude attach`; for Copilot or Antigravity, follow it, then `copilot --resume` or `agy --conversation`)
 kandalf status KEY          the Status line for a story's session, as the tile's Status button writes it
@@ -375,7 +386,7 @@ You never commit board changes by hand. A change is saved to disk at once and co
 
 1. **Every change is queued:** each save, archive and promote the server makes, and, through the hooks below, each Edit/Write of a `.md` file inside a store in Claude Code. The queue is the store's `.git/board-pending.json`.
 2. **The commit waits for quiet.** After 5 minutes with no new change (`commitDelay`), everything queued goes in as one commit. Every change restarts the wait.
-3. **The subject says what changed overall**, e.g. `board: PLN-26 backlog.md → To do, PLN-33 archived`. The body lists each step.
+3. **The subject says what changed overall**, e.g. `board: PLN-26 plan.md → To do, PLN-33 archived`. The body lists each step.
 4. **Each commit is pushed** in the background. A failed push is logged in `.git/board-push.log`, and the next push sends everything waiting. A store with no upstream isn't pushed, and `"push": false` commits without pushing.
 
 On start, the server also picks up changes left over from before. A commit takes only the queued paths: anything changed another way (a shell `mv` or `sed`) isn't queued, so commit it yourself or restart the server. A running server keeps the code it started with, so restart it after updating kandalf.
@@ -398,7 +409,7 @@ The board's hooks are Claude Code hooks. The Copilot CLI reads them too, and an 
 ```
 
 - **`kandalf hook autocommit`** queues an Edit/Write of a `.md` file inside a store for the next batched commit. It ignores everything else and never fails the tool call.
-- **`kandalf hook check`** runs after an edit to `plans.md`, `backlog.md` or `archive/archived.md`. If the board would open the file view-only, or the file has two In flight or two Done columns, it hands the error back to the session that made the edit, so the session fixes the file at once. It needs node.
+- **`kandalf hook check`** runs after an edit to `build.md`, `plan.md` or `archive/archived.md`. If the board would open the file view-only, or the file has two In flight or two Done columns, it hands the error back to the session that made the edit, so the session fixes the file at once. It needs node.
 
 ## Safety
 
@@ -431,7 +442,7 @@ kandalf/
   cli.py                  the commands
   serve.py, board.html    the server and its page
   tiles.py                reads and edits board markdown: tiles, their attribute lines, the session line, and a
-                          snapshot of plans, backlog and the archive log (index, lineage, In flight tiles)
+                          snapshot of the Build board, the Plan board and the archive log (index, lineage, In flight tiles)
   pickup.py               hands a tile in In flight to an agent
   drafts.py               drafts a decision's options: the research doc's reading, the draft's session and worktree
   jobs.py                 the job ledger: board-pickup.json, locked across processes, and its queries
@@ -442,6 +453,7 @@ kandalf/
   agy_cli.py              every call to the agy CLI
   init.py                 kandalf init, kandalf doctor, kandalf agent, kandalf hooks (and --add)
   gitlog.py               the batched commit queue
+  renaming.py             the one module that renames a store's boards (plans.md and backlog.md to build.md and plan.md)
   store.py                what a store is, and its board.json
   pln.py                  tile keys
   stamp.py                where a build came from, for the page's corner (setup.py writes it at build time)

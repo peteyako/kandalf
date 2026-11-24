@@ -39,6 +39,18 @@ def git(path, *args) -> str:
     return subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True, text=True).stdout
 
 
+def old_names(folder: Path):
+    """Turn a store init made into one as 1.2's init made it: each board named as it was, with the
+    v1.2.0 template's header literally (templates/old/plans-4.md and backlog-1.md), and no
+    record of a move in the ledger."""
+    st = stores.Store(folder)
+    values = {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}
+    for new, old, header in ((stores.BUILD, stores.OLD_BUILD, "plans-4.md"), (stores.PLAN, stores.OLD_PLAN, "backlog-1.md")):
+        text = (folder / new).read_text(encoding="utf-8")
+        (folder / old).write_text(init.from_template("old/" + header, values) + text[len(init.header_of(text)):], encoding="utf-8")
+        (folder / new).unlink()
+
+
 def make_store(top: Path, *, repo=True, app=False) -> stores.Store:
     """A store made as kandalf init makes one on the old names, with the example story, a plan doc
     in active/ and one in archive/ that link the boards, and, when repo, a git repo with it all
@@ -49,6 +61,7 @@ def make_store(top: Path, *, repo=True, app=False) -> stores.Store:
         (top / "app").mkdir()
         cfg["app"] = "../app"
     init.write_store(folder, cfg, True, TODAY)
+    old_names(folder)
     (folder / DOC).write_text(DOC_TEXT, encoding="utf-8")
     (folder / ARCHIVED_DOC).write_text(ARCHIVED_TEXT, encoding="utf-8")
     if repo:
@@ -217,8 +230,8 @@ class Move(Base):
                                        encoding="utf-8")
         board = st.dir / "plans.md"
         text = board.read_text(encoding="utf-8")
-        rule = next(line for line in text.split("\n") if line.startswith("- **Drafting options:**"))
-        board.write_text(text.replace(rule + "\n", "").replace("This file is the board", "This file is our board"), encoding="utf-8")
+        self.assertNotIn("- **Drafting options:**", text)  # 1.2's header lacks it
+        board.write_text(text.replace("This file is the board", "This file is our board"), encoding="utf-8")
         git(st.dir, "commit", "-qam", "board: an older header, edited")
         lines = renaming.move(st, sessions=IDLE, record=commit_now)
         self.assertTrue(lines)
@@ -404,7 +417,7 @@ class Move(Base):
         self.assertIn("`kandalf check build.md`", new)
         self.assertNotIn("backlog.md", new)
         self.assertNotIn("plans.md", new)
-        self.assertEqual((st.dir / "plan.md").read_text(encoding="utf-8"), renaming.relink(edited))
+        self.assertEqual((st.dir / "plan.md").read_text(encoding="utf-8"), renaming.relink(edited).replace("# Backlog", "# Plan", 1))
         self.assertIn("on the Build board", heads["plan"][1])
 
     def test_plan_docs_in_active_and_archive_are_relinked(self):
@@ -537,6 +550,88 @@ class Restart(Base):
             gitlog.resume(st)
         with gitlog.queue(st.root) as q:
             self.assertEqual(q["paths"], [DOC])
+
+
+class Headers(Base):
+    def test_the_move_gives_an_old_template_header_the_new_templates_read_from_its_file(self):
+        st = make_store(self.top, repo=False)
+        values = {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}
+        old = init.header_of(init.from_template("old/plans-4.md", values))
+        self.assertTrue((st.dir / "plans.md").read_text(encoding="utf-8").startswith(old))
+        renaming.move(st, sessions=Fake())
+        build = (st.dir / "build.md").read_text(encoding="utf-8")
+        self.assertTrue(build.startswith(init.header_of(init.from_template("build.md", values))))
+        self.assertIn("[plan.md](plan.md)", build)
+
+
+OLD_DIR = Path(__file__).resolve().parent / "kandalf" / "templates" / "old"
+VALUES = {"name": "Shop", "key": "PLN", "link": "plans", "trunk": "main"}
+
+
+def literal(name: str) -> str:
+    """A header kept as data in templates/old/ (the text a released template began with, cut from
+    git), with a store's values put in as init does."""
+    text = (OLD_DIR / name).read_text(encoding="utf-8")
+    for key, value in VALUES.items():
+        text = text.replace("{" + key + "}", value)
+    return text
+
+
+class Generations(Base):
+    def moved(self, plans: str, backlog: str):
+        st = make_store(self.top, repo=False)
+        (st.dir / "plans.md").write_text(plans + "## Bugs\n\n## To do\n\n## In flight\n\n## Done\n", encoding="utf-8")
+        (st.dir / "backlog.md").write_text(backlog + "## Design decision\n\n## Feature\n", encoding="utf-8")
+        renaming.move(st, sessions=IDLE, record=mock.Mock())
+        return st
+
+    def test_each_header_a_release_wrote_is_replaced_by_the_new_templates(self):
+        names = sorted(f.name for f in OLD_DIR.glob("*.md"))
+        self.assertEqual([n for n in names if n.startswith("plans-")], [f"plans-{i}.md" for i in range(1, 6)])
+        self.assertEqual([n for n in names if n.startswith("backlog-")], ["backlog-1.md", "backlog-2.md"])
+        want_build = init.header_of(init.from_template("build.md", VALUES))
+        want_plan = init.header_of(init.from_template("plan.md", VALUES))
+        for plans in (n for n in names if n.startswith("plans-")):
+            for backlog in (n for n in names if n.startswith("backlog-")):
+                with self.subTest(plans=plans, backlog=backlog):
+                    st = self.moved(literal(plans), literal(backlog))
+                    self.assertTrue((st.dir / "build.md").read_text(encoding="utf-8").startswith(want_build + "## Bugs"))
+                    self.assertTrue((st.dir / "plan.md").read_text(encoding="utf-8").startswith(want_plan + "## Design decision"))
+                    shutil.rmtree(st.dir)
+
+    def test_a_header_with_one_word_changed_is_kept(self):
+        for plans in ("plans-3.md", "plans-4.md", "plans-5.md"):
+            with self.subTest(plans=plans):
+                edited = literal(plans).replace("tracks every plan", "tracks every project")
+                self.assertNotEqual(edited, literal(plans))
+                st = self.moved(edited, literal("backlog-1.md").replace("Work not yet scheduled", "Work for one day"))
+                build = (st.dir / "build.md").read_text(encoding="utf-8")
+                self.assertIn("tracks every project", build)
+                self.assertNotIn("the Build board, the board that tracks", build)
+                self.assertTrue((st.dir / "plan.md").read_text(encoding="utf-8").startswith("# Plan\n\nWork for one day"))
+                shutil.rmtree(st.dir)
+
+    def test_a_title_that_is_exactly_an_old_boards_name_is_renamed_in_an_edited_header(self):
+        st = self.moved("# Plans\n\nMy own words.\n\n- **Keys:** mine.\n\n", "# Backlog\n\nMine too.\n\n")
+        self.assertTrue((st.dir / "build.md").read_text(encoding="utf-8").startswith("# Build\n\nMy own words.\n\n- **Keys:** mine.\n"))
+        self.assertTrue((st.dir / "plan.md").read_text(encoding="utf-8").startswith("# Plan\n\nMine too.\n"))
+
+    def test_any_other_title_is_kept(self):
+        st = self.moved("# DinkedIn plans\n\nMy own words.\n\n", "# Backlog of ideas\n\nMine too.\n\n")
+        self.assertTrue((st.dir / "build.md").read_text(encoding="utf-8").startswith("# DinkedIn plans\n"))
+        self.assertTrue((st.dir / "plan.md").read_text(encoding="utf-8").startswith("# Backlog of ideas\n"))
+
+    def test_the_stores_own_readme_has_its_links_repointed_and_its_sentences_kept(self):
+        st = make_store(self.top)
+        readme = st.dir / "README.md"
+        readme.write_text("# Notes\n\nSee [`plans.md`](plans.md) for the work. The plans.md file is the board.\n", encoding="utf-8")
+        git(st.dir, "add", "README.md")
+        git(st.dir, "commit", "-qm", "docs: a readme")
+        renaming.move(st, sessions=IDLE, record=commit_now)
+        self.assertEqual(readme.read_text(encoding="utf-8"),
+                         "# Notes\n\nSee [`build.md`](build.md) for the work. The plans.md file is the board.\n")
+        self.assertIn("README.md", git(st.dir, "show", "--name-only", "--format=%s", "HEAD"))
+        self.assertEqual(git(st.dir, "status", "--porcelain"), "")
 
 
 class Told(Base):

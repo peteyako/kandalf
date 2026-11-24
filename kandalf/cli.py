@@ -1,4 +1,4 @@
-"""kandalf: the plans board tool, for any plans store (see store.py).
+"""kandalf: the board tool for Plan and Build boards, for any store (see store.py).
 
     kandalf init [DIR] [--example] [--yes]   make a store (beside this git repo) and link it in
     kandalf serve [--dir STORE] [--port N]   serve a store's boards and open them (--no-open: don't)
@@ -17,8 +17,8 @@
     kandalf repo list [--dir STORE]          the store's repos
     kandalf repo rm NAME [--dir STORE]       take a repo out of board.json
     kandalf uninstall [--dir STORE]          remove the docs/plans link from each of the store's repos
-    kandalf notes [--update] [--dir STORE]   whether the filing rules agents read are today's: the plans.md
-                                             header and the note in each repo; --update brings them up to date
+    kandalf notes [--update] [--dir STORE]   whether the filing rules agents read are today's: the Build
+                                             board's header and the note in each repo; --update brings them up to date
     kandalf hooks [--add] [--dir STORE]      the board's PostToolUse hooks block; --add puts it in the
                                              store's .claude/settings.json and links that into its app
 
@@ -53,6 +53,24 @@ def pick_store(args):
         raise SystemExit("board: no store here. Pass --dir, or run it from a store or an app repo "
                          "that links one in (docs/plans).")
     return st, rest
+
+
+def present_board(arg: str) -> str:
+    """The file `kandalf check` is given, or, when there is no such file and its name is another
+    spelling of one of its store's boards (docs/plans/plans.md in a store that was moved), the
+    store's present board, said on one line."""
+    path = Path(arg)
+    if path.exists() or path.name not in (stores.BUILD, stores.PLAN, stores.OLD_BUILD, stores.OLD_PLAN):
+        return arg
+    folder = stores.Store(path.parent)
+    if not folder.is_store:
+        return arg
+    now = folder.board(path.name)
+    if now == path.name:
+        return arg
+    old = path.name in (stores.OLD_BUILD, stores.OLD_PLAN) and folder.build == stores.BUILD  # an old name, on a moved store
+    print(f"{path.name} is now {now}: checking that." if old else f"{path.name} is {now} in this store: checking that.")
+    return str(path.parent / now)
 
 
 def session_of(args):
@@ -97,7 +115,7 @@ def main(argv=None):
         st, rest = pick_store(args)
         gitlog.main(st, rest)
     elif cmd == "check":
-        return subprocess.run(["node", str(HERE / "check.js"), *args]).returncode
+        return subprocess.run(["node", str(HERE / "check.js"), *[present_board(a) for a in args]]).returncode
     elif cmd == "hook" and args[:1] == ["autocommit"]:
         from . import autocommit
         return autocommit.main()

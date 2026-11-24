@@ -5,7 +5,7 @@
 
 The store goes in DIR, or beside the git repo you're in in a folder named for the store's name
 (<repo>-plans when the name is left at its default). It gets board.json,
-plans.md and backlog.md (from templates/), active/, archive/archived.md, a git repo of its own
+plan.md and build.md (from templates/), active/, archive/archived.md, a git repo of its own
 and a first commit. With an app, the app gets a gitignored docs/plans symlink to the store and,
 the board's hooks (unless --no-hooks): they go in the store's .claude/settings.json (committed with it),
 which pickup sessions load with --settings and the app links in as a gitignored
@@ -180,6 +180,13 @@ def from_template(name: str, values: dict) -> str:
     return text
 
 
+def for_store(st, text: str) -> str:
+    """Template text with the two board file names written as the store has them: a store still on
+    the old names (waiting to be moved) is told its own files, not ones it doesn't have yet."""
+    build, plan = st.boards
+    return text.replace(stores.BUILD, "\0b").replace(stores.PLAN, "\0p").replace("\0b", build).replace("\0p", plan)
+
+
 def put(board: str, column: str, tiles: str) -> str:
     """A board with tiles (back to back) as the cards of an empty column."""
     head = f"## {column}\n"
@@ -188,11 +195,11 @@ def put(board: str, column: str, tiles: str) -> str:
 
 
 def example(key: str, today: datetime.date) -> dict:
-    """The sample story files, {path in the store: text}, and what plans.md and backlog.md
-    gain: {"plans.md": {column: tiles}, "backlog.md": {column: tiles}}."""
+    """The sample story files, {path in the store: text}, and what the Build and Plan boards
+    gain: {"build": {column: tiles}, "plan": {column: tiles}, "docs": {path: text}}."""
     k = lambda n: f"{key}-{n:02d}"  # noqa: E731
     doc = f"active/{today.isoformat()}-dark-mode.md"
-    plans = {
+    build = {
         "Bugs": f"""
 - [ ] {k(4)} P2 **Settings forgets the open tab.**
   Leaving Settings and coming back always opens the General tab. Fix it before {k(3)} puts the theme switch on the Appearance tab. (A key in a tile is a link: this tile is related to {k(3)}.)""",
@@ -212,7 +219,7 @@ def example(key: str, today: datetime.date) -> dict:
 - [x] {k(5)} ~1h **Project set up.**
   The repo, the build and a first page. Clear, in this column's header, archives what is done.""",
     }
-    backlog = {
+    plan = {
         "Feature": f"""
 - [ ] {k(6)} **Keyboard shortcuts.**
   The common actions get keys, listed on a help page. Drag it onto Promote to schedule it.""",
@@ -233,7 +240,7 @@ A dark theme for the whole app. It follows the system setting, and a switch in S
 
 Every screen reads well in both themes, and the choice survives a restart.
 """}
-    return {"plans.md": plans, "backlog.md": backlog, "docs": docs}
+    return {"build": build, "plan": plan, "docs": docs}
 
 
 def write_store(folder: Path, cfg: dict, with_example: bool, today: datetime.date):
@@ -241,7 +248,7 @@ def write_store(folder: Path, cfg: dict, with_example: bool, today: datetime.dat
     folder.mkdir(parents=True, exist_ok=True)
     (folder / stores.CONFIG).write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     values = {"name": cfg["name"], "key": cfg["key"], "link": cfg["link"], "trunk": cfg.get("trunk", "main")}
-    boards = {b: from_template(b, values) for b in ("plans.md", "backlog.md")}
+    boards = {kind: from_template(name, values) for kind, name in (("build", stores.BUILD), ("plan", stores.PLAN))}
     (folder / "active").mkdir(exist_ok=True)
     (folder / "active" / ".gitkeep").write_text("", encoding="utf-8")
     (folder / "archive").mkdir(exist_ok=True)
@@ -253,8 +260,8 @@ def write_store(folder: Path, cfg: dict, with_example: bool, today: datetime.dat
                 boards[b] = put(boards[b], column, tiles)
         for path, text in sample["docs"].items():
             (folder / path).write_text(text, encoding="utf-8")
-    for b, text in boards.items():
-        (folder / b).write_text(text, encoding="utf-8")
+    for kind, name in (("build", stores.BUILD), ("plan", stores.PLAN)):
+        (folder / name).write_text(boards[kind], encoding="utf-8")
 
 
 def has_identity(repo: Path) -> bool:
@@ -289,7 +296,7 @@ def covers(gitignore: str, path: str) -> bool:
                if line.strip() and not line.startswith(("#", "!")))
 
 
-def link_app(app: Path, folder: Path, link: str) -> list:
+def link_app(app: Path, folder: Path, link: str, boards: tuple = (stores.BUILD, stores.PLAN)) -> list:
     """The app's docs/<link> symlink to the store, and its .gitignore lines (the link, and
     .worktrees/ where the sessions' worktrees go); what was done."""
     said, at = [], app / "docs" / link
@@ -301,7 +308,7 @@ def link_app(app: Path, folder: Path, link: str) -> list:
         at.symlink_to(os.path.relpath(folder, at.parent))
         said.append(f"linked it into the app at {at} -> {os.path.relpath(folder, at.parent)}")
     said += ignore(app, (f"docs/{link}", f"docs/{link}"), (WORKTREES_IGNORE, WORKTREES_IGNORE + "/"))
-    return said + agent_notes(app, link)
+    return said + agent_notes(app, link, boards)
 
 
 AGENT_NOTES_MARK = "<!-- kandalf -->"
@@ -309,15 +316,17 @@ AGENT_NOTES_END = "<!-- /kandalf -->"  # where the note stops; one written befor
 NOTED = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")  # the files of a repo that may carry the note
 
 
-def agent_notes_text(link: str) -> str:
+def agent_notes_text(link: str, boards: tuple = (stores.BUILD, stores.PLAN)) -> str:
+    """The note for agents, naming the store's board files (boards: its build and plan file names)."""
+    build, plan = boards
     return f"""{AGENT_NOTES_MARK}
 ## Kandalf board
 
 This repo's stories live on a kandalf board, linked in at `docs/{link}`. When the user says
 "add a story to kandalf", "kandalf new story", "new kandalf story", "add to board" or
-"add to the board", file a story: read the header of `docs/{link}/plans.md` for the filing
+"add to the board", file a story: read the header of the Build board, `docs/{link}/{build}`, for the filing
 rules, run `kandalf key next` for the key, write the plan doc in `docs/{link}/active/` and add
-the tile at the top of its column on `docs/{link}/backlog.md`. A master story with sub-stories,
+the tile at the top of its column on the Plan board, `docs/{link}/{plan}`. A master story with sub-stories,
 a story's domain and the other stories it names are what the board's map is drawn from: write
 the `Part of`, `Domain:` and key mentions as that header says. A story that waits on other
 tiles says `Blocked by` and their keys; a tile in the Design decision column is answered on its
@@ -328,10 +337,10 @@ tile is the board's to write: leave it as it is. Commit with
 """
 
 
-def agent_notes(app: Path, link: str) -> list:
+def agent_notes(app: Path, link: str, boards: tuple = (stores.BUILD, stores.PLAN)) -> list:
     """Tell the agents working in the app how to file a story when asked: a kandalf section in its
     AGENTS.md and CLAUDE.md (made when neither exists, CLAUDE.md importing AGENTS.md); what was done."""
-    notes, said = agent_notes_text(link), []
+    notes, said = agent_notes_text(link, boards), []
     files = [app / n for n in ("AGENTS.md", "CLAUDE.md") if (app / n).is_file()]
     if not files:
         (app / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
@@ -364,10 +373,10 @@ def note_span(text: str):
     return start, end
 
 
-def refresh_notes(app: Path, link: str, write: bool) -> list:
+def refresh_notes(app: Path, link: str, write: bool, boards: tuple = (stores.BUILD, stores.PLAN)) -> list:
     """The kandalf note in each of a repo's agent files brought up to today's wording (only
     said, unless write); what was or would be done. A file with no note is left alone."""
-    notes, said = agent_notes_text(link), []
+    notes, said = agent_notes_text(link, boards), []
     for f in (app / n for n in NOTED):
         text = f.read_text(encoding="utf-8") if f.is_file() else ""
         span = note_span(text)
@@ -402,7 +411,7 @@ def header_rules(board: str) -> list:
 
 
 def refresh_header(st, write: bool, commit: bool = True) -> list:
-    """The rules today's plans.md header has that the store's build board lacks, added to it
+    """The rules today's Build board header has that the store's build board lacks, added to it
     (only said, unless write), each after the rule it follows in the template. A rule the store
     already has is never changed, however it is worded; the ones that differ are named. commit
     False leaves the change for the caller to commit (the move to Plan and Build makes one commit
@@ -411,7 +420,7 @@ def refresh_header(st, write: bool, commit: bool = True) -> list:
     if not f.is_file():
         return []
     text = f.read_text(encoding="utf-8")
-    want = header_rules(from_template("plans.md", {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}))
+    want = header_rules(for_store(st, from_template(stores.BUILD, {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk})))
     have = header_rules(text)
     mine = {lead: "\n".join(lines) for lead, lines in have if lead}
     missing = [(lead, lines) for lead, lines in want if lead and lead not in mine]
@@ -452,33 +461,34 @@ def header_of(board: str) -> str:
     return board[:found.start()] if found else board
 
 
-def board_headers(st) -> dict:
-    """{"build": (old, new), "plan": (old, new)}: each board's header (header_of) as the template
-    for the old names writes it for this store, and as the one for the new names does. The
-    templates still carry the old names, so the new header is made from the old: its links
-    relinked (renaming.relink), its file names and "backlog board" and "plans board" replaced by
-    the new file names and "Plan board" and "Build board"."""
-    from .renaming import relink
+def old_headers(st) -> dict:
+    """{"build": [header, ...], "plan": [...]}: every header the templates before the names Plan and
+    Build wrote for this store (templates/old/, one file for each distinct header, oldest first),
+    as header_of cuts it from a board file."""
     values = {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}
-    words = ((stores.OLD_BUILD, stores.BUILD), (stores.OLD_PLAN, stores.PLAN),
-             ("backlog board", "Plan board"), ("plans board", "Build board"))
-    headers = {}
-    for kind, template in (("build", stores.OLD_BUILD), ("plan", stores.OLD_PLAN)):
-        old = header_of(from_template(template, values))
-        new = relink(old)
-        for was, now in words:
-            new = new.replace(was, now)
-        headers[kind] = (old, new)
-    return headers
+    found = {}
+    for kind, was in (("build", "plans"), ("plan", "backlog")):
+        files = sorted((TEMPLATES / "old").glob(f"{was}-*.md"), key=lambda f: int(f.stem.rsplit("-", 1)[1]))
+        found[kind] = [from_template(f"old/{f.name}", values) for f in files]
+    return found
+
+
+def board_headers(st) -> dict:
+    """{"build": (old, new), "plan": (old, new)}: each board's header (header_of) as the newest
+    old template (old_headers) writes it for this store, and as the template for the new names does."""
+    values = {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}
+    olds = old_headers(st)
+    return {kind: (olds[kind][-1], header_of(from_template(now, values)))
+            for kind, now in (("build", stores.BUILD), ("plan", stores.PLAN))}
 
 
 def notes(st, write: bool) -> list:
     """kandalf notes [--update]: whether the instructions agents file stories by are today's,
-    in the plans.md header and in each linked repo's agent files; --update brings them up to date."""
+    in the Build board's header and in each linked repo's agent files; --update brings them up to date."""
     said = refresh_header(st, write)
     for repo in st.repos:
         if repo.path.is_dir():
-            said += refresh_notes(repo.path, st.link, write)
+            said += refresh_notes(repo.path, st.link, write, st.boards)
     if not said:
         return ["The filing rules and the notes for agents are up to date."]
     if not write and any("missing" in s or "out of date" in s for s in said):
@@ -637,7 +647,7 @@ def add_repo(st, path: Path, name: str = None, trunk: str = None) -> list:
     cfg.setdefault("repos", {})[name] = rel if trunk == default else {"path": rel, "trunk": trunk}
     write_config(st, cfg, f"board: repo {name} added")
     said = [f"board.json: repo {name} {rel} @ {trunk}"]
-    said += link_app(repo, st.dir, st.link)
+    said += link_app(repo, st.dir, st.link, st.boards)
     if has_hooks(st.hooks_file):
         said += link_hooks(repo, st.hooks_file)
     said.append(agent.trust(repo))
@@ -859,10 +869,12 @@ def run(args=None, *, cwd=None, input=input, isatty=None, bindable=port_free, wh
     out(f"Made the store {folder}:")
     out(f"  board.json: name {name}, keys {key}-NN, port {port}" + (f", app {cfg['app']} @ {cfg['trunk']}, pickup {'on' if cfg['pickup'] else 'off'}" if app else "")
         + (f", agent {cfg['agent']}" if cfg.get("agent") else ""))
-    out("  plans.md, backlog.md, active/, archive/archived.md" + (", and an example story (Dark mode)" if a.example else ""))
+    out(f"  {stores.PLAN}, {stores.BUILD}, active/, archive/archived.md" + (", and an example story (Dark mode)" if a.example else ""))
     if merged:
         out("  " + merged)
     out("  " + commit_store(folder, identity))
+    from . import renaming
+    renaming.record_move(stores.Store(folder))  # a new store is on Plan and Build already: never due
     linked = False
     if app:
         for line in link_app(app, folder, LINK):
@@ -913,6 +925,7 @@ def checks(st, *, which=shutil.which, version=sys.version_info, why_off=pickup.w
         out.append((INFO, f"store {st.dir} has no board.json, so it runs on defaults: {settings}"))
     else:
         out.append((OK, f"store {st.dir}: {settings}"))
+    out.extend(move_checks(st))
     if "subStoryTests" in _board_json(st):
         out.append((INFO, 'subStoryTests is retired: every story runs only the tests for what it changes; '
                           'set "fullSuiteOnMerge": true, or a tile\'s "Tests: full" line, for a full suite on merge'))
@@ -941,6 +954,32 @@ def checks(st, *, which=shutil.which, version=sys.version_info, why_off=pickup.w
     out.append((OK, f"port {st.port} is free") if bindable(st.port) else
                (INFO, f"port {st.port} is in use: maybe this board is already running"))
     return out
+
+
+class _Quiet:
+    """Sessions that report nothing busy: doctor asks only what is in the move's way, never lists
+    the agent's sessions."""
+
+    def sessions(self):
+        return {}
+
+
+def move_checks(st) -> list:
+    """What doctor says of the Plan and Build names: an old board file that is back beside its new
+    one (a problem), or that `kandalf serve` will rename the boards (or what is in its way)."""
+    from . import renaming
+    found = renaming.notice(st, sessions=_Quiet())
+    if found and found.get("stray"):
+        return [(BAD, found["text"])]
+    if renaming.due(st):
+        why = renaming.blocked(st, sessions=_Quiet())
+        if why:
+            return [(INFO, why)]
+        if st.boards == (stores.OLD_BUILD, stores.OLD_PLAN):
+            return [(INFO, f"`kandalf serve` will rename the boards {st.build} and {st.plan} "
+                           f"to {stores.BUILD} and {stores.PLAN} (the Build and Plan boards)")]
+        return [(INFO, f"`kandalf serve` will finish renaming the boards to {stores.BUILD} and {stores.PLAN}.")]
+    return []
 
 
 def app_checks(st) -> list:

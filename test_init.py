@@ -83,7 +83,7 @@ class Init(Setup):
         self.assertEqual(self.config(store), {"name": "shop", "key": "SHO", "port": 7788, "link": "plans",
                                               "app": "../shop", "trunk": "dev", "pickup": False,
                                               "worktree": "{app}/.worktrees/{key}"})
-        for f in ("plans.md", "backlog.md", "active/.gitkeep", "archive/archived.md"):
+        for f in ("build.md", "plan.md", "active/.gitkeep", "archive/archived.md"):
             self.assertTrue((store / f).is_file(), f)
         link = app / "docs" / "plans"
         self.assertEqual(os.readlink(link), "../../shop-plans")
@@ -97,14 +97,37 @@ class Init(Setup):
     def test_the_boards_come_from_the_templates_with_every_placeholder_filled(self):
         app = self.app()
         self.init("--yes", "--name", "The Shop", "--key", "TS", cwd=app)
-        plans = (self.top / "The Shop" / "plans.md").read_text()
-        backlog = (self.top / "The Shop" / "backlog.md").read_text()
+        plans = (self.top / "The Shop" / "build.md").read_text()
+        backlog = (self.top / "The Shop" / "plan.md").read_text()
         self.assertNotRegex(plans + backlog, r"[{}]")
         self.assertIn("every plan for The Shop", plans)
         self.assertIn("`TS-NN`", backlog)
         self.assertIn("merged into `dev`", plans)
-        for b in ("plans.md", "backlog.md"):
+        for b in ("build.md", "plan.md"):
             self.assertTrue(round_trips(self.top / "The Shop" / b), b)
+
+    def test_a_new_store_has_plan_md_and_build_md_and_is_not_due(self):
+        from kandalf import renaming
+        app = self.app()
+        self.init("--yes", cwd=app)
+        st = stores.Store(self.top / "shop-plans")
+        self.assertEqual(sorted(p.name for p in st.dir.glob("*.md")), ["build.md", "plan.md"])
+        self.assertEqual((st.boards, st.strays), (("build.md", "plan.md"), []))
+        self.assertFalse(renaming.due(st))
+        self.assertIn("plan.md, build.md", "\n".join(self.said))
+
+    def test_a_commit_subject_on_a_new_store_names_plan_md(self):
+        from kandalf import gitlog
+        app = self.app()
+        self.init("--yes", "--example", "--key", "EX", cwd=app)
+        st = stores.Store(self.top / "shop-plans")
+        plan, build = st.dir / "plan.md", st.dir / "build.md"
+        tile = re.search(r"- \[ \] EX-06.*?(?=\n- |\n## |\Z)", plan.read_text(), re.S).group(0)
+        plan.write_text(plan.read_text().replace(tile + "\n", "", 1))
+        build.write_text(build.read_text().replace("## To do\n", "## To do\n\n" + tile + "\n", 1))
+        subject = gitlog.summarize(st, ["plan.md", "build.md"])
+        self.assertIn("EX-06 plan.md → To do", subject)
+        self.assertNotIn("backlog.md", subject)
 
     def test_a_folder_that_is_a_store_already_is_refused_and_nothing_is_written(self):
         app = self.app()
@@ -276,9 +299,9 @@ class Init(Setup):
         app = self.app()
         self.init("--yes", "--example", "--key", "EX", cwd=app)
         store = self.top / "shop-plans"
-        for b in ("plans.md", "backlog.md"):
+        for b in ("build.md", "plan.md"):
             self.assertTrue(round_trips(store / b), b)
-        plans, backlog = (store / "plans.md").read_text(), (store / "backlog.md").read_text()
+        plans, backlog = (store / "build.md").read_text(), (store / "plan.md").read_text()
         columns = dict(re.findall(r"^## (.+)\n((?:(?!^## ).*\n?)*)", plans, re.M))
         self.assertNotIn("- [", columns["In flight"])
         self.assertEqual(columns["Done"].count("- [x] EX-"), 1)
@@ -440,6 +463,33 @@ class Doctor(Setup):
                                      why_off=lambda st: OFF, bindable=lambda p: True), 0)
         self.assertTrue(all(line[:4] in ("ok  ", "!!  ", "--  ") for line in said), said)
 
+    def test_doctor_names_an_old_board_file_that_is_back(self):
+        st = self.made()
+        (st.dir / "plans.md").write_text("# Plans\n")
+        found = self.checks(stores.Store(st.dir))
+        stray = [t for m, t in found if m == init.BAD and "plans.md is back" in t]
+        self.assertEqual(len(stray), 1)
+        self.assertIn("build.md", stray[0])
+
+    def test_doctor_says_serve_will_rename_a_store_still_on_the_old_names(self):
+        st = self.made()
+        (st.dir / "build.md").rename(st.dir / "plans.md")
+        (st.dir / "plan.md").rename(st.dir / "backlog.md")
+        found = self.checks(stores.Store(st.dir))
+        self.assertTrue(any(m == init.INFO and "`kandalf serve` will rename the boards plans.md and backlog.md to build.md and plan.md" in t
+                            for m, t in found))
+
+    def test_doctor_says_serve_will_finish_a_half_moved_store_or_one_with_no_record(self):
+        st = self.made()
+        done = "`kandalf serve` will finish renaming the boards to build.md and plan.md."
+        (st.dir / "plan.md").rename(st.dir / "backlog.md")  # build.md beside backlog.md
+        found = self.checks(stores.Store(st.dir))
+        self.assertTrue(any(m == init.INFO and t == done for m, t in found), found)
+        (st.dir / "backlog.md").rename(st.dir / "plan.md")
+        with mock.patch("kandalf.renaming._renamed", return_value=None):  # on the new names, no record of the move
+            found = self.checks(stores.Store(st.dir))
+        self.assertTrue(any(m == init.INFO and t == done for m, t in found), found)
+
     def test_doctor_says_sub_story_tests_is_retired(self):
         st = self.made()
         cfg = self.config(st.dir)
@@ -600,7 +650,7 @@ class RepoCommands(Setup):
             text = f.read_text()
             self.assertIn("add a story to kandalf", text)
             self.assertIn("add to board", text)
-            self.assertIn("docs/plans/backlog.md", text)
+            self.assertIn("docs/plans/plan.md", text)
         self.assertFalse((web / "AGENTS.md").exists())
         init.agent_notes(api, "plans")
         self.assertEqual((api / "AGENTS.md").read_text().count(init.AGENT_NOTES_MARK), 1)
@@ -627,7 +677,7 @@ class RepoCommands(Setup):
 
     def test_notes_update_adds_the_header_rules_a_store_lacks_and_changes_none_it_has(self):
         st = self.made()
-        f = st.dir / "plans.md"
+        f = st.dir / st.build
         mine = ("# Plans\n\nMy own opening.\n\n- **Keys:** my own rule about keys.\n  - with a line under it\n"
                 "- **A house rule:** only here.\n- A last bullet with no name.\n\n## To do\n\n- [ ] PLN-01 **A tile.**\n  - **Keys:** not a rule\n")
         f.write_text(mine)
@@ -650,6 +700,57 @@ class RepoCommands(Setup):
         self.assertEqual(init.header_rules(text)[-1][0], None)
         self.assertEqual([s for s in init.notes(st, True) if "added" in s], [])  # again: nothing to add
         self.assertEqual(subprocess.run(["node", str(HERE / "kandalf" / "check.js"), str(f)], capture_output=True).returncode, 0)
+
+    def test_the_notes_update_on_a_new_store_adds_no_text_naming_an_old_file(self):
+        st = self.made()
+        f = st.dir / "build.md"
+        text = f.read_text()
+        f.write_text(re.sub(r"- \*\*Stories that belong together:\*\*.*?(?=\n- \*\*Waiting)", "", text, flags=re.S))
+        self.assertTrue(any("stories that belong together" in s for s in init.notes(st, True)))
+        head = f.read_text().split("\n## ", 1)[0]
+        self.assertIn("- **Stories that belong together:**", head)
+        self.assertNotRegex(head + init.agent_notes_text("plans"), r"backlog\.md|plans\.md")
+        self.assertIn("docs/plans/build.md", init.agent_notes_text("plans"))
+
+    def test_the_notes_update_on_an_old_names_store_names_that_stores_files(self):
+        st = self.made()
+        (st.dir / "build.md").rename(st.dir / "plans.md")
+        (st.dir / "plan.md").rename(st.dir / "backlog.md")
+        st = stores.Store(st.dir)
+        f = st.dir / "plans.md"
+        f.write_text(re.sub(r"- \*\*Filing a plan:\*\*.*?(?=\n- \*\*Priority)", "", f.read_text(), flags=re.S))
+        self.assertTrue(any("filing a plan" in s for s in init.notes(st, True)))
+        head = f.read_text().split("\n## ", 1)[0]
+        rule = next(line for line in head.split("\n") if line.startswith("- **Filing a plan:**"))
+        self.assertIn("[backlog.md](backlog.md)", rule)
+        self.assertNotRegex(rule, r"plan\.md|build\.md")
+        note = init.agent_notes_text("plans", st.boards)
+        self.assertIn("docs/plans/plans.md", note)
+        self.assertIn("docs/plans/backlog.md", note)
+        self.assertNotRegex(note, r"build\.md|plan\.md")
+
+    def test_check_given_an_old_name_checks_the_boards_present_file_and_says_so(self):
+        st = self.made()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            asked = cli.present_board(str(st.dir / "plans.md"))
+            cli.present_board(str(st.dir / "backlog.md"))
+        self.assertEqual(asked, str(st.dir / "build.md"))
+        self.assertEqual(out.getvalue(), "plans.md is now build.md: checking that.\nbacklog.md is now plan.md: checking that.\n")
+        self.assertEqual(cli.present_board(str(st.dir / "build.md")), str(st.dir / "build.md"))
+        self.assertEqual(cli.present_board(str(st.dir / "notes.md")), str(st.dir / "notes.md"))
+        (st.dir / "plans.md").write_text("# Plans\n")  # a file that is there is checked as it is
+        self.assertEqual(cli.present_board(str(st.dir / "plans.md")), str(st.dir / "plans.md"))
+
+    def test_check_given_a_new_name_in_a_store_not_moved_says_which_file_it_is(self):
+        st = self.made()
+        (st.dir / "build.md").rename(st.dir / "plans.md")
+        (st.dir / "plan.md").rename(st.dir / "backlog.md")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            asked = cli.present_board(str(st.dir / "build.md"))
+        self.assertEqual(asked, str(st.dir / "plans.md"))
+        self.assertEqual(out.getvalue(), "build.md is plans.md in this store: checking that.\n")
 
     def test_uninstall_removes_the_link_from_every_repo_and_leaves_the_store(self):
         st, api = self.made(), self.app("api", "dev")
