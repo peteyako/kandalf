@@ -17,6 +17,8 @@
     kandalf repo list [--dir STORE]          the store's repos
     kandalf repo rm NAME [--dir STORE]       take a repo out of board.json
     kandalf uninstall [--dir STORE]          remove the docs/plans link from each of the store's repos
+    kandalf notes [--update] [--dir STORE]   whether the filing rules agents read are today's: the plans.md
+                                             header and the note in each repo; --update brings them up to date
     kandalf hooks [--add] [--dir STORE]      the board's PostToolUse hooks block; --add puts it in the
                                              store's .claude/settings.json and links that into its app
 
@@ -125,6 +127,12 @@ def main(argv=None):
             return 0
         print(init.hooks_text())
         print('Paste it under "hooks" in a .claude settings file, or let `kandalf hooks --add` keep it in the store.', file=sys.stderr)
+    elif cmd == "notes":
+        from . import init
+        st, rest = pick_store(args)
+        for line in init.notes(st, "--update" in rest):
+            print(line)
+        return 0
     elif cmd == "attach" and args:
         from . import agent
         sid = session_of(args)

@@ -605,6 +605,52 @@ class RepoCommands(Setup):
         init.agent_notes(api, "plans")
         self.assertEqual((api / "AGENTS.md").read_text().count(init.AGENT_NOTES_MARK), 1)
 
+    def test_notes_update_replaces_an_old_note_and_leaves_the_rest_of_the_file(self):
+        st, api = self.made(), self.app("api", "dev")
+        self.add(st, api)
+        st = stores.Store(st.dir)
+        old = "<!-- kandalf -->\n## Kandalf board\n\nAn old note about docs/plans.\n"
+        (api / "AGENTS.md").write_text("# Api\n\nMine.\n\n" + old + "\n## After\n\nAlso mine.\n")
+        (api / "GEMINI.md").write_text(old)
+        (api / "CLAUDE.md").write_text("@AGENTS.md\n")
+        said = init.notes(st, False)
+        self.assertTrue(any("AGENTS.md: the note for agents is out of date" in s for s in said))
+        self.assertIn("An old note", (api / "AGENTS.md").read_text())  # only said
+        init.notes(st, True)
+        text = (api / "AGENTS.md").read_text()
+        self.assertTrue(text.startswith("# Api\n\nMine.\n\n<!-- kandalf -->") and text.endswith("<!-- /kandalf -->\n\n## After\n\nAlso mine.\n"))
+        self.assertNotIn("An old note", text)
+        self.assertIn("`Domain:`", text)
+        self.assertEqual((api / "GEMINI.md").read_text(), init.agent_notes_text("plans"))
+        self.assertEqual((api / "CLAUDE.md").read_text(), "@AGENTS.md\n")  # no note: left alone
+        self.assertFalse(any("AGENTS.md" in s or "GEMINI.md" in s for s in init.notes(st, True)))  # again: nothing to do
+
+    def test_notes_update_adds_the_header_rules_a_store_lacks_and_changes_none_it_has(self):
+        st = self.made()
+        f = st.dir / "plans.md"
+        mine = ("# Plans\n\nMy own opening.\n\n- **Keys:** my own rule about keys.\n  - with a line under it\n"
+                "- **A house rule:** only here.\n- A last bullet with no name.\n\n## To do\n\n- [ ] PLN-01 **A tile.**\n  - **Keys:** not a rule\n")
+        f.write_text(mine)
+        said = init.notes(st, False)
+        self.assertTrue(any('the rule "stories that belong together" is missing' in s for s in said))
+        self.assertEqual(f.read_text(), mine)
+        said = init.notes(st, True)
+        text = f.read_text()
+        head, tiles = text.split("\n## ", 1)
+        self.assertEqual(tiles, mine.split("\n## ", 1)[1])  # the columns and tiles are as they were
+        self.assertIn("- **Keys:** my own rule about keys.\n  - with a line under it\n", head)
+        self.assertEqual(head.count("**Keys:**"), 1)
+        self.assertTrue(any("left as you have them" in s and "keys" in s for s in said))
+        self.assertIn("- **Stories that belong together:**", head)
+        self.assertIn("  - **A domain** is the part of the product", head)
+        lines = head.split("\n")
+        at = lambda start: next(i for i, l in enumerate(lines) if l.startswith(start))
+        self.assertLess(at("- **Keys:**"), at("- **Filing a plan:**"))  # after the rule it follows in the template
+        self.assertEqual(lines[-2], "- A last bullet with no name.")  # the unnamed bullet stays last
+        self.assertEqual(init.header_rules(text)[-1][0], None)
+        self.assertEqual([s for s in init.notes(st, True) if "added" in s], [])  # again: nothing to add
+        self.assertEqual(subprocess.run(["node", str(HERE / "kandalf" / "check.js"), str(f)], capture_output=True).returncode, 0)
+
     def test_uninstall_removes_the_link_from_every_repo_and_leaves_the_store(self):
         st, api = self.made(), self.app("api", "dev")
         self.add(st, api)

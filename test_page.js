@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, columnKind, kindTaken, doubledKinds,
+   return { cardMarkdown, movesWith, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, tileDomains, mapGraph, mapLayout, mapStats, agentMark, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setFullSuite: on => { STORE_FULL_SUITE = on; },
@@ -73,7 +73,7 @@ test("the index is this board as it reads now, plus the server's word on the oth
   page.open("plans.md", PLANS, SERVER);
   const index = page.tileIndex();
   assert.deepEqual([...index.keys()].sort(), ["PLN-100", "PLN-41", "PLN-60", "PLN-70", "PLN-74", "PLN-75", "PLN-81"]);
-  assert.deepEqual(index.get("PLN-74"), { title: "Colour tokens", file: "plans.md", column: "Done", done: true, parent: "PLN-70", mentions: ["PLN-70", "PLN-99"] });
+  assert.deepEqual(index.get("PLN-74"), { title: "Colour tokens", file: "plans.md", column: "Done", done: true, parent: "PLN-70", mentions: ["PLN-70", "PLN-99"], domain: null });
   assert.equal(index.get("PLN-75").done, false);
   assert.equal(index.get("PLN-81").file, "backlog.md");
 });
@@ -747,6 +747,110 @@ test("a text setting with suggestions gets its own pick list, with examples for 
   assert.doesNotMatch(out, /data-pick="trunk"/);  // no branches known: nothing to pick from
 });
 
+// ---------- story map ----------
+const mapTile = (title, more = {}) => ({ title, file: "backlog.md", column: "Feature", done: false, parent: null, mentions: [], domain: null, ...more });
+const MAP_INDEX = () => new Map([
+  ["PLN-01", mapTile("Admin: shell")],
+  ["PLN-02", mapTile("Admin: analytics", { parent: "PLN-01", mentions: ["PLN-01", "PLN-11"] })],
+  ["PLN-03", mapTile("Operator: one odd kid", { parent: "PLN-01", file: "plans.md", column: "In flight" })],
+  ["PLN-04", mapTile("Admin: settings")],
+  ["PLN-05", mapTile("Admin: roles", { parent: "PLN-04" })],
+  ["PLN-10", mapTile("Broker: foundations", { domain: "Sales" })],
+  ["PLN-11", mapTile("Rates", { parent: "PLN-10", mentions: ["PLN-02"] })],
+  ["PLN-12", mapTile("Shipped rates", { parent: "PLN-10", file: "archive/archived.md", column: "Archived", done: true })],
+  ["PLN-20", mapTile("Docs: one of a kind", { file: "plans.md", column: "To do" })],
+  ["PLN-21", mapTile("Loose end", { mentions: ["PLN-99"] })],
+]);
+
+test("a story's domain is its own line, else its master's, else a title prefix that several stories share", () => {
+  const d = page.tileDomains(MAP_INDEX());
+  assert.equal(d.get("PLN-01"), "Admin");       // two masters start "Admin:"
+  assert.equal(d.get("PLN-02"), "Admin");
+  assert.equal(d.get("PLN-03"), "Admin");       // its master's, though its own title says Operator
+  assert.equal(d.get("PLN-10"), "Sales");       // its own Domain: line beats its title
+  assert.equal(d.get("PLN-11"), "Sales");       // inherited
+  assert.equal(d.get("PLN-20"), "");            // "Docs" starts only one story
+  assert.equal(d.get("PLN-21"), "");
+  const spelt = new Map([["A-1", mapTile("x", { domain: "admin" })], ["A-2", mapTile("y", { domain: "Admin" })]]);
+  assert.equal(new Set(page.tileDomains(spelt).values()).size, 1);  // one domain, however it is capitalised
+  const ring = new Map([["A-1", mapTile("x", { parent: "A-2" })], ["A-2", mapTile("y", { parent: "A-1" })]]);
+  assert.deepEqual([...page.tileDomains(ring).values()], ["", ""]);  // a ring of masters doesn't loop
+});
+
+test("a domain can be named anything, and a title's first word counts only as a whole word", () => {
+  const index = new Map([["A-1", mapTile("One", { domain: "Ops|Infra", mentions: ["A-2"] })], ["A-2", mapTile("Two", { domain: "Web" })],
+    ["A-3", mapTile("Fixing: a")], ["A-4", mapTile("Fix: b")], ["A-5", mapTile("Fix-it: c")], ["A-6", mapTile("Fix: d")], ["A-7", mapTile("Fix: e")]]);
+  const g = page.mapGraph(index, new Map(), []), lay = page.mapLayout(g);  // a "|" in a name once broke the layout
+  assert.equal(lay.at.size, 7);
+  assert.deepEqual(["A-3", "A-4", "A-5"].map(k => g.nodes.get(k).domain), ["", "Fix", ""]);
+});
+
+test("a story at work carries its agent's own mark: Claude's, Copilot's, or Gemini's for Antigravity", () => {
+  assert.deepEqual(["Claude", "Copilot", "Antigravity", ""].map(a => page.agentMark(a).match(/m-agent (\w+)/)[1]), ["claude", "copilot", "gemini", "claude"]);
+  assert.match(page.agentMark("Claude"), /stroke="#d97757"/);
+  assert.doesNotMatch(page.agentMark("Copilot"), /<circle/);          // in a line of text: no disc behind it
+  assert.match(page.agentMark("Copilot", "var(--bg)"), /<circle r="8.5" fill="var\(--bg\)"/);  // on the map: one
+});
+
+test("the strip's keys for the map come from each story's state, and a Done tile not merged", () => {
+  const index = new Map([["A-1", mapTile("Work", { file: "plans.md", column: "In flight" })], ["A-2", mapTile("Wait", { file: "plans.md", column: "In flight" })],
+    ["A-3", mapTile("Done", { file: "plans.md", column: "Done", done: true })], ["A-4", mapTile("Quiet")]]);
+  page.setUnmerged({ "A-3": ["a-3-done"] });
+  const stats = page.mapStats(page.mapGraph(index, new Map(), [{ key: "A-1", state: "started" }, { key: "A-2", state: "waiting" }]));
+  page.setUnmerged({});
+  assert.deepEqual([stats.work, stats.queued, stats.unmerged, stats.need], [["A-1"], ["A-2"], ["A-3"], []]);
+});
+
+test("a session's state shows on the map only for a story in flight", () => {
+  const index = new Map([["A-1", mapTile("Back in the backlog")], ["A-2", mapTile("In flight", { file: "plans.md", column: "In flight" })]]);
+  const g = page.mapGraph(index, new Map(), [{ key: "A-1", state: "lost" }, { key: "A-2", state: "started" }]);
+  assert.deepEqual([g.nodes.get("A-1").state, g.nodes.get("A-1").next, g.nodes.get("A-2").state], ["", false, "work"]);
+});
+
+test("the map's graph says where each story is, what it is joined to and what to pull next", () => {
+  const g = page.mapGraph(MAP_INDEX(), new Map([["PLN-20", new Set(["PLN-21"])], ["PLN-21", new Set(["PLN-20"])]]),
+    [{ key: "PLN-03", state: "idle", waiting: "question" }]);
+  const n = k => g.nodes.get(k);
+  assert.deepEqual([n("PLN-01").where, n("PLN-03").where, n("PLN-12").where, n("PLN-20").where], ["backlog", "flight", "done", "planned"]);
+  assert.deepEqual(n("PLN-01").kids, ["PLN-02", "PLN-03"]);
+  assert.equal(n("PLN-03").state, "need");
+  assert.equal(n("PLN-10").doneKids, 1);
+  // A master and its own sub-story are joined by the tree, not by a mention; a key nobody has is dropped.
+  assert.deepEqual(g.edges, [{ a: "PLN-20", b: "PLN-21", kind: "linked" }, { a: "PLN-02", b: "PLN-11", kind: "mention" }]);
+  assert.deepEqual([n("PLN-02").mentions, n("PLN-11").mentions, n("PLN-20").linked], [["PLN-11"], ["PLN-02"], ["PLN-21"]]);
+  // Next: the one that needs you, the open sub-stories of masters that are moving, a planned story on its own.
+  assert.deepEqual([...g.nodes.values()].filter(x => x.next).map(x => x.key), ["PLN-02", "PLN-03", "PLN-11", "PLN-20"]);
+  assert.equal(n("PLN-05").next, false);  // its master hasn't started
+  assert.equal(n("PLN-12").next, false);  // done
+});
+
+test("the map's layout is the same every time, keeps hubs apart and a domain's hubs together", () => {
+  const index = MAP_INDEX();
+  for (let i = 30; i < 42; i++) index.set(`PLN-${i}`, mapTile(`Broker: thing ${i}`, { parent: i % 4 ? `PLN-${i - i % 4}` : null }));
+  const g = page.mapGraph(index, new Map(), []), lay = page.mapLayout(g);
+  assert.deepEqual([...page.mapLayout(page.mapGraph(index, new Map(), [])).at], [...lay.at]);
+  assert.equal(lay.at.size, g.nodes.size);
+  for (const p of lay.at.values()) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+  const hubs = [...lay.hubs].map(([k, h]) => ({ k, ...lay.at.get(k), R: h.R, domain: g.nodes.get(k).domain }));
+  const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  for (const a of hubs) for (const b of hubs) if (a.k < b.k) assert.ok(apart(a, b) >= a.R + b.R - 1, `${a.k} and ${b.k} overlap`);
+  // A sub-story sits on its master's ring.
+  const kid = lay.at.get("PLN-02"), master = lay.at.get("PLN-01");
+  assert.ok(Math.abs(Math.hypot(kid.x - master.x, kid.y - master.y) - 78) < 1);
+  // Every Broker hub is nearer the middle of the Broker hubs than any Admin hub is.
+  const brokers = hubs.filter(h => h.domain === "Broker"), mid = { x: brokers.reduce((s, h) => s + h.x, 0) / brokers.length, y: brokers.reduce((s, h) => s + h.y, 0) / brokers.length };
+  assert.ok(brokers.length >= 3);
+  assert.ok(Math.max(...brokers.map(h => apart(h, mid))) < Math.min(...hubs.filter(h => h.domain === "Admin").map(h => apart(h, mid))));
+});
+
+test("a sub-story's own sub-stories fan out beyond it", () => {
+  const index = new Map([["A-1", mapTile("Top")], ["A-2", mapTile("Mid", { parent: "A-1" })], ["A-3", mapTile("Leaf", { parent: "A-2" })], ["A-4", mapTile("Leaf two", { parent: "A-2" })]]);
+  const lay = page.mapLayout(page.mapGraph(index, new Map(), [])), from = k => Math.hypot(lay.at.get(k).x - lay.at.get("A-1").x, lay.at.get(k).y - lay.at.get("A-1").y);
+  assert.ok(from("A-3") > from("A-2") + 50 && from("A-4") > from("A-2") + 50);
+  assert.ok(lay.hubs.get("A-1").R > from("A-3"));
+  assert.notDeepEqual(lay.at.get("A-3"), lay.at.get("A-4"));
+});
+
 test("every theme has a dark palette and a dark accent for each of its accents", () => {
   const src = html.match(/const BOARD_THEMES = (\{[\s\S]*?\n\});/)[1];
   const themes = new Function(`return ${src}`)();
@@ -767,6 +871,7 @@ const READERS = {
   model: md => page.modelOf(md) || null,
   base: md => page.baseOf(md) || null,
   tests: md => page.testsOf(md) || null,
+  domain: md => page.domainOf(md) || null,
   repos: md => page.reposOf(md).length ? page.reposOf(md) : null,
   sessions: md => page.sessionsOf(bodyLines(md)) || null,
   ready: md => bodyLines(md).map(page.readyLine).find(r => r !== null) ?? null,

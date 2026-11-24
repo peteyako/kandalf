@@ -1002,6 +1002,94 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 :root .session-reply .reply-steps { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; flex: 1; }
 :root .session-reply .reply-steps label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 :root .session-reply button[data-act="reply"] { margin-left: auto; }
+/* ---------- story map ---------- */
+.agent-icon { vertical-align: -2.5px; flex: none; }
+#viewSel { display: inline-flex; gap: 4px; }
+:root #fileSel button:disabled { opacity: .4; cursor: default; }
+#viewSel[hidden], #mapView[hidden] { display: none; }
+#mapView { flex: 1 1 auto; min-height: 440px; position: relative; overflow: hidden; margin: 10px 20px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+  --m-backlog: var(--muted); --m-planned: #d9952b; --m-flight: var(--accent); --m-done: var(--done, #2e9e6b); --m-need: var(--warn, #c9372c); }
+#mapSvg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; user-select: none; }
+#mapSvg.dragging { cursor: grabbing; }
+#mapPan.glide { transition: transform .6s cubic-bezier(.22,.9,.3,1); }
+#mapSvg .m-region { fill: var(--dom); fill-opacity: .05; stroke: var(--dom); stroke-opacity: .4; stroke-width: 2; stroke-dasharray: 2 10; stroke-linecap: round; }
+#mapSvg .m-region-name { fill: var(--dom); font-size: 30px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
+#mapSvg .m-hub { fill: var(--dom); fill-opacity: .07; stroke: var(--dom); stroke-opacity: .4; stroke-width: 1.2; }
+#mapSvg.moving :is(.m-hub, .m-region, .m-region-name, .m-node) { cursor: move; }
+#mapSvg.moving :is(.m-hub, .m-region):hover { fill-opacity: .13; stroke-opacity: .8; }
+#mapSvg .m-tree { stroke: var(--muted); stroke-opacity: .6; stroke-width: 1.4; fill: none; transition: opacity .3s; }
+#mapSvg .m-mention { stroke: var(--accent); stroke-width: 1.2; fill: none; stroke-dasharray: 3 5; opacity: .3; transition: opacity .3s; }
+#mapSvg .m-mention.inner { opacity: 0; }
+#mapSvg .m-linked { stroke: var(--accent); stroke-width: 1.6; fill: none; opacity: .55; transition: opacity .3s; }
+#mapSvg.focused :is(.m-tree, .m-mention, .m-linked) { opacity: .06; }
+#mapSvg.focused .m-tree.lit { opacity: 1; stroke: var(--text); stroke-width: 2; }
+#mapSvg.focused :is(.m-mention, .m-linked).lit { opacity: 1; stroke-width: 2; }
+#mapSvg.focused .m-mention.lit { animation: m-flow 1.2s linear infinite; }
+@keyframes m-flow { to { stroke-dashoffset: -16; } }
+#mapSvg .m-node { cursor: pointer; transition: opacity .3s; color: var(--m-backlog); }
+#mapSvg .m-node:focus { outline: none; }
+#mapSvg .m-node:focus-visible .m-dot { stroke: var(--text); stroke-width: 3; }
+#mapSvg .m-node.planned { color: var(--m-planned); } #mapSvg .m-node.flight { color: var(--m-flight); } #mapSvg .m-node.done { color: var(--m-done); }
+#mapSvg .m-node.need { color: var(--m-need); } #mapSvg .m-node.ready { color: var(--m-done); }
+#mapSvg .m-dot { fill: currentColor; stroke: var(--bg); stroke-width: 2; }
+#mapSvg .m-node.done .m-dot { fill-opacity: .55; }
+#mapSvg .m-node:hover .m-dot { filter: brightness(1.15) drop-shadow(0 0 5px currentColor); }
+#mapSvg .m-node text { fill: var(--text); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+#mapSvg .m-node.master .m-title { font-weight: 650; font-size: 13px; }
+#mapSvg .m-node:not(.master) .m-title { font-size: 10.5px; }
+#mapSvg .m-node .m-num { font: 600 9px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--bg); stroke: none; }
+#mapSvg .m-node .m-mark { font-size: 11px; fill: currentColor; }
+#mapSvg.far .m-node:not(.master) text { opacity: 0; }
+#mapSvg .m-ring-bg { fill: none; stroke: var(--line); stroke-width: 5; }
+#mapSvg .m-ring { fill: none; stroke: var(--m-done); stroke-width: 5; stroke-linecap: round; }
+#mapSvg .m-halo { fill: none; stroke: currentColor; stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; }
+#mapSvg .m-node.next .m-halo { animation: m-pulse 2s ease-out infinite; }
+#mapSvg .m-node.work .m-halo { opacity: .9; stroke-dasharray: 4 5; animation: m-spin 5s linear infinite; }
+@keyframes m-pulse { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(2.3); } }
+@keyframes m-spin { to { transform: rotate(360deg); } }
+#mapSvg.focused .m-node, #mapSvg .m-node.miss { opacity: .12; }
+#mapSvg.focused .m-node.lit { opacity: 1; }
+#mapSvg.focused .m-node.lit text { opacity: 1; }
+#mapSvg.focused .m-region-name { opacity: .3; }
+#mapSvg .m-node.focus .m-dot { stroke: var(--text); stroke-width: 3; filter: drop-shadow(0 0 8px currentColor); }
+#mapSvg .out { display: none; }
+#mapBar { position: absolute; top: 10px; left: 12px; right: 12px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none; }
+#mapBar > * { pointer-events: auto; }
+#mapBar button { font-size: 12px; padding: 4px 11px; }
+#mapDomains { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+#mapDomains button { border-radius: 999px; }
+#mapDomains button i, #mapLegend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dom); margin-right: 6px; vertical-align: -1px; }
+#mapDomains button[aria-pressed="true"] { background: var(--dom); border-color: var(--dom); color: #fff; font-weight: 600; }
+#mapDomains button[aria-pressed="true"] i { background: #fff; }
+#mapView aside { position: absolute; z-index: 4; overflow-y: auto; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+#mapView aside[hidden] { display: none; }
+#mapMasters { left: 12px; top: 48px; bottom: 50px; width: 228px; }
+#mapPanel { right: 12px; top: 48px; bottom: 12px; width: 290px; }
+#mapView aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 5px; font-weight: 700; }
+#mapView aside h2:first-child { margin-top: 0; }
+#mapPanel .m-key { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+#mapPanel h3 { margin: 2px 0 8px; font-size: 16px; line-height: 1.25; padding-right: 26px; }
+#mapPanel .m-chip { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; margin: 0 6px 4px 0; color: var(--muted); }
+#mapPanel .m-text { font-size: 13px; color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
+#mapPanel .m-close { position: absolute; top: 8px; right: 8px; padding: 0 8px; line-height: 1.5; }
+#mapPanel .m-open { margin-top: 6px; }
+#mapView .m-hop, #mapView .m-epic { display: flex; gap: 8px; align-items: baseline; text-align: left; padding: 5px 8px; margin: 0 -8px; width: calc(100% + 16px); border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; box-shadow: none; }
+#mapView .m-hop:hover, #mapView .m-epic:hover, #mapView .m-hop:focus-visible, #mapView .m-epic:focus-visible { background: var(--accent-soft, var(--line)); outline: none; }
+#mapView .m-hop i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; color: var(--m-backlog); }
+#mapView .m-hop.planned i { color: var(--m-planned); } #mapView .m-hop.flight i { color: var(--m-flight); } #mapView .m-hop.done i, #mapView .m-hop.ready i { color: var(--m-done); } #mapView .m-hop.need i { color: var(--m-need); }
+#mapView .m-hop b { font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); flex: none; }
+#mapView .m-hop.done span { color: var(--muted); text-decoration: line-through; }
+#mapView .m-hop em { margin-left: auto; flex: none; font-style: normal; font-size: 10px; color: var(--m-planned); border: 1px solid; border-radius: 999px; padding: 0 6px; }
+#mapView .m-epic { display: block; }
+#mapView .m-epic .m-t { display: flex; justify-content: space-between; gap: 8px; }
+#mapView .m-epic .m-t em { color: var(--muted); font-style: normal; font-size: 12px; flex: none; }
+#mapView .m-bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 5px; overflow: hidden; }
+#mapView .m-bar span { display: block; height: 100%; background: var(--m-done); border-radius: 2px; }
+#mapLegend { position: absolute; left: 12px; bottom: 10px; z-index: 3; display: flex; flex-wrap: wrap; gap: 4px 14px; max-width: calc(100% - 330px); font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; }
+#mapLegend svg { vertical-align: -3px; margin-right: 4px; }
+#mapEmpty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { #mapPan.glide { transition: none; } #mapSvg .m-node .m-halo, #mapSvg.focused .m-mention.lit { animation: none; } #mapSvg .m-node:is(.next, .work) .m-halo { opacity: .6; } }
+@media (max-width: 700px) { #mapMasters { display: none; } #mapPanel { width: min(290px, 80%); } #mapLegend { max-width: calc(100% - 24px); } }
 </style>
 <script>
 // The board's looks: Clean and light (the default: the first one here), Classic (the original),
@@ -1062,6 +1150,7 @@ applyTheme(themeNow, accentNow);
   <span id="storeName" title="The project this board belongs to (its store's board.json name)"></span>
   <h1 id="docTitle">Plans board</h1>
   <nav id="fileSel" role="tablist" aria-label="Boards"></nav>
+  <span id="viewSel" role="group" aria-label="View" hidden><button type="button" data-view="board" title="The columns of tiles">Board</button><button type="button" data-view="map" title="Every story as a map: masters with their sub-stories, grouped by domain, and what is joined to what">Map</button></span>
   <input id="search" type="text" placeholder="Filter tiles…">
   <label id="colSortLabel" class="hint">Sort <select id="colSort" title="Order tiles in every column (display only; the file keeps its order)">
     <option value="file">Board order</option><option value="prio">Priority, highest first</option>
@@ -1076,6 +1165,13 @@ applyTheme(themeNow, accentNow);
 <nav id="stats" aria-label="Builds" hidden></nav>
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
+<section id="mapView" aria-label="Story map" hidden>
+  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button></div>
+  <svg id="mapSvg"><g id="mapPan"><g id="mapBgs"></g><g id="mapEdges"></g><g id="mapNodes"></g></g></svg>
+  <aside id="mapMasters" aria-label="Masters"></aside>
+  <aside id="mapPanel" aria-label="The story in focus" hidden></aside>
+  <div id="mapLegend"></div>
+</section>
 <section id="docView" hidden></section>
 <footer id="tagline">A wizard for your backlog, straight outta middle management.</footer>
 <div id="version"></div>
@@ -1318,7 +1414,7 @@ const keyList = keys => keys.length > 1 ? keys.slice(0, -1).join(", ") + " and "
 // ---------- master tiles, sub-stories and related tiles ----------
 // None of this moves a tile. The index holds every keyed tile: the ones on this board as
 // they read right now, and the server's word (serverTiles) on the other boards' tiles.
-let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions, tests}} (tiles.py: Snapshot.index)
+let serverTiles = {};  // {"PLN-NN": {title, file, column, done, parent, mentions, tests, domain}} (tiles.py: Snapshot.index)
 const byKeyOrder = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 // What a tile's own text says: its master, and the other keys it names.
 function tileFacts(key, text) {
@@ -1329,8 +1425,9 @@ function tileIndex() {
   const index = new Map();
   for (const s of doc.sections) for (const c of s.cards) {
     const k = cardKey(c); if (!k || index.has(k)) continue;
+    const text = [c.text, ...c.body].join("\n");
     index.set(k, { title: splitCard(c.text).title.replace(/\*\*|`/g, ""), file, column: s.name,
-      done: file === ARCHIVE_LOG || isDoneCol(s.name), ...tileFacts(k, [c.text, ...c.body].join("\n")) });
+      done: file === ARCHIVE_LOG || isDoneCol(s.name), ...tileFacts(k, text), domain: domainOf(text) || null });
   }
   // The server's word on this board's own tiles is as old as the last save.
   for (const [k, t] of Object.entries(serverTiles)) if (t.file !== file && !index.has(k)) index.set(k, { ...t });
@@ -1567,7 +1664,7 @@ function sessionHTML(session, key) {
   // A paused story out of In flight carries on by moving back there, not with a button.
   const away = !!key && job?.state === "paused" && !isPickupColumn(findCardByKey(key)?.s.name || "");
   return `<div class="session${look}"><div class="session-top">
-      <span class="session-id">✦ ${AGENT} session <code>${session.id}</code></span>
+      <span class="session-id">${agentIcon()} ${AGENT} session <code>${session.id}</code></span>
       ${state ? `<span class="session-state s-${stateClass}">${state}</span>` : ""}<span class="session-acts">
       <button type="button" data-act="copy" data-copy="${attach}" title="Copy the command that opens this session: ${attach}">Copy attach</button>
       ${key ? `<button type="button" data-act="status" data-key="${key}"${statusBusy.has(key) ? ' class="busy" disabled' : ""} title="Check this session and its branch now, and write what is found as the story's status"><span class="spin">⟳</span> Status</button>` : ""}
@@ -1583,9 +1680,9 @@ function pickupTag(key, sec, session) {
   // A queued job is said beside the key even when the tile still has a session line (a paused story queued again).
   if (!job || (sessionJob(session, key) && job.state !== "waiting")) return "";
   const inFlight = isPickupColumn(sec.name);
-  if (canDo(job, "pause")) return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">✦ ${AGENT}</span>` + (inFlight ? wakeButton(job) : "");
+  if (canDo(job, "pause")) return `<span class="pickup on" title="${esc(`${AGENT} is working on this. Open it with: ${attachCmd(job.id)}\nBranch ${job.branch}, worktree ${job.worktree}`)}">${agentIcon()} ${AGENT}</span>` + (inFlight ? wakeButton(job) : "");
   if (!inFlight) return "";  // the rest only matters while the tile is in flight
-  if (canDo(job, "continue")) return `<span class="pickup${job.state === "paused" ? "" : " bad"}" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">✦ ${AGENT} ${STOPPED[job.state]}</span>` + wakeButton(job);
+  if (canDo(job, "continue")) return `<span class="pickup${job.state === "paused" ? "" : " bad"}" title="${esc(`${AGENT} session ${job.id} is ${STOPPED[job.state]}`)}">${agentIcon()} ${AGENT} ${STOPPED[job.state]}</span>` + wakeButton(job);
   if (canDo(job, "startnow")) return `<span class="pickup" data-act="pickup" data-key="${job.key}" title="${esc(`Queued: ${AGENT} starts this when ${job.behind || "the current"} session ends. It starts by itself then; Start now doesn't wait.`)}">◌ queued</span>` + (sessionJob(session, key) ? "" : startNowButton(job));  // with a session block, Start now is in its row of buttons
   if (canDo(job, "restart")) return `<span class="pickup bad" title="${esc(`${AGENT} couldn't be started: ` + job.error)}">⚠ not started</span>` + restartButton(job, "↻ Retry");
   return "";
@@ -1897,6 +1994,196 @@ function scrollPlaces(root) {
 function helpMark(text) {
   return text ? `<span class="shelp" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">ⓘ</span>` : "";
 }
+// ---------- story map: what it shows and where (the drawing is further down) ----------
+// "Domain: Admin" on a tile names the part of the product it is in (tiles.py: DOMAIN_RE, domain).
+const DOMAIN_RE = /^[ \t]+domain:[ \t]*`?([A-Za-z0-9][^`\n]{0,38}?)`?\.?[ \t]*$/i;  // tiles.py: DOMAIN_RE
+const domainOf = md => md.split("\n").slice(1).map(line => line.match(DOMAIN_RE)).find(Boolean)?.[1].trim() || "";
+// Each tile's domain, {key: name or ""}: its own Domain: line, else its master's domain, else
+// the first word before the colon in its title ("Admin: analytics") when two masters or three
+// stories start with that word; a word only one story starts with is not a domain.
+function tileDomains(index) {
+  const head = t => /^([A-Za-z][\w&-]*)(?=[ :])[^:]{0,30}:\s/.exec(t.title)?.[1] || "";
+  const masters = new Set([...index.values()].map(t => t.parent).filter(Boolean)), stories = new Map(), led = new Map();
+  for (const [k, t] of index) {
+    const h = head(t).toLowerCase();
+    if (!h) continue;
+    stories.set(h, (stories.get(h) || 0) + 1);
+    if (masters.has(k)) led.set(h, (led.get(h) || 0) + 1);
+  }
+  const shared = h => (led.get(h) || 0) >= 2 || (stories.get(h) || 0) >= 3;
+  const spelt = new Map(), name = s => { const l = s.toLowerCase(); if (!spelt.has(l)) spelt.set(l, s); return spelt.get(l); };
+  const out = new Map();
+  const find = (k, seen) => {
+    if (out.has(k)) return out.get(k);
+    const t = index.get(k), up = t.parent && index.has(t.parent) && !seen.has(t.parent) ? t.parent : null;
+    let d = t.domain ? name(t.domain) : up ? find(up, seen.add(k)) : "";
+    if (!d && shared(head(t).toLowerCase())) d = name(head(t));
+    out.set(k, d);
+    return d;
+  };
+  for (const k of index.keys()) find(k, new Set());
+  return out;
+}
+// The agent's own mark, as SVG drawn round 0,0 and about 14 across: Claude's burst, Copilot's
+// visor, or Gemini's spark for Antigravity (agent: the store's agent in a word, as /api/files
+// gives it). back: a disc of that colour behind it, for the map, where it sits on a story.
+function agentMark(agent, back = "") {
+  const kind = { claude: "claude", copilot: "copilot", antigravity: "gemini" }[String(agent).toLowerCase()] || "claude";
+  const rays = [...Array(10).keys()].map(i => { const a = i * Math.PI / 5 + .2, r = i % 2 ? 6.4 : 5.4; return `M${(Math.cos(a) * 1.2).toFixed(2)},${(Math.sin(a) * 1.2).toFixed(2)} L${(Math.cos(a) * r).toFixed(2)},${(Math.sin(a) * r).toFixed(2)}`; }).join(" ");
+  const eye = x => `M${x - 1.05},1.6 a1.05,1.7 0 1 0 2.1,0 a1.05,1.7 0 1 0 -2.1,0 Z`;
+  const drawn = {
+    claude: `<path d="${rays}" fill="none" stroke="#d97757" stroke-width="1.7" stroke-linecap="round"/>`,
+    copilot: `<path fill-rule="evenodd" fill="currentColor" d="M-6.4,0.2 C-6.4,-3.6 -3.6,-5.4 0,-5.4 C3.6,-5.4 6.4,-3.6 6.4,0.2 L6.4,2.6 C6.4,4.4 3.4,5.6 0,5.6 C-3.4,5.6 -6.4,4.4 -6.4,2.6 Z ${eye(-2.4)} ${eye(2.4)}"/>`,
+    gemini: `<path d="M0,-7 C.7,-2.4 2.4,-.7 7,0 C2.4,.7 .7,2.4 0,7 C-.7,2.4 -2.4,.7 -7,0 C-2.4,-.7 -.7,-2.4 0,-7 Z" fill="#4c8df6"/>`,
+  }[kind];
+  return `<g class="m-agent ${kind}">${back ? `<circle r="8.5" fill="${back}"/>` : ""}${drawn}</g>`;
+}
+// The store's agent's mark as a small picture in a line of text (a tile's session line and tags).
+const agentIcon = () => `<svg class="agent-icon" width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true">${agentMark(AGENT)}</svg>`;
+// The strip's state a job puts a story in flight in, or "" (as buildState; "not merged" is the Done column's).
+function mapState(job) {
+  if (!job) return "";
+  if (job.ready) return "ready";
+  if (job.state === "started") return "work";
+  if (["lost", "failed"].includes(job.state) || (job.state === "idle" && job.waiting)) return "need";
+  return { waiting: "queued", paused: "paused", idle: "idle" }[job.state] || "";
+}
+// The map of every keyed tile: {nodes: Map key -> node, edges: [{a, b, kind}]}. A node says
+// where its story is (backlog, planned, flight, done; an archived one is done), its session's
+// state, its domain, its master and sub-stories, and whether it is one to pull next: it needs
+// you or is ready, or it hasn't started and its master is already moving, or it is planned and
+// stands alone. An edge is "linked" (tiles that move together) or "mention"; a master and its
+// own sub-story are joined already and get neither.
+function mapGraph(index, links, jobs) {
+  const domains = tileDomains(index), nodes = new Map();
+  for (const [key, t] of index) {
+    const where = t.done ? "done" : t.file !== PICKUP_BOARD ? "backlog" : isPickupColumn(t.column) ? "flight" : "planned";
+    nodes.set(key, { key, title: t.title, file: t.file, column: t.column, where, domain: domains.get(key),
+      state: where === "flight" ? mapState(jobs.findLast(j => j.key === key)) : "",  // as buildState: only in the pickup column
+      parent: t.parent && index.has(t.parent) ? t.parent : null, kids: [], mentions: [], linked: [], next: false });
+  }
+  for (const n of nodes.values()) if (n.parent) nodes.get(n.parent).kids.push(n.key);
+  const edges = new Map(), pair = (a, b) => byKeyOrder(a, b) < 0 ? [a, b] : [b, a];
+  const join = (x, y, kind) => {
+    const [a, b] = pair(x, y), id = a + "|" + b;
+    if (a === b || !nodes.has(a) || !nodes.has(b) || edges.has(id) || nodes.get(a).parent === b || nodes.get(b).parent === a) return;
+    edges.set(id, { a, b, kind });
+  };
+  for (const [a, others] of links) for (const b of others) join(a, b, "linked");
+  for (const [key, t] of index) for (const m of t.mentions) join(key, m, "mention");
+  for (const { a, b, kind } of edges.values()) {
+    const list = kind === "linked" ? "linked" : "mentions";
+    nodes.get(a)[list].push(b); nodes.get(b)[list].push(a);
+  }
+  const started = n => n.where !== "backlog" || !!n.state;
+  for (const n of nodes.values()) {
+    n.kids.sort(byKeyOrder); n.mentions.sort(byKeyOrder); n.linked.sort(byKeyOrder);
+    n.doneKids = n.kids.filter(k => nodes.get(k).where === "done").length;
+    n.moving = n.kids.length > 0 && (started(n) || n.kids.some(k => started(nodes.get(k))));
+  }
+  for (const n of nodes.values()) {
+    const waiting = n.where !== "done" && n.where !== "flight" && !n.state;
+    n.next = ["need", "ready"].includes(n.state)
+      || (waiting && !!n.parent && nodes.get(n.parent).moving)
+      || (waiting && !n.parent && !n.kids.length && n.where === "planned");
+  }
+  return { nodes, edges: [...edges.values()] };
+}
+// The strip's keys for the map when the plans board isn't the open one: each story's state as
+// the map shows it, and the Done tiles not merged that the server last told of.
+function mapStats(graph) {
+  const stats = Object.fromEntries(STATS.map(([state]) => [state, []]));
+  for (const n of graph.nodes.values()) {
+    if (unmerged[n.key]) stats.unmerged.push(n.key);
+    else if (n.state) stats[n.state].push(n.key);
+  }
+  return stats;
+}
+// Where the map puts each story: {at: Map key -> {x, y, angle}, hubs: Map root key -> {R}}.
+// A master is a hub with its sub-stories on a ring round it (theirs fan out beyond), each
+// turned toward the hubs it is joined to. The hubs and the stories on their own are then
+// spread by a fixed run of a small simulation: a domain's draw together, joined ones draw
+// together, nothing overlaps and domains keep apart. Nothing is random, so the same stories
+// always land in the same places.
+function mapLayout(graph) {
+  const N = graph.nodes, rootOf = n => { while (n.parent) n = N.get(n.parent); return n; };
+  const below = n => n.kids.length ? 1 + Math.max(...n.kids.map(k => below(N.get(k)))) : 0;
+  const hubs = [...N.values()].filter(n => !n.parent).map(n => {
+    const ring = n.kids.length ? Math.max(78, n.kids.length * 46 / (2 * Math.PI)) : 0;
+    return { key: n.key, domain: n.domain, kids: n.kids.length, ring, R: n.kids.length ? ring + 62 + (below(n) - 1) * 58 : 34, ties: 0, x: 0, y: 0 };
+  });
+  const hub = new Map(hubs.map(h => [h.key, h])), weight = new Map();
+  for (const { a, b } of graph.edges) {
+    const [x, y] = [rootOf(N.get(a)).key, rootOf(N.get(b)).key].sort(byKeyOrder);
+    if (x !== y) weight.set(x + "|" + y, (weight.get(x + "|" + y) || 0) + 1);
+  }
+  // Spread some circles: joined ones draw together, none overlap. Fixed steps from a fixed start.
+  const spread = (items, joins, gap) => {
+    items.sort((a, b) => (b.kids + b.ties) - (a.kids + a.ties) || byKeyOrder(a.key, b.key));
+    items.forEach((h, i) => { const turn = i * 2.39996, d = 150 * Math.sqrt(i); h.x = Math.cos(turn) * d; h.y = Math.sin(turn) * d; });
+    const STEPS = 600;
+    for (let step = 0; step < STEPS; step++) {
+      const heat = 1 - step / STEPS;
+      for (const h of items) { const pull = (h.ties || h.kids ? .02 : .008) * heat; h.x -= h.x * pull; h.y -= h.y * pull * 1.4; }
+      for (const { a, b, w } of joins) {
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, f = (d - (a.R + b.R + gap)) / d * .03 * Math.min(w, 4) * heat;
+        a.x += dx * f; a.y += dy * f; b.x -= dx * f; b.y -= dy * f;
+      }
+      for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+        const a = items[i], b = items[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || .01, min = a.R + b.R + gap;
+        if (d < min) { const f = (min - d) / d / 2; a.x -= dx * f; a.y -= dy * f; b.x += dx * f; b.y += dy * f; }
+      }
+    }
+  };
+  const joins = [...weight].map(([id, w]) => { const [a, b] = id.split("|").map(k => hub.get(k)); a.ties += w; b.ties += w; return { a, b, w }; });
+  // First each domain's hubs among themselves, then the domains as whole circles, so no two overlap.
+  const groups = new Map();
+  for (const h of hubs) (groups.get(h.domain) || groups.set(h.domain, { key: h.domain, hubs: [], kids: 0, ties: 0 }).get(h.domain)).hubs.push(h);
+  const between = new Map();
+  for (const { a, b, w } of joins) if (a.domain !== b.domain) {
+    const id = [a.domain, b.domain].sort().join("\n");  // a name can hold any character but a line break
+    between.set(id, (between.get(id) || 0) + w);
+    groups.get(a.domain).ties += w; groups.get(b.domain).ties += w;
+  }
+  for (const g of groups.values()) {
+    spread(g.hubs, joins.filter(j => j.a.domain === g.key && j.b.domain === g.key), 22);
+    const mx = g.hubs.reduce((s, h) => s + h.x, 0) / g.hubs.length, my = g.hubs.reduce((s, h) => s + h.y, 0) / g.hubs.length;
+    for (const h of g.hubs) { h.x -= mx; h.y -= my; }
+    g.kids = g.hubs.length;
+    g.R = Math.max(...g.hubs.map(h => Math.hypot(h.x, h.y) + h.R)) + 34;  // room for the region's edge and name
+  }
+  spread([...groups.values()], [...between].map(([id, w]) => { const [a, b] = id.split("\n").map(d => groups.get(d)); return { a, b, w }; }), 40);
+  for (const g of groups.values()) for (const h of g.hubs) { h.x += g.x; h.y += g.y; }
+  const at = new Map(), turnBetween = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  for (const h of hubs) {
+    const root = N.get(h.key);
+    at.set(h.key, { x: h.x, y: h.y, angle: Math.PI / 2 });
+    // The way a sub-story would face: toward the other hubs it or its own sub-stories are joined to.
+    const facing = n => {
+      let sx = 0, sy = 0;
+      const family = k => [k, ...N.get(k).kids.flatMap(family)];
+      for (const k of family(n.key)) for (const o of [...N.get(k).mentions, ...N.get(k).linked]) {
+        const other = hub.get(rootOf(N.get(o)).key);
+        if (other !== h) { sx += other.x - h.x; sy += other.y - h.y; }
+      }
+      return sx || sy ? Math.atan2(sy, sx) : null;
+    };
+    const kids = root.kids.map(k => ({ n: N.get(k), want: facing(N.get(k)) })), slots = kids.map((_, i) => -Math.PI / 2 + i * 2 * Math.PI / kids.length);
+    const free = new Set(slots.keys());
+    for (const kid of [...kids.filter(k => k.want !== null), ...kids.filter(k => k.want === null)]) {
+      let best = -1;
+      for (const i of free) if (best < 0 || (kid.want !== null && turnBetween(slots[i], kid.want) < turnBetween(slots[best], kid.want))) best = i;
+      free.delete(best);
+      fan(kid.n, slots[best], h.ring, Math.min(1.1, 2 * Math.PI / kids.length));
+    }
+    function fan(n, angle, radius, room) {  // a story at this angle, and its own sub-stories fanned out beyond it
+      at.set(n.key, { x: h.x + Math.cos(angle) * radius, y: h.y + Math.sin(angle) * radius, angle });
+      const step = room / Math.max(n.kids.length, 1);
+      n.kids.forEach((k, i) => fan(N.get(k), angle + (i - (n.kids.length - 1) / 2) * step, radius + 58, step));
+    }
+  }
+  return { at, hubs: new Map(hubs.map(h => [h.key, { R: h.R }])) };
+}
 // What a text setting's pick list offers, as [{value, label, example}]: the agent's models, the app's
 // branches, or a few places for worktrees, each with where PLN-12's would go in this app.
 function settingPicks(k, view) {
@@ -1989,13 +2276,15 @@ function render() {
 // The strip is on the plans board while pickup is on. Its buttons are made once and then
 // kept current, so one that has the focus keeps it.
 let statFilter = "";  // the state the board is narrowed to by a click on the strip, or ""
-const statsShown = () => !isDocFile() && file === PICKUP_BOARD && pickups.enabled;
-function renderStats() {
+let viewMode = "board";  // "map": the story map in place of the columns (remembered in this browser)
+const mapOn = () => viewMode === "map" && !isDocFile() && file !== ARCHIVE_LOG;
+const statsShown = () => !isDocFile() && (file === PICKUP_BOARD || mapOn()) && pickups.enabled;  // the map has the strip from either board
+function renderStats(stats) {
   const el = $("#stats");
   el.hidden = !statsShown();
   if (el.hidden) return;
   if (!el.children.length) el.innerHTML = STATS.map(([state, mark, label]) => `<button type="button" data-stat="${state}"><b></b><span>${mark} ${label}</span></button>`).join("");
-  const stats = buildStats();
+  stats = stats || buildStats();
   for (const b of el.children) {
     const [state, , , means] = STATS.find(([id]) => id === b.dataset.stat), keys = stats[state], on = statFilter === state;
     b.firstChild.textContent = keys.length;
@@ -2007,8 +2296,12 @@ function renderStats() {
 function renderBoard() {
   const asDoc = isDocFile();
   renderStats();
-  boardEl.hidden = asDoc; $("#docView").hidden = !asDoc; $("#search").hidden = asDoc;
-  $("#colSortLabel").hidden = asDoc || file === ARCHIVE_LOG;  // the archive list has its own sort
+  const asMap = mapOn();
+  boardEl.hidden = asDoc || asMap; $("#docView").hidden = !asDoc; $("#search").hidden = asDoc;
+  $("#mapView").hidden = !asMap; $("#viewSel").hidden = asDoc || file === ARCHIVE_LOG;
+  for (const b of $("#viewSel").children) { const on = b.dataset.view === (asMap ? "map" : "board"); b.classList.toggle("primary", on); b.setAttribute("aria-pressed", on); }
+  if (!asDoc) showBoardButtons(file);
+  $("#colSortLabel").hidden = asDoc || asMap || file === ARCHIVE_LOG;  // the archive list has its own sort
   $("#listSortLabel").hidden = asDoc || file !== ARCHIVE_LOG;
   if (asDoc) return renderDoc();
   lastBoard = file;
@@ -2018,6 +2311,7 @@ function renderBoard() {
   document.title = (h1 ? h1.slice(2) : file) + " · " + (STORE_NAME || "Board");
   boardEl.innerHTML = "";
   renderEdges = linkEdges(); renderIndex = tileIndex();
+  if (asMap) return renderMap(q);
   boardEl.classList.toggle("as-list", file === ARCHIVE_LOG);
   const stat = statsShown() ? statFilter : "";
   if (file === ARCHIVE_LOG) return renderList(q);
@@ -2646,6 +2940,285 @@ function ask({ title, body = [], note = "", ok = "OK", cancel = "Cancel", danger
   }, { once: true }));
 }
 
+// ---------- story map: the view ----------
+// The map is drawn from mapGraph and mapLayout (above) whenever the board would be redrawn, and
+// only when what it shows has changed, so where you are looking and what is in focus stay put.
+try { if (localStorage.getItem("board.view") === "map") viewMode = "map"; } catch {}
+const MAP_HUES = ["#e5677f", "#2fa89f", "#d9952b", "#6f8cf5", "#a56ee8", "#3fa7d6", "#7fb347", "#e07b4f"];
+const MAP_WHERE = { backlog: "Backlog", planned: "Planned", flight: "In flight", done: "Done" };
+const sm = { graph: null, lay: null, laySig: "", sig: "", at: new Map(), els: new Map(), hubs: new Map(), regions: new Map(), edges: [],
+  hue: new Map(), cam: null, focus: null, trail: [], scope: "", drag: null };
+const mapSvg = $("#mapSvg"), mapPan = $("#mapPan"), mapPanel = $("#mapPanel");
+const svgEl = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.append(e);
+  return e;
+};
+const cutTo = (s, n) => s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+const mapNode = key => sm.graph.nodes.get(key);
+const mapRoot = n => { while (n.parent) n = mapNode(n.parent); return n; };
+const mapFamily = n => [n, ...n.kids.flatMap(k => mapFamily(mapNode(k)))];  // a story and everything under it
+const mapRoots = () => [...sm.graph.nodes.values()].filter(n => !n.parent);
+const mapInScope = n => !sm.scope || mapRoot(n).domain === (sm.scope === "-" ? "" : sm.scope);  // a master's cluster stays whole; "-": no domain
+const mapSavedKey = () => "board.map." + (STORE_NAME || location.host);
+function mapSaved() { try { return JSON.parse(localStorage.getItem(mapSavedKey()) || "{}"); } catch { return {}; } }
+function renderMap(q) {
+  if (sm.drag?.items) return;  // not under a cluster being dragged
+  const graph = mapGraph(renderIndex, renderEdges, pickups.jobs), nodes = [...graph.nodes.values()];
+  const laySig = JSON.stringify(nodes.map(n => [n.key, n.parent, n.domain, n.mentions, n.linked]));
+  if (laySig !== sm.laySig) { sm.lay = mapLayout(graph); sm.laySig = laySig; }
+  // The strip counts what the board would on the plans board; from the backlog, what the map shows.
+  const stats = file === PICKUP_BOARD ? buildStats() : mapStats(graph), only = statsShown() && statFilter ? new Set(stats[statFilter]) : null;
+  if (file !== PICKUP_BOARD) renderStats(stats);
+  const sig = laySig + JSON.stringify(nodes.map(n => [n.title, n.where, n.state, n.next, n.column])) + "\n" + q + "\n" + AGENT + "\n" + (only ? [...only] : "all");
+  if (sig === sm.sig) return;
+  sm.sig = sig; sm.graph = graph;
+  drawMap(q, only);
+}
+function drawMap(q, only) {  // q: the filter box's words; only: the keys the strip narrows to, or null
+  const N = sm.graph.nodes, saved = mapSaved(), roots = mapRoots();
+  // A story you have moved is where you left it; one you haven't goes with its cluster, by as much as its master was moved.
+  const shift = k => { const r = mapRoot(mapNode(k)).key, p = sm.lay.at.get(r); return saved[r] ? [saved[r][0] - p.x, saved[r][1] - p.y] : [0, 0]; };
+  sm.at = new Map([...sm.lay.at].map(([k, p]) => { const [dx, dy] = shift(k); return [k, saved[k] ? { ...p, x: saved[k][0], y: saved[k][1] } : { ...p, x: p.x + dx, y: p.y + dy }]; }));
+  const domains = [...new Set(roots.map(r => r.domain))].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  sm.hue = new Map(domains.map((d, i) => [d, MAP_HUES[i % MAP_HUES.length]]));
+  const hue = d => sm.hue.get(d) || "var(--muted)";
+  if (sm.scope && !roots.some(mapInScope)) sm.scope = "";  // its last story has gone
+  for (const id of ["#mapBgs", "#mapEdges", "#mapNodes"]) $(id).replaceChildren();
+  $("#mapEmpty")?.remove();
+  if (!N.size) { const none = document.createElement("div"); none.id = "mapEmpty"; none.textContent = "No keyed stories to map yet."; $("#mapView").append(none); }
+  // Regions (one per domain, when there are domains), then each master's own circle.
+  sm.regions = new Map();
+  if (domains.length) for (const d of [...domains, ...(roots.some(r => !r.domain) ? [""] : [])]) {
+    const bg = svgEl("circle", { class: "m-region", "data-domain": d, style: `--dom:${hue(d)}` }, $("#mapBgs"));
+    const label = svgEl("text", { class: "m-region-name", "text-anchor": "middle", "data-domain": d, style: `--dom:${hue(d)}` }, $("#mapBgs"));
+    label.textContent = d || "No domain";
+    sm.regions.set(d, { bg, label, x: 0, y: 0, R: 0 });
+  }
+  sm.hubs = new Map();
+  for (const r of roots) if (r.kids.length) sm.hubs.set(r.key, svgEl("circle", { class: "m-hub", r: sm.lay.hubs.get(r.key).R - 14, "data-key": r.key, style: `--dom:${hue(r.domain)}` }, $("#mapBgs")));
+  sm.edges = [];
+  for (const n of N.values()) if (n.parent) sm.edges.push({ a: n.parent, b: n.key, e: svgEl("path", { class: "m-tree" }, $("#mapEdges")) });
+  for (const { a, b, kind } of sm.graph.edges) {
+    const inner = mapRoot(mapNode(a)) === mapRoot(mapNode(b)) ? " inner" : "";
+    sm.edges.push({ a, b, curve: true, e: svgEl("path", { class: (kind === "linked" ? "m-linked" : "m-mention" + inner) }, $("#mapEdges")) });
+  }
+  sm.els = new Map();
+  for (const n of N.values()) {
+    const master = n.kids.length > 0 && !n.parent, rad = master ? 17 : n.parent ? 8 : 10, num = n.key.split("-").pop();
+    const hit = (!q || `${n.key} ${n.title}`.toLowerCase().includes(q)) && (!only || only.has(n.key));
+    const g = svgEl("g", { class: `m-node ${master ? "master" : ""} ${n.where} ${n.state}${n.next ? " next" : ""}${hit ? "" : " miss"}`, "data-key": n.key, tabindex: 0, role: "button",
+      "aria-label": `${n.key} ${n.title}, ${MAP_WHERE[n.where]}${n.state ? ", " + STATS.find(([id]) => id === n.state)[2] : ""}` }, $("#mapNodes"));
+    svgEl("circle", { class: "m-halo", r: rad + 3 }, g);
+    if (master) {
+      const R = rad + 6, f = n.doneKids / n.kids.length, end = f * 2 * Math.PI - Math.PI / 2;
+      svgEl("circle", { class: "m-ring-bg", r: R }, g);
+      if (f >= 1) svgEl("circle", { class: "m-ring", r: R }, g);
+      else if (f > 0) svgEl("path", { class: "m-ring", d: `M0,${-R} A${R},${R} 0 ${f > .5 ? 1 : 0} 1 ${Math.cos(end) * R},${Math.sin(end) * R}` }, g);
+    }
+    svgEl("circle", { class: "m-dot", r: rad }, g);
+    if (master) {
+      svgEl("text", { class: "m-title", y: -(sm.lay.hubs.get(n.key).R - 14) - 9, "text-anchor": "middle" }, g).textContent = cutTo(n.title, 34);
+      svgEl("text", { class: "m-num", y: 3.5, "text-anchor": "middle" }, g).textContent = num;
+    } else {
+      const a = sm.at.get(n.key).angle, right = Math.cos(a) >= -.01, flat = !n.parent || Math.abs(Math.cos(a)) < .2, down = !n.parent || Math.sin(a) > 0;
+      const label = svgEl("text", { class: "m-title", x: flat ? 0 : right ? rad + 5 : -rad - 5, y: flat ? (down ? rad + 13 : -rad - 6) : 4, "text-anchor": flat ? "middle" : right ? "start" : "end" }, g);
+      label.textContent = `${num} ${cutTo(n.title, 22)}`;
+    }
+    if (n.state === "work") svgEl("g", { transform: `translate(${rad + 3},${-rad - 3}) scale(.8)`, style: "color:var(--text)" }, g).innerHTML = agentMark(AGENT, "var(--bg)");  // whose session it is
+    else if (n.state) svgEl("text", { class: "m-mark", x: rad - 2, y: -rad + 2 }, g).textContent = STATS.find(([id]) => id === n.state)[1];
+    svgEl("title", {}, g).textContent = `${n.key} ${n.title}`;
+    sm.els.set(n.key, g);
+  }
+  placeMap();
+  // The bar's domain chips, the masters list and the legend.
+  const count = d => [...N.values()].filter(n => mapRoot(n).domain === d).length;
+  $("#mapDomains").innerHTML = domains.map(d => `<button type="button" data-domain="${esc(d)}" style="--dom:${hue(d)}" title="Show only ${esc(d)}; click again for every domain"><i></i>${esc(d)} ${count(d)}</button>`).join("");
+  const masters = roots.filter(r => r.kids.length), finished = r => r.doneKids === r.kids.length;
+  masters.sort((a, b) => (b.moving - a.moving) || (b.doneKids / b.kids.length - a.doneKids / a.kids.length) || byKeyOrder(a.key, b.key));
+  const epic = r => `<button type="button" class="m-epic" data-go="${r.key}"><span class="m-t"><span>${esc(cutTo(r.title, 40))}</span><em>${r.doneKids}/${r.kids.length}</em></span><span class="m-bar"><span style="width:${100 * r.doneKids / r.kids.length}%"></span></span></button>`;
+  const group = (name, list) => list.length ? `<h2>${name}</h2>${list.map(epic).join("")}` : "";
+  $("#mapMasters").innerHTML = (group("Moving", masters.filter(r => r.moving && !finished(r))) + group("Not started", masters.filter(r => !r.moving && !finished(r))) + group("Finished", masters.filter(finished)))
+    || `<h2>Masters</h2><p class="m-text">No story has sub-stories yet. A tile that says "Part of ${esc(KEY)}-12" becomes a sub-story of ${esc(KEY)}-12.</p>`;
+  const dot = (v, label, extra = "") => `<span><i style="--dom:var(${v})${extra}"></i>${label}</span>`;
+  $("#mapLegend").innerHTML = dot("--m-backlog", "Backlog") + dot("--m-planned", "Planned") + dot("--m-flight", "In flight") + dot("--m-done", "Done", ";opacity:.55") + dot("--m-need", "Needs you")
+    + `<span><svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--line)" stroke-width="3"/><path d="M8 2 A6 6 0 0 1 14 8" fill="none" stroke="var(--m-done)" stroke-width="3"/></svg>Sub-stories done</span>`
+    + `<span><svg width="16" height="16"><circle cx="8" cy="8" r="3" fill="var(--muted)"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--muted)" opacity=".6"/></svg>Next up</span>`
+    + `<span><svg width="24" height="10"><path d="M1 5 H23" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="3 4"/></svg>Mentions</span>`
+    + `<span><svg width="24" height="10"><path d="M1 5 H23" stroke="var(--accent)" stroke-width="1.8"/></svg>Linked</span>`;
+  mapScope(sm.scope, false);
+  if (sm.focus && N.has(sm.focus)) mapGo(sm.focus, { remember: false, move: !sm.cam });
+  else { sm.focus = null; sm.trail = []; mapSvg.classList.remove("focused"); mapPanel.hidden = true; if (sm.cam) mapCam(false); else mapFrame(mapWhole(), false); }
+}
+// Put everything where its story is now: after a draw, and as things are dragged.
+function placeMap() {
+  for (const [k, g] of sm.els) { const p = sm.at.get(k); g.setAttribute("transform", `translate(${p.x},${p.y})`); }
+  for (const [k, bg] of sm.hubs) { const p = sm.at.get(k); bg.setAttribute("cx", p.x); bg.setAttribute("cy", p.y); }
+  for (const { a, b, e, curve } of sm.edges) {
+    const p = sm.at.get(a), o = sm.at.get(b), mx = (p.x + o.x) / 2, my = (p.y + o.y) / 2, dx = o.x - p.x, dy = o.y - p.y;
+    e.setAttribute("d", curve ? `M${p.x},${p.y} Q${mx - dy * .18},${my + dx * .18} ${o.x},${o.y}` : `M${p.x},${p.y} L${o.x},${o.y}`);
+  }
+  for (const [d, g] of sm.regions) {  // a region is the circle round its domain's hubs and loose stories
+    const mine = mapRoots().filter(r => r.domain === d).map(r => ({ ...sm.at.get(r.key), R: sm.lay.hubs.get(r.key).R }));
+    g.x = mine.reduce((s, p) => s + p.x, 0) / mine.length; g.y = mine.reduce((s, p) => s + p.y, 0) / mine.length;
+    g.R = Math.max(...mine.map(p => Math.hypot(p.x - g.x, p.y - g.y) + p.R));
+    g.bg.setAttribute("cx", g.x); g.bg.setAttribute("cy", g.y); g.bg.setAttribute("r", g.R + 8);
+    g.label.setAttribute("x", g.x); g.label.setAttribute("y", g.y - g.R - 22);
+  }
+}
+// ----- looking around: the camera, framing some stories, and the room the side panels leave
+function mapCam(glide) {
+  mapPan.classList.toggle("glide", !!glide);
+  mapPan.setAttribute("transform", `translate(${sm.cam.x},${sm.cam.y}) scale(${sm.cam.k})`);
+  mapSvg.classList.toggle("far", sm.cam.k < .85);
+}
+function mapFrame(spots, glide = true, pad = 40) {  // spots: [{x, y, R}] to fit in view
+  if (!spots.length) { sm.cam = sm.cam || { x: 0, y: 0, k: 1 }; return mapCam(false); }
+  const box = mapSvg.getBoundingClientRect(), left = $("#mapMasters").hidden || $("#mapMasters").offsetWidth === 0 ? 0 : 240, right = mapPanel.hidden ? 0 : 302;
+  const w = Math.max(200, box.width - left - right), h = Math.max(200, box.height - 96);
+  const x0 = Math.min(...spots.map(s => s.x - s.R)) - pad, x1 = Math.max(...spots.map(s => s.x + s.R)) + pad;
+  const y0 = Math.min(...spots.map(s => s.y - s.R)) - pad, y1 = Math.max(...spots.map(s => s.y + s.R)) + pad;
+  const k = Math.min(w / (x1 - x0), h / (y1 - y0), 1.5);
+  sm.cam = { k, x: left + w / 2 - (x0 + x1) / 2 * k, y: 48 + h / 2 - (y0 + y1) / 2 * k };
+  mapCam(glide);
+}
+const mapSpot = n => ({ ...sm.at.get(n.key), R: sm.lay.hubs.get(n.key)?.R || 30 });
+// Everything in scope: its hubs and loose stories, and the regions round them (with room for their names).
+const mapWhole = () => [...mapRoots().filter(mapInScope).map(mapSpot),
+  ...[...sm.regions].filter(([d]) => !sm.scope || d === (sm.scope === "-" ? "" : sm.scope)).map(([, g]) => ({ x: g.x, y: g.y - 20, R: g.R + 30 }))];
+// ----- scope: one domain's stories only ("-": the ones with no domain)
+function mapScope(domain, reframe = true) {
+  sm.scope = domain;
+  const want = domain === "-" ? "" : domain;
+  for (const [k, g] of sm.els) g.classList.toggle("out", !mapInScope(mapNode(k)));
+  for (const [k, bg] of sm.hubs) bg.classList.toggle("out", !mapInScope(mapNode(k)));
+  for (const x of sm.edges) x.e.classList.toggle("out", !mapInScope(mapNode(x.a)) || !mapInScope(mapNode(x.b)));
+  for (const [d, g] of sm.regions) { const off = !!domain && d !== want; g.bg.classList.toggle("out", off); g.label.classList.toggle("out", off); }
+  for (const b of $("#mapDomains").children) b.setAttribute("aria-pressed", b.dataset.domain === domain);
+  for (const b of $("#mapMasters").querySelectorAll("[data-go]")) b.hidden = !mapInScope(mapNode(b.dataset.go));
+  if (reframe) mapGo(null);
+}
+// ----- focus: one story, what it is joined to, and the panel that says so
+function mapHop(n, tag = "") {
+  return `<button type="button" class="m-hop ${n.where} ${n.state}" data-go="${n.key}"><i></i><b>${n.key}</b><span>${esc(n.title)}</span>${tag || (n.next ? "<em>next</em>" : "")}</button>`;
+}
+function mapGo(key, { remember = true, move = true } = {}) {
+  if (remember && sm.focus && key && key !== sm.focus) sm.trail.push(sm.focus);
+  sm.focus = key;
+  mapSvg.classList.toggle("focused", !!key);
+  for (const g of sm.els.values()) g.classList.remove("lit", "focus");
+  for (const x of sm.edges) x.e.classList.remove("lit");
+  if (!key) { sm.trail = []; mapPanel.hidden = true; return mapFrame(mapWhole()); }
+  const n = mapNode(key);
+  if (!mapInScope(n)) mapScope("", false);
+  const near = new Set([key, ...n.kids, ...n.mentions, ...n.linked, ...(n.parent ? [n.parent] : [])]);
+  for (const k of near) sm.els.get(k).classList.add("lit");
+  sm.els.get(key).classList.add("focus");
+  for (const x of sm.edges) if ((x.a === key && near.has(x.b)) || (x.b === key && near.has(x.a))) x.e.classList.add("lit");
+  const list = keys => keys.map(k => mapHop(mapNode(k))).join(""), sibs = n.parent ? mapNode(n.parent).kids.filter(k => k !== key) : [];
+  const state = n.state ? STATS.find(([id]) => id === n.state) : null, here = findCardByKey(key), last = sm.trail.filter(k => sm.graph.nodes.has(k)).pop();
+  const words = here ? [splitCard(here.c.text).desc, ...here.c.body.map(l => l.trim()).filter(l => l && !/^[-*] \[/.test(l) && !/^(part of|claude session|copilot session|antigravity session|status:|handoff:|model:|tests:|base:|repos:|domain:)/i.test(l))].filter(Boolean).join(" ") : "";
+  mapPanel.innerHTML = `<button type="button" class="m-close" data-close title="Back to the whole map" aria-label="Close">×</button>
+    <div class="m-key">${n.key}</div><h3>${esc(n.title)}</h3>
+    <span class="m-chip" style="color:var(--m-${n.where})">${MAP_WHERE[n.where]}</span>${state ? `<span class="m-chip">${state[1]} ${state[2]}</span>` : ""}<span class="m-chip">${esc(n.column)}</span>${n.domain ? `<span class="m-chip" style="color:${sm.hue.get(n.domain) || "inherit"}">${esc(n.domain)}</span>` : ""}
+    ${n.kids.length ? `<div class="m-bar" style="margin-top:8px"><span style="width:${100 * n.doneKids / n.kids.length}%"></span></div><div class="m-text" style="margin-top:4px">${n.doneKids} of ${n.kids.length} sub-stories done</div>` : ""}
+    ${words ? `<p class="m-text">${esc(cutTo(words, 420))}</p>` : ""}
+    <button type="button" class="m-open" data-open="${n.key}" title="Open this story's tile on its board">Open tile</button>
+    ${n.parent ? `<h2>Part of</h2>${mapHop(mapNode(n.parent))}` : ""}
+    ${n.kids.length ? `<h2>Sub-stories</h2>${list(n.kids)}` : ""}
+    ${n.linked.length ? `<h2>Moves with</h2>${list(n.linked)}` : ""}
+    ${n.mentions.length ? `<h2>Mentions and mentioned by</h2>${list(n.mentions)}` : ""}
+    ${sibs.length ? `<h2>Alongside it in ${n.parent}</h2>${list(sibs)}` : ""}
+    ${last ? `<h2>Came from</h2>${mapHop(mapNode(last), "<em>Esc</em>")}` : ""}`;
+  mapPanel.hidden = false;
+  if (move) { mapPanel.scrollTop = 0; mapFrame([...near].map(k => mapSpot(mapNode(k))), true, n.kids.length && !n.parent ? 30 : 150); }
+}
+// A story's tile, opened on its own board; an archived one opens on the archive list, which has no map.
+async function mapOpen(key) {
+  const n = mapNode(key);
+  if (n.file !== file) await openFile(n.file);
+  const f = file === n.file && findCardByKey(key);
+  if (f) openCard(f.c, f.s); else flash(`${key} couldn't be opened from here: open ${boardLabel(n.file)} to see it.`);
+}
+// ----- the pointer: a plain drag pans, the wheel zooms, a click focuses, and with Ctrl or ⌘
+// held a drag moves what is under it: a master's cluster, a domain (its region or its name),
+// or with Alt as well just one sub-story.
+function mapGrab(e) {
+  if (!e.ctrlKey && !e.metaKey) return null;
+  const t = e.target, hit = t.closest?.(".m-node") || (t.classList?.contains("m-hub") ? t : null);
+  let moved = null;
+  if (hit) { const n = mapNode(hit.dataset.key); moved = e.altKey && n.parent ? mapFamily(n) : mapFamily(mapRoot(n)); }
+  else if (t.dataset?.domain !== undefined && (t.classList.contains("m-region") || t.classList.contains("m-region-name"))) moved = mapRoots().filter(r => r.domain === t.dataset.domain).flatMap(mapFamily);
+  return moved && moved.map(n => ({ p: sm.at.get(n.key), key: n.key, x: sm.at.get(n.key).x, y: sm.at.get(n.key).y }));
+}
+mapSvg.addEventListener("pointerdown", e => {
+  if (e.button > 0 && !e.ctrlKey) return;
+  sm.drag = { x: e.clientX, y: e.clientY, cx: sm.cam.x, cy: sm.cam.y, moved: false, items: mapGrab(e), target: e.target };
+  mapSvg.setPointerCapture(e.pointerId);
+});
+mapSvg.addEventListener("pointermove", e => {
+  const d = sm.drag;
+  if (!d) return;
+  const dx = e.clientX - d.x, dy = e.clientY - d.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) { d.moved = true; mapSvg.classList.add("dragging"); }
+  if (!d.moved) return;
+  if (d.items) { for (const i of d.items) { i.p.x = i.x + dx / sm.cam.k; i.p.y = i.y + dy / sm.cam.k; } placeMap(); }
+  else { sm.cam.x = d.cx + dx; sm.cam.y = d.cy + dy; mapCam(false); }
+});
+function mapDrop(e) {
+  const d = sm.drag;
+  sm.drag = null; mapSvg.classList.remove("dragging");
+  if (!d) return;
+  if (d.moved) {  // a drag that the browser cancels (a Ctrl-drag can end that way) is kept too
+    if (d.items) { const all = mapSaved(); for (const i of d.items) all[i.key] = [Math.round(i.p.x), Math.round(i.p.y)]; try { localStorage.setItem(mapSavedKey(), JSON.stringify(all)); } catch {} }
+    return;
+  }
+  if (e.type === "pointercancel") return;
+  const t = d.target;
+  if (t.classList?.contains("m-region-name")) return mapScope(sm.scope === (t.dataset.domain || "-") ? "" : (t.dataset.domain || "-"));
+  const g = t.closest?.(".m-node");
+  if (g) mapGo(g.dataset.key); else if (sm.focus) mapGo(null);
+}
+mapSvg.addEventListener("pointerup", mapDrop);
+mapSvg.addEventListener("pointercancel", mapDrop);
+mapSvg.addEventListener("contextmenu", e => e.preventDefault());  // Ctrl-click is a drag here, not the Mac's menu
+mapSvg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const box = mapSvg.getBoundingClientRect(), px = e.clientX - box.left, py = e.clientY - box.top;
+  const k = Math.min(4, Math.max(.12, sm.cam.k * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0018))));
+  sm.cam = { k, x: px - (px - sm.cam.x) * k / sm.cam.k, y: py - (py - sm.cam.y) * k / sm.cam.k };
+  mapCam(false);
+}, { passive: false });
+mapSvg.addEventListener("keydown", e => { const g = e.target.closest?.(".m-node"); if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); mapGo(g.dataset.key); } });
+addEventListener("keydown", e => {
+  if (e.key === "Control" || e.key === "Meta") mapSvg.classList.add("moving");
+  if (e.key === "Escape" && mapOn() && sm.focus && !document.querySelector("dialog[open]")) { sm.trail = sm.trail.filter(k => sm.graph.nodes.has(k) && k !== sm.focus); mapGo(sm.trail.pop() || null, { remember: false }); }
+});
+addEventListener("keyup", e => { if (e.key === "Control" || e.key === "Meta") mapSvg.classList.remove("moving"); });
+addEventListener("blur", () => mapSvg.classList.remove("moving"));
+addEventListener("resize", () => { if (mapOn() && sm.graph) { if (sm.focus) mapGo(sm.focus, { remember: false }); else mapFrame(mapWhole(), false); } });
+$("#mapView").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.go) return mapGo(b.dataset.go);
+  if (b.dataset.open) return mapOpen(b.dataset.open);
+  if (b.dataset.close !== undefined) return mapGo(null);
+  if (b.dataset.domain !== undefined) return mapScope(sm.scope === b.dataset.domain ? "" : b.dataset.domain);
+  if (b.id === "mapFit") { mapScope("", false); return mapGo(null); }
+  if (b.id === "mapMastersBtn") { $("#mapMasters").hidden = !$("#mapMasters").hidden; try { localStorage.setItem("board.map.masters", $("#mapMasters").hidden ? "off" : "on"); } catch {} return sm.focus ? mapGo(sm.focus, { remember: false }) : mapFrame(mapWhole()); }
+  if (b.id === "mapReset") { try { localStorage.removeItem(mapSavedKey()); } catch {} sm.sig = ""; sm.cam = null; sm.focus = null; render(); }
+});
+try { $("#mapMasters").hidden = localStorage.getItem("board.map.masters") === "off"; } catch {}
+$("#viewSel").addEventListener("click", e => {
+  const b = e.target.closest("button[data-view]");
+  if (!b || b.dataset.view === viewMode) return;
+  viewMode = b.dataset.view;
+  try { localStorage.setItem("board.view", viewMode); } catch {}
+  sm.sig = "";  // drawn afresh: the map was hidden, so it had no size to fit to
+  sm.cam = null;
+  if (doc) render();
+});
 // ---------- settings panel ----------
 const settingsDlg = $("#settingsDlg");
 let settingsView = null;
@@ -3084,8 +3657,16 @@ async function openFile(name) { if (dirty) await save(); return load(name); }
 // A board's button reads as its name: plans.md → Plans, archive/archived.md → Archive.
 const BOARD_LABELS = { "plans.md": "Plans", "backlog.md": "Backlog", [ARCHIVE_LOG]: "Archive" };
 const boardLabel = f => BOARD_LABELS[f] || f.replace(/^.*\//, "").replace(/\.md$/, "").replace(/[-_]+/g, " ").replace(/^./, ch => ch.toUpperCase());
+// The map shows plans and backlog together, so while it is up their two buttons are greyed
+// out and none is lit; the archive's still opens the archive list.
 function showBoardButtons(on) {
-  for (const b of $("#fileSel").querySelectorAll("button")) { b.classList.toggle("on", b.dataset.file === on); b.setAttribute("aria-selected", b.dataset.file === on); }
+  const mapped = mapOn();
+  for (const b of $("#fileSel").querySelectorAll("button")) {
+    const both = mapped && [PULLS_INTO, BACKLOG].includes(b.dataset.file), lit = b.dataset.file === on && !both;
+    b.classList.toggle("on", lit); b.setAttribute("aria-selected", lit);
+    b.disabled = both;
+    b.title = both ? "The map shows the plans and backlog boards together. Switch to Board to open one." : b.dataset.file;
+  }
 }
 $("#fileSel").addEventListener("click", e => { const b = e.target.closest("button[data-file]"); if (b && b.dataset.file !== file) openFile(b.dataset.file); });
 $("#search").addEventListener("input", () => doc && render());
@@ -3258,7 +3839,7 @@ async function offerPickup(job, unasked = false) {
     note: `Queued, it starts when the session on ${esc(ahead)} ends.` })) startPickup(job.key);
 }
 async function pollPickups() {
-  if (file !== PICKUP_BOARD || document.hidden) return;
+  if ((file !== PICKUP_BOARD && !mapOn()) || document.hidden) return;  // the map shows sessions from any board
   const next = await (await fetch("/api/pickup")).json();
   const changed = JSON.stringify(next) !== JSON.stringify(pickups), first = !pickupsLoaded;
   pickups = next; pickupsLoaded = true;

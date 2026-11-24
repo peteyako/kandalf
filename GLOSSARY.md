@@ -10,7 +10,9 @@ The words kandalf uses for the board, its stories and the jobs that work them. C
 - **Story**: a tile that is a unit of work for an agent, one worktree and one branch (more than one with `Repos:`).
 - **Master**: a story that sub-stories name in their `Part of` line. Its sub-stories each get their own session and the master gets none while any is in flight.
 - **Sub-story**: a story that belongs to a master. It takes its master's `Base:`, `Repos:`, `Model:` and `Sessions:` lines unless it has its own, from a master in flight only; `Tests:` is taken from the nearest master anywhere in the family, backlog and archive included.
-- **Attribute line**: an indented line of a tile that is a setting, such as `Model:`, `Base:`, `Repos:`, `Tests:` or `Ready for review`. `tiles.py` has one reader for each.
+- **Attribute line**: an indented line of a tile that is a setting, such as `Model:`, `Base:`, `Repos:`, `Tests:`, `Domain:` or `Ready for review`. `tiles.py` has one reader for each.
+- **Domain**: the part of the product a story is in, from its `Domain:` line, its master's, or a title prefix several stories share (`tiles.domain`; `tileDomains` in `board.html` applies the fallbacks). The map groups by it.
+- **Map**: the page's other view of the boards: every keyed story as a node, masters as hubs, mentions and links as lines (`mapGraph`, `mapLayout` in `board.html`).
 - **Session line**: the tile line naming the agent session at work, its id, branch and worktrees (`tiles.SessionLine`).
 
 ## Reading the board

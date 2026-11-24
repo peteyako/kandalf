@@ -234,6 +234,27 @@ Leave pickup off and it's a markdown kanban.
 - **Looks.** The header's Theme menu picks the board's look (Clean and light, Classic, Aqua bubble, Sticker pop, Realm ledger, Soft and sunny), the swatches pick an accent colour, and the button beside them picks light or dark: ◐ System follows your computer, ☀ Light and ☾ Dark stay put. Every theme has a dark palette. All three choices are kept in this browser only.
 - **Any folder.** `kandalf serve --dir ~/notes/boards --port 7789` serves any folder of boards, with no `board.json`.
 
+## The map
+
+**Map**, beside **Board** in the header, shows the same stories as a map. Every keyed story on plans, backlog and the archive is on it, whichever board is open.
+
+- **Masters and sub-stories.** A master is a hub with its sub-stories round it. The ring on the hub fills as they are done, and the list on the left sorts masters into moving, not started and finished.
+- **Lines.** A dashed line joins two stories when one mentions the other's key; a solid one joins linked tiles, which move together.
+- **Colour** says where a story is: backlog, planned (on the plans board, not yet in flight), in flight, or done. An archived story is done. With pickup on, a story at work has a turning ring, and one that needs you is red.
+- **Next up.** Stories that pulse are the ones to look at: any that needs you or is ready for review, the sub-stories not yet started of a master that is already moving, and a planned story that stands alone.
+- **Domains.** Stories are grouped into a region per domain, and the chips at the top show one domain only. A story's domain is its own `Domain:` line, else its master's, else the first word before the colon in its title (`Admin: analytics`) when two masters or three stories start with that word.
+- **Getting around.** Click a story to bring it to the middle with everything it is joined to; the panel lists those, each a click to hop to, and **Open tile** opens its card on its board. Esc steps back the way you came. Drag to pan, scroll to zoom, and type in the filter box to fade everything that doesn't match. With pickup on, the strip above the map counts the stories in each state, and pressing one fades the rest.
+- **Arranging.** Hold Ctrl (or ⌘) and drag a master's circle to move its cluster, or a region to move a whole domain; with Alt as well, one sub-story. The arrangement is kept in your browser, per store, and **Reset layout** forgets it.
+
+The map only reads: tiles are moved and edited on the board.
+
+## Keeping the filing rules current
+
+Agents file stories by two sets of instructions that `kandalf init` wrote once: the header of `plans.md`, and a note in each linked repo's `AGENTS.md`, `CLAUDE.md` or `GEMINI.md` (between `<!-- kandalf -->` marks). An upgrade of kandalf doesn't touch either. `kandalf notes` says what is behind, and `kandalf notes --update` brings it up to date:
+
+- **The header** gains the rules it lacks, each where the template has it, and the store commits the change. A rule you already have is never changed, however you worded it; the ones whose wording differs from today's are listed for you to compare.
+- **The note** in each repo is replaced with today's. The files aren't committed for you.
+
 ## Tile conventions
 
 Write these in a tile and the board acts on them.
@@ -248,6 +269,7 @@ Write these in a tile and the board acts on them.
 | `No pickup` | Never pick this tile up. Use it on a tile one of your own sessions is already working on. |
 | `Model: sonnet` (own line) | The model for this story's session: an alias or a full model id. |
 | `Base: feature-x` (own line) | The branch this story is cut from and merged into, instead of the trunk, in each repo that has it. The dialog's Base field writes it. A sub-story takes its master's. |
+| `Domain: Admin` (own line) | The part of the product the story is in. The map groups stories by it. A sub-story takes its master's. |
 | `Tests: full` (own line) | A merge of this story from the board runs the full suite on the trunk afterwards. `Tests: affected` says not to, whatever the store's `fullSuiteOnMerge`. The dialog's **Full suite on merge** box writes and removes the line. A sub-story takes its master's. |
 | `Repos: api, web` (own line) | The repos this story works in. The session starts in the first one. Without the line, it's the main repo. The dialog's Repos boxes write it. A sub-story takes its master's. |
 | `Sessions: 3` (own line, on a master) | How many sub-stories have a session at work at once, instead of the store's `"sessions"`. |
@@ -321,6 +343,7 @@ kandalf repo list           the store's repos, the main one first
 kandalf repo rm NAME        take a repo out of board.json (its docs/plans link stays)
 kandalf uninstall           remove the docs/plans link from every repo of the store (the store stays)
 kandalf doctor              what works and what doesn't, one line per check
+kandalf notes               whether the filing rules agents read are today's (--update: bring them up to date)
 kandalf hooks               print the hooks block (--add: put it in the store and link it into the app)
 kandalf hook autocommit     the Claude Code hook that queues an edit (reads the call on stdin)
 kandalf hook check          the Claude Code hook that flags a file the board would open view-only

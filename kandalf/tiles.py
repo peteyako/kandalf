@@ -44,6 +44,8 @@ MODEL_RE = re.compile(r"^[ \t]+model:[ \t]*`?([A-Za-z0-9][A-Za-z0-9._\[\]-]*)`?\
 BASE_RE = re.compile(r"^[ \t]+base:[ \t]*`?([A-Za-z0-9_][A-Za-z0-9._/-]*?)`?\.?[ \t]*$", re.I | re.M)  # same in board.html (BASE_RE there)
 # A tile says how much of the suite its merge runs with a line of its own, "Tests: full" or "Tests: affected".
 TESTS_RE = re.compile(r"^[ \t]+tests:[ \t]*`?(full|affected)`?\.?[ \t]*$", re.I | re.M)  # same in board.html (TESTS_RE there)
+# "Domain: Admin": the part of the product a story is in, which the story map groups by.
+DOMAIN_RE = re.compile(r"^[ \t]+domain:[ \t]*`?([A-Za-z0-9][^`\n]{0,38}?)`?\.?[ \t]*$", re.I | re.M)  # same in board.html (DOMAIN_RE there)
 SESSIONS_RE = re.compile(r"^[ \t]+sessions:[ \t]*`?(\d+)`?\.?[ \t]*$", re.I | re.M)  # a master's "Sessions: 3" line, same in board.html (SESSIONS_RE there)
 
 # The session line the server writes into a tile, an indented line of its own (SESSION_RE in
@@ -223,6 +225,12 @@ def tests(md: str):
     return found.group(1).lower() if found else None
 
 
+def domain(md: str):
+    """What the first "Domain: name" line in md names, as written, or None if there is no such line."""
+    found = DOMAIN_RE.search(md or "")
+    return found.group(1).strip() if found else None
+
+
 def repos(md: str):
     """The repos named on the first "Repos: a, b" line in md, in order, any case, no
     duplicates. None if there is no such line."""
@@ -395,12 +403,13 @@ class Snapshot:
         return self._parent.get(key)
 
     def index(self) -> dict:
-        """{"KEY-NN": {"title", "file", "column", "done", "parent", "mentions", "tests"}} for
-        every keyed tile. done: in a Done column, or in the archive log. parent: the master
+        """{"KEY-NN": {"title", "file", "column", "done", "parent", "mentions", "tests", "domain"}}
+        for every keyed tile. done: in a Done column, or in the archive log. parent: the master
         it says it is part of, or None. mentions: the other keys its text names, sorted.
-        tests: its own "Tests:" value."""
+        tests: its own "Tests:" value. domain: its own "Domain:" value."""
         return {k: {"title": t.title, "file": name, "column": t.column, "done": t.done,
-                    "parent": self._parent[k], "mentions": t.mentions, "tests": tests(t.text)}
+                    "parent": self._parent[k], "mentions": t.mentions, "tests": tests(t.text),
+                    "domain": domain(t.text)}
                 for k, (name, t) in self._at.items()}
 
     def texts(self) -> dict:

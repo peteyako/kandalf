@@ -276,7 +276,7 @@ class SnapshotTests(unittest.TestCase):
     def test_the_index_says_where_each_keyed_tile_is_and_its_own_tests_line(self):
         index = self.snap.index()
         self.assertEqual(index["PLN-83"], {"title": "Master", "file": "plans.md", "column": "In flight", "done": False,
-                                           "parent": None, "mentions": [], "tests": "full"})
+                                           "parent": None, "mentions": [], "tests": "full", "domain": None})
         self.assertEqual((index["PLN-41"]["file"], index["PLN-41"]["done"], index["PLN-41"]["tests"]),
                          (tiles.ARCHIVE_LOG, True, "affected"))
         self.assertIsNone(index["PLN-80"]["tests"])  # its own line only: the master's is for nearest()
@@ -345,7 +345,7 @@ class SnapshotTests(unittest.TestCase):
 
 
 CASES = json.loads((HERE / "tile_cases.json").read_text(encoding="utf-8"))  # test_page.js runs the same file
-READERS = {"model": tiles.model, "base": tiles.base, "tests": tiles.tests, "repos": tiles.repos,
+READERS = {"model": tiles.model, "base": tiles.base, "tests": tiles.tests, "domain": tiles.domain, "repos": tiles.repos,
            "sessions": tiles.sessions, "ready": tiles.ready}
 
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- A tile's session line and its working tags show the agent's own mark too, in place of the ✦.
+- The stats strip (at work, need you, …) shows above the map too, and a pressed filter fades every story on the map that isn't in that state.
+- On the map, a story at work carries its agent's own mark (Claude's, Copilot's, or Gemini's for Antigravity) in place of the ✦, which read as Gemini's whatever the agent.
+- `kandalf notes` says whether a store's filing rules are behind the installed kandalf: the `plans.md` header and the note for agents in each linked repo. `kandalf notes --update` adds the header rules a store lacks (never changing one it has) and replaces the note, which now ends with a `<!-- /kandalf -->` mark and is also kept current in `GEMINI.md`.
+- While the map is showing, the Backlog and Plans buttons are greyed out: the map shows both boards together.
+- A new store's `plans.md` header, and the note `kandalf init` leaves for agents in the app, say how to file masters, sub-stories, domains and mentions so the map draws well.
+- A **Map** view beside the board (the Board / Map switch in the header): every keyed story on plans, backlog and the archive as a map. A master is a hub with its sub-stories round it and a ring that fills as they are done; mentions and linked tiles are lines between stories; colour says where a story is (an archived one is done) and what its session is doing. Stories to pull next pulse. Click a story to bring it to the middle with what it is joined to, hop from the panel, Esc to step back, and Open tile for its card. Drag to pan, scroll to zoom, Ctrl-drag (or ⌘-drag) a cluster or a domain to move it; the arrangement is remembered in the browser.
+- Stories are grouped by **domain** on the map, with a chip per domain to show only its stories. A story's domain is its own `Domain: name` line, else its master's, else the first word before the colon in its title when several stories share it.
 - Story worktrees go inside the app by default, at `myapp/.worktrees/pln-74`, instead of beside it (`myapp-pln-74`). Pickup keeps `.worktrees/` out of the app's git status through its `info/exclude` when the app doesn't ignore it yet. A store whose `board.json` sets `"worktree"` keeps its own pattern, and a story already picked up keeps its worktree; set `"worktree": "{app}-{key}"` to cut new ones beside the app again.
 - Where worktrees go is a setting in the ⚙ panel (Worktrees, under Git and commits), checked as pickup checks it: it needs `{key}` and may climb at most one folder.
 - `kandalf serve` says where a story's worktree goes (`in worktrees at …/myapp/.worktrees/{key}`), instead of always saying "beside" the app.

@@ -305,6 +305,8 @@ def link_app(app: Path, folder: Path, link: str) -> list:
 
 
 AGENT_NOTES_MARK = "<!-- kandalf -->"
+AGENT_NOTES_END = "<!-- /kandalf -->"  # where the note stops; one written before this existed runs to the next heading
+NOTED = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")  # the files of a repo that may carry the note
 
 
 def agent_notes_text(link: str) -> str:
@@ -315,8 +317,11 @@ This repo's stories live on a kandalf board, linked in at `docs/{link}`. When th
 "add a story to kandalf", "kandalf new story", "new kandalf story", "add to board" or
 "add to the board", file a story: read the header of `docs/{link}/plans.md` for the filing
 rules, run `kandalf key next` for the key, write the plan doc in `docs/{link}/active/` and add
-the tile at the top of its column on `docs/{link}/backlog.md`. Commit with
+the tile at the top of its column on `docs/{link}/backlog.md`. A master story with sub-stories,
+a story's domain and the other stories it names are what the board's map is drawn from: write
+the `Part of`, `Domain:` and key mentions as that header says. Commit with
 `git -C docs/{link} commit -- <paths>`, never in this repo.
+{AGENT_NOTES_END}
 """
 
 
@@ -335,6 +340,118 @@ def agent_notes(app: Path, link: str) -> list:
             continue
         f.write_text(text + ("\n" if text and not text.endswith("\n") else "") + ("\n" if text else "") + notes, encoding="utf-8")
         said.append(f"told agents in {f} how to add a story to the board")
+    return said
+
+
+def note_span(text: str):
+    """(start, end) of the kandalf note in a file's text, or None: from its mark to its end
+    mark, or for a note from before the end mark, to the next # or ## heading after its own."""
+    start = text.find(AGENT_NOTES_MARK)
+    if start < 0:
+        return None
+    end = text.find(AGENT_NOTES_END, start)
+    if end >= 0:
+        end += len(AGENT_NOTES_END)
+        return start, end + (text[end:end + 1] == "\n")
+    own = text.find("\n", text.find("## Kandalf board", start))
+    following = re.search(r"^#{1,2} ", text[own:], re.M) if own >= 0 else None
+    end = own + following.start() if following else len(text)
+    while text[end - 2:end] == "\n\n":  # the blank line before what follows isn't the note's
+        end -= 1
+    return start, end
+
+
+def refresh_notes(app: Path, link: str, write: bool) -> list:
+    """The kandalf note in each of a repo's agent files brought up to today's wording (only
+    said, unless write); what was or would be done. A file with no note is left alone."""
+    notes, said = agent_notes_text(link), []
+    for f in (app / n for n in NOTED):
+        text = f.read_text(encoding="utf-8") if f.is_file() else ""
+        span = note_span(text)
+        if not span or text[span[0]:span[1]] == notes:
+            continue
+        if write:
+            f.write_text(text[:span[0]] + notes + text[span[1]:], encoding="utf-8")
+        said.append(f"{f}: the note for agents {'brought up to date' if write else 'is out of date'}")
+    return said
+
+
+BULLET_LEAD_RE = re.compile(r"^- \*\*(.+?)\*\*")
+
+
+def rule_lead(line: str):
+    """A header bullet's bold opening words, in lower case without the colon; None when it has none."""
+    found = BULLET_LEAD_RE.match(line)
+    return found.group(1).rstrip(":.").lower() if found else None
+
+
+def header_rules(board: str) -> list:
+    """The rules in a board file's header (the text above its first column), in order, as
+    [(lead, lines)]: a top-level bullet with the lines under it. lead is its bold opening
+    words in lower case without the colon, or None for a bullet that has none."""
+    rules = []
+    for line in board.split("\n## ", 1)[0].split("\n"):
+        if line.startswith("- "):
+            rules.append((rule_lead(line), [line]))
+        elif rules and line[:1] in (" ", "\t") and line.strip():
+            rules[-1][1].append(line)
+    return rules
+
+
+def refresh_header(st, write: bool) -> list:
+    """The rules today's plans.md header has that the store's lacks, added to it (only said,
+    unless write), each after the rule it follows in the template. A rule the store already
+    has is never changed, however it is worded; the ones that differ are named."""
+    f = st.dir / "plans.md"
+    if not f.is_file():
+        return []
+    text = f.read_text(encoding="utf-8")
+    want = header_rules(from_template("plans.md", {"name": st.name, "key": st.key, "link": st.link, "trunk": st.trunk}))
+    have = header_rules(text)
+    mine = {lead: "\n".join(lines) for lead, lines in have if lead}
+    missing = [(lead, lines) for lead, lines in want if lead and lead not in mine]
+    differ = [lead for lead, lines in want if lead in mine and mine[lead] != "\n".join(lines)]
+    said = []
+    if missing and write:
+        head, sep, rest = text.partition("\n## ")
+        lines, ends, lead = head.split("\n"), {}, None  # ends: the last line of each rule the header has
+        for i, line in enumerate(lines):
+            if line.startswith("- "):
+                lead = rule_lead(line) or ""
+            elif not (line[:1] in (" ", "\t") and line.strip()):
+                continue
+            if lead is not None:
+                ends[lead] = i
+        order = [lead for lead, _ in want]
+        for lead, new in missing:  # each after the rule it follows in the template, else after the last named rule
+            before = [o for o in order[:order.index(lead)] if o and o in ends]
+            named = [i for o, i in ends.items() if o]
+            at = ends[before[-1]] if before else max(named) if named else len(lines) - 1
+            lines[at + 1:at + 1] = new
+            ends = {o: i + len(new) if i > at else i for o, i in ends.items()}
+            ends[lead] = at + len(new)
+        f.write_text("\n".join(lines) + sep + rest, encoding="utf-8")
+        if st.root:
+            from . import gitlog
+            gitlog.commit(st.root, [f], "board: filing rules added to the header")
+    for lead, _ in missing:
+        said.append(f'{f}: the rule "{lead}" {"added to" if write else "is missing from"} the header')
+    if differ:
+        said.append(f"{f}: left as you have them, though today's wording differs: {', '.join(differ)}")
+    return said
+
+
+def notes(st, write: bool) -> list:
+    """kandalf notes [--update]: whether the instructions agents file stories by are today's,
+    in the plans.md header and in each linked repo's agent files; --update brings them up to date."""
+    said = refresh_header(st, write)
+    for repo in st.repos:
+        if repo.path.is_dir():
+            said += refresh_notes(repo.path, st.link, write)
+    if not said:
+        return ["The filing rules and the notes for agents are up to date."]
+    if not write and any("missing" in s or "out of date" in s for s in said):
+        said.append("`kandalf notes --update` makes these changes; nothing in a repo is committed for you.")
     return said
 
 
