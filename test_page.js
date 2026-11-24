@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, tileDomains, mapGraph, mapLayout, mapStats, agentMark, columnKind, kindTaken, doubledKinds,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds,
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
             setFullSuite: on => { STORE_FULL_SUITE = on; },
@@ -923,6 +923,10 @@ test("each line in tile_cases.json says what the case says", () => {
   }
 });
 
+test("each domain name in tile_cases.json is taken or refused as the case says", () => {
+  for (const c of CASES.domainNames) assert.deepEqual(page.domainName(c.raw), "error" in c ? { error: c.error } : { name: c.name }, JSON.stringify(c.raw));
+});
+
 test("each options block in tile_cases.json reads as the case says", () => {
   for (const c of CASES.options) assert.deepEqual(page.optionsOf(c.md), c.options, c.md);
 });
@@ -1183,4 +1187,224 @@ test("a column's id in one parse of a board is matched to its id in another by n
     [["100", 201], ["101", 200], ["102", 203]]);
   // a second column of one name that is gone: only the first is matched
   assert.deepEqual([...page.sectionIdMap(secs("Notes", "Notes"), fresh("Notes"))], [["100", 200]]);
+});
+
+// The map's selection and what a drop means.
+const fakeNodes = () => new Map([
+  ["PLN-70", { key: "PLN-70", parent: null, kids: ["PLN-71", "PLN-72"] }],
+  ["PLN-71", { key: "PLN-71", parent: "PLN-70", kids: ["PLN-73"] }],
+  ["PLN-72", { key: "PLN-72", parent: "PLN-70", kids: [] }],
+  ["PLN-73", { key: "PLN-73", parent: "PLN-71", kids: [] }],
+  ["PLN-12", { key: "PLN-12", parent: null, kids: [] }],
+  ["PLN-13", { key: "PLN-13", parent: null, kids: ["PLN-14"] }],
+  ["PLN-14", { key: "PLN-14", parent: "PLN-13", kids: [] }],
+  ["PLN-15", { key: "PLN-15", parent: null, kids: [] }],
+]);
+const filedOf = (...keys) => Object.fromEntries(keys.map(k => [k, { from: "", to: "Billing" }]));
+
+test("toggling a story in and out of the selection gives a new set", () => {
+  const empty = new Set();
+  const one = page.mapToggle(empty, "PLN-01");
+  assert.deepEqual([...one], ["PLN-01"]);
+  assert.equal(empty.size, 0);
+  assert.deepEqual([...page.mapToggle(one, "PLN-01")], []);
+  assert.deepEqual([...one], ["PLN-01"]);
+});
+
+test("a box gives the shown stories whose centre is inside it, in key order", () => {
+  const at = new Map([["PLN-10", { x: 5, y: 5 }], ["PLN-02", { x: 1, y: 1 }], ["PLN-03", { x: 50, y: 50 }], ["PLN-04", { x: 3, y: 3 }]]);
+  const shown = new Set(["PLN-10", "PLN-02", "PLN-03"]);
+  assert.deepEqual(page.mapBoxed({ x0: 0, y0: 0, x1: 10, y1: 10 }, at, shown), ["PLN-02", "PLN-10"]);
+});
+
+test("a box drawn right to left or upward holds the same stories", () => {
+  const at = new Map([["PLN-01", { x: 5, y: 5 }]]);
+  assert.deepEqual(page.mapBoxed({ x0: 10, y0: 10, x1: 0, y1: 0 }, at, new Set(["PLN-01"])), ["PLN-01"]);
+});
+
+test("a story exactly on the box's edge is inside it", () => {
+  const at = new Map([["PLN-01", { x: 10, y: 0 }]]);
+  assert.deepEqual(page.mapBoxed({ x0: 0, y0: 0, x1: 10, y1: 10 }, at, new Set(["PLN-01"])), ["PLN-01"]);
+});
+
+test("a story that is not shown is never boxed", () => {
+  const at = new Map([["PLN-01", { x: 5, y: 5 }]]);
+  assert.deepEqual(page.mapBoxed({ x0: 0, y0: 0, x1: 10, y1: 10 }, at, new Set()), []);
+});
+
+test("the region under a point is the smallest one that holds it", () => {
+  const regions = [{ domain: "Outer", x: 0, y: 0, R: 100 }, { domain: "Inner", x: 10, y: 0, R: 20 }, { domain: "", x: 0, y: 0, R: 500 }];
+  assert.equal(page.mapRegionAt({ x: 12, y: 0 }, regions), "Inner");
+  assert.equal(page.mapRegionAt({ x: -60, y: 0 }, regions), "Outer");
+  assert.equal(page.mapRegionAt({ x: 300, y: 0 }, regions), "");
+});
+
+test("a point on a region's circle is inside and a point in none gives undefined", () => {
+  const regions = [{ domain: "A", x: 0, y: 0, R: 10 }];
+  assert.equal(page.mapRegionAt({ x: 10, y: 0 }, regions), "A");
+  assert.equal(page.mapRegionAt({ x: 10.5, y: 0 }, regions), undefined);
+  assert.equal(page.mapRegionAt({ x: 0, y: 0 }, []), undefined);
+});
+
+test("regions of the same size give the first listed", () => {
+  const regions = [{ domain: "First", x: 0, y: 0, R: 10 }, { domain: "Second", x: 0, y: 0, R: 10 }];
+  assert.equal(page.mapRegionAt({ x: 1, y: 1 }, regions), "First");
+});
+
+test("a master and its sub-stories give one filing entry with every descendant counted", () => {
+  const nodes = fakeNodes();
+  assert.deepEqual(page.mapFiling(["PLN-73", "PLN-72", "PLN-70"], nodes), [{ key: "PLN-70", kids: 3 }]);
+  assert.deepEqual(page.mapFiling(["PLN-72", "PLN-71"], nodes), [{ key: "PLN-70", kids: 3 }]);
+});
+
+test("a loose story has no kids and entries come in key order", () => {
+  assert.deepEqual(page.mapFiling(["PLN-13", "PLN-12", "PLN-12"], fakeNodes()), [{ key: "PLN-12", kids: 0 }, { key: "PLN-13", kids: 1 }]);
+});
+
+test("the page says what a drop of one loose story or several did", () => {
+  const nodes = fakeNodes(), none = new Map();
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-12"), unchanged: [] }, "Billing", nodes, none), "PLN-12 → Billing");
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-12", "PLN-15"), unchanged: [] }, "Billing", nodes, none), "2 stories → Billing");
+});
+
+test("the page says what a drop of one family did", () => {
+  const nodes = fakeNodes(), none = new Map();
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-70"), unchanged: [] }, "Billing", nodes, none), "PLN-70 and its 3 sub-stories → Billing");
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-13"), unchanged: [] }, "Billing", nodes, none), "PLN-13 and its sub-story → Billing");
+});
+
+test("the page says what a drop of several tiles with a family did", () => {
+  const nodes = fakeNodes(), none = new Map();
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-12", "PLN-13", "PLN-15"), unchanged: [] }, "Billing", nodes, none), "3 stories and their sub-stories → Billing");
+});
+
+test("a drop on No domain says no domain", () => {
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-12"), unchanged: [] }, null, fakeNodes(), new Map()), "PLN-12 → no domain");
+});
+
+test("nothing filed names the one story its title keeps where it is", () => {
+  const domains = new Map([["PLN-12", "Admin"], ["PLN-15", "Admin"]]);
+  assert.equal(page.mapFiledText({ filed: {}, unchanged: ["PLN-12"] }, null, fakeNodes(), domains), "PLN-12 stays in Admin by its title");
+  assert.equal(page.mapFiledText({ filed: {}, unchanged: ["PLN-12", "PLN-15"] }, null, fakeNodes(), domains), "2 stories stay where their titles put them");
+});
+
+test("nothing filed and nothing kept by title says there is nothing to move", () => {
+  const domains = new Map([["PLN-12", "Admin"]]);
+  const nothing = "Nothing to move: they are already there";
+  assert.equal(page.mapFiledText({ filed: {}, unchanged: ["PLN-12"] }, "Admin", fakeNodes(), domains), nothing);
+  assert.equal(page.mapFiledText({ filed: {}, unchanged: ["PLN-15"] }, null, fakeNodes(), domains), nothing);
+});
+
+test("filed stories are followed by the ones their titles keep", () => {
+  const domains = new Map([["PLN-12", "Admin"], ["PLN-15", "Admin"], ["PLN-14", ""]]);
+  const nodes = fakeNodes();
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-13"), unchanged: ["PLN-12"] }, null, nodes, domains), "PLN-13 and its sub-story → no domain; PLN-12 stays in Admin by its title");
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-13"), unchanged: ["PLN-12", "PLN-15"] }, null, nodes, domains), "PLN-13 and its sub-story → no domain; 2 stories stay where their titles put them");
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-13"), unchanged: ["PLN-14"] }, "Billing", nodes, domains), "PLN-13 and its sub-story → Billing");
+});
+
+test("pending domains are sorted and each kept once ignoring case", () => {
+  assert.deepEqual(page.mapPending({ "~domains": ["Zed", "billing", "Alpha", "Billing"] }), ["Alpha", "billing", "Zed"]);
+  assert.deepEqual(page.mapPending({}), []);
+  assert.deepEqual(page.mapPending({ "~domains": "Billing" }), []);
+  assert.deepEqual(page.mapPending(null), []);
+});
+
+test("saving pending domains keeps the saved positions and never changes its argument", () => {
+  const saved = { "PLN-01": [1, 2], "~domains": ["Old"] };
+  const out = page.mapWithPending(saved, ["b", "A", "B"]);
+  assert.deepEqual(out, { "PLN-01": [1, 2], "~domains": ["A", "b"] });
+  assert.deepEqual(saved, { "PLN-01": [1, 2], "~domains": ["Old"] });
+  assert.deepEqual(page.mapPending(out), ["A", "b"]);
+  assert.deepEqual(page.mapWithPending(saved, []), { "PLN-01": [1, 2] });
+  assert.deepEqual(saved["~domains"], ["Old"]);
+});
+
+test("a typed domain takes the spelling of the known one it matches", () => {
+  assert.equal(page.mapSpelt("billing", ["Billing"]), "Billing");
+  assert.equal(page.mapSpelt("Sales", ["Billing"]), "Sales");
+});
+
+test("nothing filed and a mix of unchanged stories names only the ones kept by their titles", () => {
+  const domains = new Map([["PLN-12", "Admin"]]);
+  assert.equal(page.mapFiledText({ filed: {}, unchanged: ["PLN-12", "PLN-15"] }, null, fakeNodes(), domains), "PLN-12 stays in Admin by its title");
+});
+
+test("a filed key with no node is a loose story and a missing unchanged list is empty", () => {
+  assert.equal(page.mapFiledText({ filed: filedOf("PLN-99") }, "Billing", fakeNodes(), new Map()), "PLN-99 → Billing");
+  assert.equal(page.mapFiledText({ filed: {} }, "Billing", fakeNodes(), new Map()), "Nothing to move: they are already there");
+});
+
+test("a zero-size box holds only a story centred exactly on it", () => {
+  const at = new Map([["PLN-01", { x: 5, y: 5 }], ["PLN-02", { x: 5, y: 6 }]]);
+  assert.deepEqual(page.mapBoxed({ x0: 5, y0: 5, x1: 5, y1: 5 }, at, new Set(["PLN-01", "PLN-02"])), ["PLN-01"]);
+});
+
+test("a typed domain with no known domains keeps its spelling", () => {
+  assert.equal(page.mapSpelt("x", []), "x");
+});
+
+test("boxed stories and filing entries come in numeric key order, not lexical", () => {
+  const at = new Map([["PLN-10", { x: 1, y: 1 }], ["PLN-2", { x: 1, y: 1 }]]);
+  assert.deepEqual(page.mapBoxed({ x0: 0, y0: 0, x1: 2, y1: 2 }, at, new Set(["PLN-10", "PLN-2"])), ["PLN-2", "PLN-10"]);
+  const nodes = new Map([["PLN-10", { key: "PLN-10", parent: null, kids: [] }], ["PLN-2", { key: "PLN-2", parent: null, kids: [] }]]);
+  assert.deepEqual(page.mapFiling(["PLN-10", "PLN-2"], nodes).map(f => f.key), ["PLN-2", "PLN-10"]);
+});
+
+test("pending domains keep only non-blank strings, trimmed", () => {
+  const bad = ["A", 5, null, "", "  ", {}, "a", " B "];
+  assert.deepEqual(page.mapPending({ "~domains": bad }), ["A", "B"]);
+  assert.deepEqual(page.mapPending({ "~domains": [5, "A"] }), ["A"]);
+  assert.deepEqual(page.mapWithPending({}, bad), { "~domains": ["A", "B"] });
+  assert.deepEqual(page.mapWithPending({ "~domains": ["X"] }, [null, " "]), {});
+});
+
+test("a ring of two masters terminates and gives one entry for the ring", () => {
+  const nodes = new Map([["PLN-1", { key: "PLN-1", parent: "PLN-2", kids: ["PLN-2"] }], ["PLN-2", { key: "PLN-2", parent: "PLN-1", kids: ["PLN-1"] }]]);
+  const out = page.mapFiling(["PLN-1", "PLN-2"], nodes);
+  const keys = out.map(f => f.key);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(out.length >= 1 && out.length <= 2);
+  assert.ok(out.every(f => f.kids <= 1));
+});
+
+test("a grandchild is counted once under its top master", () => {
+  assert.deepEqual(page.mapFiling(["PLN-73", "PLN-71", "PLN-70"], fakeNodes()), [{ key: "PLN-70", kids: 3 }]);
+});
+
+test("an undo whose stories all still carry the domain they were filed in can go ahead", () => {
+  const filed = { "PLN-70": { from: null, to: "Billing" }, "PLN-73": { from: "Admin", to: "Billing" } };
+  assert.deepEqual(page.mapUndoable(filed, new Map([["PLN-70", "Billing"], ["PLN-73", "Billing"]])), []);
+});
+
+test("a story re-filed since the drop is named as changed", () => {
+  const filed = { "PLN-70": { from: null, to: "Billing" }, "PLN-73": { from: "Admin", to: "Billing" } };
+  assert.deepEqual(page.mapUndoable(filed, new Map([["PLN-70", "Payments"], ["PLN-73", "Billing"]])), ["PLN-70"]);
+});
+
+test("a filed story the page no longer knows counts as changed", () => {
+  const filed = { "PLN-70": { from: null, to: "Billing" }, "PLN-12": { from: null, to: "Billing" } };
+  assert.deepEqual(page.mapUndoable(filed, new Map([["PLN-70", "Billing"]])), ["PLN-12"]);
+});
+
+test("a domain that differs from the filed one only in case is the same", () => {
+  assert.deepEqual(page.mapUndoable({ "PLN-70": { from: null, to: "Billing" } }, new Map([["PLN-70", "billing"]])), []);
+});
+
+test("a story filed in no domain still matches when it has no domain of its own", () => {
+  assert.deepEqual(page.mapUndoable({ "PLN-70": { from: "Admin", to: null } }, new Map([["PLN-70", null]])), []);
+  assert.deepEqual(page.mapUndoable({ "PLN-70": { from: "Admin", to: null } }, new Map([["PLN-70", "Admin"]])), ["PLN-70"]);
+});
+
+test("a Shift-click adds a shown story and takes out a selected one, shown or not", () => {
+  const shown = new Set(["PLN-71"]);
+  assert.deepEqual([...page.mapShiftClick(new Set(), "PLN-71", shown)], ["PLN-71"]);
+  assert.deepEqual([...page.mapShiftClick(new Set(["PLN-70", "PLN-71"]), "PLN-70", shown)], ["PLN-71"]);
+  assert.deepEqual([...page.mapShiftClick(new Set(["PLN-71"]), "PLN-70", shown)], ["PLN-71"]);
+});
+
+test("a drawing keeps only the selected stories it still shows", () => {
+  const sel = new Set(["PLN-70", "PLN-71"]);
+  assert.deepEqual([...page.mapKeepShown(sel, new Set(["PLN-71", "PLN-72"]))], ["PLN-71"]);
+  assert.deepEqual([...sel], ["PLN-70", "PLN-71"]);
 });

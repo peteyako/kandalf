@@ -155,6 +155,62 @@ class Edits(unittest.TestCase):
         self.assertEqual(tiles.with_decision("PLN-30 **T.**", "ok", "2026-11-23"),
                          "PLN-30 **T.**\n  **Decision 2026-11-23:** ok")
 
+    DOMAIN_BOARD = "## To do\n\n- [ ] PLN-01 **One.**\n  The story.\n  - [ ] a step\n- [ ] PLN-02 **Two.**\n  Other.\n"
+
+    def test_a_domain_is_added_as_the_last_line_of_the_description(self):
+        out = tiles.with_domain(self.store, self.DOMAIN_BOARD, "PLN-01", "Billing")
+        self.assertEqual(out, "## To do\n\n- [ ] PLN-01 **One.**\n  The story.\n  Domain: Billing\n  - [ ] a step\n- [ ] PLN-02 **Two.**\n  Other.\n")
+        self.assertEqual(tiles.domain(tiles.parse(self.store, out)[0].text), "Billing")
+
+    def test_a_tile_s_domain_line_is_replaced_where_it_is(self):
+        board = "## To do\n\n- [ ] PLN-01 **One.**\n  Domain: Admin\n  The story.\n  - [ ] a step\n"
+        self.assertEqual(tiles.with_domain(self.store, board, "PLN-01", "Billing"),
+                         "## To do\n\n- [ ] PLN-01 **One.**\n  Domain: Billing\n  The story.\n  - [ ] a step\n")
+
+    def test_no_domain_takes_the_line_off(self):
+        board = "## To do\n\n- [ ] PLN-01 **One.**\n  Domain: Admin\n  The story.\n- [ ] PLN-02 **Two.**\n  Domain: Admin\n"
+        self.assertEqual(tiles.with_domain(self.store, board, "PLN-01", None),
+                         "## To do\n\n- [ ] PLN-01 **One.**\n  The story.\n- [ ] PLN-02 **Two.**\n  Domain: Admin\n")
+
+    def test_a_tile_with_no_domain_line_is_left_alone_when_none_is_asked_for(self):
+        self.assertEqual(tiles.with_domain(self.store, self.DOMAIN_BOARD, "PLN-01", None), self.DOMAIN_BOARD)
+
+    def test_the_same_domain_again_changes_nothing(self):
+        once = tiles.with_domain(self.store, self.DOMAIN_BOARD, "PLN-01", "Billing")
+        self.assertEqual(tiles.with_domain(self.store, once, "PLN-01", "Billing"), once)
+        odd = "## To do\n\n- [ ] PLN-01 **One.**\n  domain: `Billing`.\n"
+        self.assertEqual(tiles.with_domain(self.store, odd, "PLN-01", "Billing"), odd)
+
+    def test_the_line_goes_before_an_archived_tile_s_archived_line(self):
+        board = "## Done\n\n- [x] PLN-01 **One.**\n  The story.\n  Archived 2026-11-23.\n"
+        self.assertEqual(tiles.with_domain(self.store, board, "PLN-01", "Billing"),
+                         "## Done\n\n- [x] PLN-01 **One.**\n  The story.\n  Domain: Billing\n  Archived 2026-11-23.\n")
+
+    def test_the_line_goes_before_a_session_line_an_options_block_and_a_decision(self):
+        for tail in (self.JOB, "  **Options 2026-11-23:** Which?\n  - **A. One.** First.", "  **Decision 2026-11-23:** retire it.",
+                     "  **Status 2026-11-23 10:00:** going", "  Ready for review: yes"):
+            with self.subTest(tail):
+                board = "## To do\n\n- [ ] PLN-01 **One.**\n  The story.\n" + tail + "\n"
+                self.assertEqual(tiles.with_domain(self.store, board, "PLN-01", "Billing"),
+                                 "## To do\n\n- [ ] PLN-01 **One.**\n  The story.\n  Domain: Billing\n" + tail + "\n")
+
+    def test_a_tile_of_one_line_gets_the_line_under_it(self):
+        board = "## To do\n\n- [ ] PLN-01 **One.**\n- [ ] PLN-02 **Two.**\n"
+        self.assertEqual(tiles.with_domain(self.store, board, "PLN-01", "Billing"),
+                         "## To do\n\n- [ ] PLN-01 **One.**\n  Domain: Billing\n- [ ] PLN-02 **Two.**\n")
+
+    def test_only_the_first_of_two_domain_lines_is_replaced(self):
+        board = "## To do\n\n- [ ] PLN-01 **One.**\n  Domain: A\n  Domain: B\n"
+        self.assertEqual(tiles.with_domain(self.store, board, "PLN-01", "C"),
+                         "## To do\n\n- [ ] PLN-01 **One.**\n  Domain: C\n  Domain: B\n")
+
+    def test_a_board_with_no_such_tile_comes_back_as_it_was(self):
+        self.assertEqual(tiles.with_domain(self.store, self.DOMAIN_BOARD, "PLN-99", "Billing"), self.DOMAIN_BOARD)
+
+    def test_a_bad_name_is_refused_before_anything_is_written(self):
+        with self.assertRaises(ValueError):
+            tiles.with_domain(self.store, self.DOMAIN_BOARD, "PLN-01", "-x")
+
     def test_taking_tiles_leaves_a_board_that_round_trips(self):
         for keys in ({"PLN-74"}, {"PLN-75"}, {"PLN-23"}, {"PLN-74", "PLN-23"}, {"PLN-74", "PLN-23", "PLN-75"}):
             rest, taken = tiles.take(self.store, LINKS, keys)
@@ -489,6 +545,16 @@ class TileCases(unittest.TestCase):
                         self.assertEqual(read(tile.text), case[name], name)
                 if "session" in case:
                     self.assertEqual(seen_session(tiles.session(tile.text)), case["session"])
+
+    def test_each_domain_name_is_taken_or_refused_as_the_case_says(self):
+        for case in CASES["domainNames"]:
+            with self.subTest(case["raw"]):
+                if "error" in case:
+                    with self.assertRaises(ValueError) as caught:
+                        tiles.domain_name(case["raw"])
+                    self.assertEqual(str(caught.exception), case["error"])
+                else:
+                    self.assertEqual(tiles.domain_name(case["raw"]), case["name"])
 
     def test_each_options_block_reads_as_the_case_says(self):
         for case in CASES["options"]:

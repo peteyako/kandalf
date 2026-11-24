@@ -216,5 +216,18 @@
     {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  **Options 2026-11-23:**\n  - **A. Why?** Because.", "options": {"date": "2026-11-23", "recommends": null, "doc": null, "asked": null, "items": [{"letter": "A", "title": "Why?", "summary": "Because."}]}},
     {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  Nothing drafted yet.", "options": null},
     {"md": "- [ ] PLN-30 **Layering.**\n  Which rule?\n  - **A. One.** First.", "options": null}
+  ],
+  "domainNames": [
+    {"raw": "Billing", "name": "Billing"},
+    {"raw": "  Admin tools  ", "name": "Admin tools"},
+    {"raw": "2FA", "name": "2FA"},
+    {"raw": "abcdefghijklmnopqrstuvwxyz0123456789abc", "name": "abcdefghijklmnopqrstuvwxyz0123456789abc"},
+    {"raw": "abcdefghijklmnopqrstuvwxyz0123456789abcd", "error": "A domain's name is at most 39 characters."},
+    {"raw": "", "error": "A domain needs a name."},
+    {"raw": "   ", "error": "A domain needs a name."},
+    {"raw": "-x", "error": "A domain's name starts with a letter or a digit."},
+    {"raw": "a`b", "error": "A domain's name can't hold a backtick or a line break."},
+    {"raw": "a\nb", "error": "A domain's name can't hold a backtick or a line break."},
+    {"raw": "Ops.", "error": "A domain's name can't end in a full stop."}
   ]
 }

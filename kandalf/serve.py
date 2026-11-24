@@ -361,6 +361,86 @@ def write_options(store, key: str, block: list, subject: str):
     raise KeyError(key)
 
 
+def set_domains(store, changes, expect=None) -> tuple:
+    """File stories into domains: changes is {KEY: name | None}. Each key's top master gets its
+    Domain line written, replaced or (None) removed on whichever of plans.md, backlog.md and the
+    archive log holds it, and the lot is one commit. A name some tile's own line already carries is
+    written as it is; one that matches such a line only ignoring case is written as the first of
+    them is spelt. expect, when given, is {KEY: name | None}: what the own Domain line of each
+    key's top master should say right now (Undo sends what its drop wrote); when one says
+    otherwise, ignoring case, or the key has no tile, nothing is written. Returns (200, {filed:
+    {KEY: {from, to}}, unchanged: [KEY], skipped: [KEY]}), (400, {error}) when nothing is asked or a
+    name is refused, or (409, {error: "changed since", changed: [the masters that differ, in
+    expect's order]}), with nothing written."""
+    if not isinstance(changes, dict) or not changes:
+        return 400, {"error": "nothing to file"}
+    names = {}
+    for key, raw in changes.items():
+        if raw is None:
+            names[key] = None
+        elif isinstance(raw, str):
+            try:
+                names[key] = reader.domain_name(raw)
+            except ValueError as e:
+                return 400, {"error": str(e)}
+        else:
+            return 400, {"error": "A domain needs a name."}
+    snap = reader.Snapshot.read(store)
+    spelt, carried = {}, set()
+    for file in reader.FAMILY:
+        for t in snap.tiles(file):
+            own = reader.domain(t.text)
+            if own:
+                spelt.setdefault(own.lower(), own)
+                carried.add(own)
+
+    def top_of(key):
+        masters = snap.lineage(key)
+        return masters[-1].key if masters else key
+
+    target, skipped = {}, []
+    for key, name in names.items():
+        tile = snap.tile(key)
+        if tile is None:
+            skipped.append(key)
+            continue
+        top = top_of(key)
+        if top not in target:
+            target[top] = None if name is None else name if name in carried else spelt.get(name.lower(), name)
+    changed = []
+    for key, want in (expect or {}).items():
+        if snap.tile(key) is None:  # gone, so it has changed
+            top, same = key, False
+        else:
+            top = top_of(key)
+            own = reader.domain(snap.tile(top).text) or ""
+            same = (want is None or isinstance(want, str)) and own.lower() == (want or "").strip().lower()
+        if not same and top not in changed:
+            changed.append(top)
+    if changed:
+        return 409, {"error": "changed since", "changed": changed}
+    files, filed, unchanged = dict(snap.files), {}, []
+    for top, name in target.items():
+        file = snap.index()[top]["file"]
+        before = reader.domain(snap.tile(top).text)
+        new = reader.with_domain(store, files[file], top, name)
+        if new == files[file]:
+            unchanged.append(top)
+        else:
+            files[file] = new
+            filed[top] = {"from": before, "to": name}
+    paths = [store.dir / f for f in files if files[f] != snap.files[f]]
+    for path in paths:
+        write_atomic(path, files[path.relative_to(store.dir).as_posix()])
+    if filed:
+        tos, n = {v["to"] for v in filed.values()}, len(filed)
+        many = f"{n} stor" + ("y" if n == 1 else "ies")
+        subject = (f"board: {many} re-filed" if len(tos) > 1
+                   else f"board: {many} → {tos.pop() or 'no domain'}")
+        gitlog.record(store, paths, subject)
+    return 200, {"filed": filed, "unchanged": unchanged, "skipped": skipped}
+
+
 def end_drafts(store, keys):
     """End the drafts of tiles a route took off the board (drafts.end), after its write. One
     that doesn't finish is left ending for the next look, and said; it never fails the route."""
@@ -1169,6 +1249,14 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             return self.archive(p)
+        if u.path == "/api/domain":  # {set: {KEY: name | null}}: file stories into a domain
+            p = self.target(parse_qs(u.query))
+            if p is None or not p.is_file() or p.parent != self.plans:
+                return self.send_json(404, {"error": "no such board"})
+            data = self.read_body()
+            expect = data.get("expect")  # Undo's {KEY: name | null}: what each tile should say now; anything but a map is ignored
+            status, reply = set_domains(self.store, data.get("set"), expect if isinstance(expect, dict) else None)
+            return self.send_json(status, {**self.board_reply(p), **reply} if status == 200 else reply)
         if u.path == "/api/decide":
             p = self.target(parse_qs(u.query))
             if p is None or not p.is_file() or p.parent != self.plans:

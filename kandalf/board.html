@@ -1106,9 +1106,29 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 #mapSvg.focused .m-region-name { opacity: .3; }
 #mapSvg .m-node.focus .m-dot { stroke: var(--text); stroke-width: 3; filter: drop-shadow(0 0 8px currentColor); }
 #mapSvg .out { display: none; }
+/* Filing: a selected story's ring, the box a Shift-drag draws, the region a drop would land in, and an empty one waiting for its first story. */
+#mapSvg .m-node.sel .m-dot { stroke: var(--accent); stroke-width: 4; }
+#mapSvg.focused .m-node.sel { opacity: 1; }
+#mapSvg .m-box { fill: var(--accent); fill-opacity: .08; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+#mapSvg .m-region.drop { fill-opacity: .16; stroke-opacity: 1; stroke-width: 4; }
+#mapSvg .m-region.pending { fill-opacity: .03; stroke-dasharray: 8 8; }
+#mapSvg .m-region-name.pending { cursor: default; font-size: 24px; }
+#mapSvg .m-region-name.pending tspan + tspan { fill: var(--muted); font-size: 14px; font-weight: 500; letter-spacing: .02em; }
 #mapBar { position: absolute; top: 10px; left: 12px; right: 12px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none; }
 #mapBar > * { pointer-events: auto; }
 #mapBar button { font-size: 12px; padding: 4px 11px; }
+/* The (i) at the end of the map's bar: how the map is worked, shown while it is hovered or has focus. */
+#mapHelp { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line, var(--muted)); background: var(--card, var(--bg)); color: var(--muted); font: italic 700 13px/1 Georgia, "Times New Roman", serif; cursor: help; user-select: none; }
+#mapHelp:hover, #mapHelp:focus-visible { color: var(--text); border-color: var(--muted); outline: none; }
+#mapHelpTip { display: none; position: absolute; top: 100%; left: 0; z-index: 6; margin-top: 8px; width: 330px; max-width: calc(100vw - 48px); max-height: calc(100vh - 170px); overflow-y: auto; padding: 10px 14px 12px; background: var(--card, var(--bg)); color: var(--text); border: 1px solid var(--line, var(--muted)); border-radius: 10px; box-shadow: 0 6px 24px rgba(0, 0, 0, .18); font: 400 12.5px/1.45 system-ui, sans-serif; font-style: normal; cursor: default; user-select: text; text-align: left; }
+#mapHelpTip::before { content: ""; position: absolute; left: 0; right: 0; top: -9px; height: 9px; }  /* bridges the gap, so the pointer can reach the tip */
+#mapHelp:hover #mapHelpTip, #mapHelp:focus #mapHelpTip, #mapHelp:focus-within #mapHelpTip { display: block; }
+#mapBar:has(#mapHelp:hover, #mapHelp:focus) { z-index: 7; }  /* over the masters list, the panel and the legend while it shows */
+@media (max-width: 700px) { #mapHelp { position: static; } #mapHelpTip { left: 0; right: 0; width: auto; max-width: none; } }  /* under the whole bar, where there is room */
+#mapHelpTip > b { display: block; margin: 9px 0 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+#mapHelpTip > b:first-child { margin-top: 0; }
+#mapHelpTip > span { display: block; margin: 0 0 4px; }
+#mapHelpTip kbd { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border: 1px solid var(--line, var(--muted)); border-radius: 4px; background: var(--bg); white-space: nowrap; }
 #mapDomains { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 #mapDomains button { border-radius: 999px; }
 #mapDomains button i, #mapLegend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dom); margin-right: 6px; vertical-align: -1px; }
@@ -1219,7 +1239,7 @@ applyTheme(themeNow, accentNow);
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="mapView" aria-label="Story map" hidden>
-  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button></div>
+  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span></span></span></div>
   <svg id="mapSvg"><g id="mapPan"><g id="mapBgs"></g><g id="mapEdges"></g><g id="mapNodes"></g></g></svg>
   <aside id="mapMasters" aria-label="Masters"></aside>
   <aside id="mapPanel" aria-label="The story in focus" hidden></aside>
@@ -2253,6 +2273,17 @@ function helpMark(text) {
 // "Domain: Admin" on a tile names the part of the product it is in (tiles.py: DOMAIN_RE, domain).
 const DOMAIN_RE = /^[ \t]+domain:[ \t]*`?([A-Za-z0-9][^`\n]{0,38}?)`?\.?[ \t]*$/i;  // tiles.py: DOMAIN_RE
 const domainOf = md => md.split("\n").slice(1).map(line => line.match(DOMAIN_RE)).find(Boolean)?.[1].trim() || "";
+// A domain's name as it will be written: {name} (raw trimmed) or {error}, a sentence saying why not
+// (tiles.py: domain_name, with_domain writes it).
+const domainName = raw => {
+  const name = String(raw ?? "").trim();
+  if (!name) return { error: "A domain needs a name." };
+  if (!/^[A-Za-z0-9]/.test(name)) return { error: "A domain's name starts with a letter or a digit." };
+  if (/[`\r\n]/.test(name)) return { error: "A domain's name can't hold a backtick or a line break." };
+  if (name.length > 39) return { error: "A domain's name is at most 39 characters." };
+  if (name.endsWith(".")) return { error: "A domain's name can't end in a full stop." };
+  return { name };
+};
 // Each tile's domain, {key: name or ""}: its own Domain: line, else its master's domain, else
 // the first word before the colon in its title ("Admin: analytics") when two masters or three
 // stories start with that word; a word only one story starts with is not a domain.
@@ -2361,6 +2392,90 @@ function mapStats(graph) {
     else if (n.state) stats[n.state].push(n.key);
   }
   return stats;
+}
+// A new selection with the key added, or taken out when it was in.
+const mapToggle = (sel, key) => { const out = new Set(sel); if (!out.delete(key)) out.add(key); return out; };
+// A Shift-click's new selection: a selected key taken out, shown or not, and an unselected one
+// added only when it is shown (`shown`, the Set of keys drawn and not faded out).
+const mapShiftClick = (sel, key, shown) => sel.has(key) || shown.has(key) ? mapToggle(sel, key) : new Set(sel);
+// The selection with the stories a drawing no longer shows (filtered, faded by the strip, or out
+// of scope) left out.
+const mapKeepShown = (sel, shown) => new Set([...sel].filter(k => shown.has(k)));
+// The shown stories whose centre is inside the box (either corner order; the edge is inside),
+// in key order. `at` maps a key to {x, y}; `shown` is the Set of keys drawn and not faded out.
+function mapBoxed(box, at, shown) {
+  const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1);
+  const y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
+  return [...shown].filter(k => { const p = at.get(k); return p && p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1; }).sort(byKeyOrder);
+}
+// The domain of the smallest region {domain, x, y, R} whose circle holds the point (the edge is
+// inside; a tie goes to the first listed). "" is "No domain"; undefined when no region holds it.
+function mapRegionAt(point, regions) {
+  let best;
+  for (const r of regions) {
+    if (Math.hypot(point.x - r.x, point.y - r.y) <= r.R && (!best || r.R < best.R)) best = r;
+  }
+  return best?.domain;
+}
+// What filing these keys writes: the top master of each key, each once, in key order, with how
+// many stories are under it ({key, kids}, every descendant counted).
+function mapFiling(keys, nodes) {
+  // Both walks keep a seen-set, so a ring of masters ends (the walk up stops on its first repeat).
+  const top = k => {
+    const seen = new Set([k]); let n = nodes.get(k);
+    while (n?.parent && nodes.get(n.parent) && !seen.has(n.parent)) { seen.add(n.parent); n = nodes.get(n.parent); }
+    return n ? n.key : k;
+  };
+  const under = (k, seen = new Set([k])) => (nodes.get(k)?.kids || []).reduce((sum, kid) => {
+    if (seen.has(kid)) return sum;
+    seen.add(kid);
+    return sum + 1 + under(kid, seen);
+  }, 0);
+  return [...new Set(keys.map(top))].sort(byKeyOrder).map(key => ({ key, kids: under(key) }));
+}
+// What the page says after a drop. `reply.filed` is {KEY: {from, to}} for the tiles the server
+// wrote and `reply.unchanged` the keys it left; `target` is the domain dropped on (null for "No
+// domain"); `domains` maps a key to the domain the map draws it in, which tells an unchanged story
+// that its title puts it there from one that is simply already where it was asked to go.
+function mapFiledText(reply, target, nodes, domains) {
+  const to = target === null ? "no domain" : target;
+  const filed = mapFiling(Object.keys(reply.filed || {}), nodes);
+  const byTitle = (reply.unchanged || []).filter(k => target === null && domains.get(k)).sort(byKeyOrder);
+  const kept = byTitle.length === 1 ? `${byTitle[0]} stays in ${domains.get(byTitle[0])} by its title`
+    : `${byTitle.length} stories stay where their titles put them`;
+  if (!filed.length) return byTitle.length ? kept : "Nothing to move: they are already there";
+  const kids = filed.reduce((sum, f) => sum + f.kids, 0);
+  let said;
+  if (filed.length === 1) {
+    const { key, kids: n } = filed[0];
+    said = !n ? key : n === 1 ? `${key} and its sub-story` : `${key} and its ${n} sub-stories`;
+  } else said = `${filed.length} stories${kids ? " and their sub-stories" : ""}`;
+  return `${said} → ${to}` + (byTitle.length ? `; ${kept}` : "");
+}
+// The empty domains the map keeps with its arrangement, under "~domains": sorted, each name once
+// ignoring case (the first spelling wins); [] when there are none.
+function mapPending(saved) {
+  const list = Array.isArray(saved?.["~domains"]) ? saved["~domains"] : [];
+  const seen = new Set();
+  return list.filter(n => typeof n === "string" && n.trim()).map(n => n.trim())
+    .filter(n => { const k = n.toLowerCase(); return seen.has(k) ? false : (seen.add(k), true); }).sort((a, b) => a.localeCompare(b));
+}
+// A new copy of the saved arrangement with its empty domains set to the cleaned names (the
+// "~domains" entry is dropped when none are left). Every other entry is untouched.
+function mapWithPending(saved, names) {
+  const out = { ...saved };
+  const list = mapPending({ "~domains": names });
+  if (list.length) out["~domains"] = list; else delete out["~domains"];
+  return out;
+}
+// The known domain that matches the name ignoring case, else the name as it was typed.
+const mapSpelt = (name, known) => known.find(k => k.toLowerCase() === name.toLowerCase()) ?? name;
+// The keys of a drop that have changed since, in key order: those whose own domain now (`own`, a
+// Map key -> own domain or null; a key missing from it has changed) is not the one the drop wrote
+// (`filed`, {KEY: {from, to}}), ignoring case. Undo goes ahead only when there are none.
+function mapUndoable(filed, own) {
+  const same = (a, b) => (a || "").toLowerCase() === (b || "").toLowerCase();
+  return Object.entries(filed).filter(([k, f]) => !own.has(k) || !same(own.get(k), f.to)).map(([k]) => k).sort(byKeyOrder);
 }
 // Where the map puts each story: {at: Map key -> {x, y, angle}, hubs: Map root key -> {R}}.
 // A master is a hub with its sub-stories on a ring round it (theirs fan out beyond), each
@@ -3248,7 +3363,11 @@ try { if (localStorage.getItem("board.view") === "map") viewMode = "map"; } catc
 const MAP_HUES = ["#e5677f", "#2fa89f", "#d9952b", "#6f8cf5", "#a56ee8", "#3fa7d6", "#7fb347", "#e07b4f"];
 const MAP_WHERE = { backlog: "Backlog", planned: "Planned", flight: "In flight", done: "Done" };
 const sm = { graph: null, lay: null, laySig: "", sig: "", at: new Map(), els: new Map(), hubs: new Map(), regions: new Map(), edges: [],
-  hue: new Map(), cam: null, focus: null, trail: [], scope: "", drag: null };
+  hue: new Map(), cam: null, focus: null, trail: [], scope: "", drag: null,
+  // Filing: the selected keys, the re-file drag in progress, what Undo sends back, whether a
+  // filing is on its way to the server, the empty
+  // domains drawn (name -> {bg, label, x, y, R}) and where each was put (lower-cased name -> {x, y}).
+  sel: new Set(), refile: null, lastFiling: null, filing: false, pending: new Map(), pendingAt: new Map(), q: "" };
 const mapSvg = $("#mapSvg"), mapPan = $("#mapPan"), mapPanel = $("#mapPanel");
 const svgEl = (tag, attrs = {}, parent) => {
   const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -3265,7 +3384,8 @@ const mapInScope = n => !sm.scope || mapRoot(n).domain === (sm.scope === "-" ? "
 const mapSavedKey = () => "board.map." + (STORE_NAME || location.host);
 function mapSaved() { try { return JSON.parse(localStorage.getItem(mapSavedKey()) || "{}"); } catch { return {}; } }
 function renderMap(q) {
-  if (sm.drag?.items) return;  // not under a cluster being dragged
+  if (sm.drag?.items || sm.refile) return;  // not under a cluster being dragged, or stories being carried to a domain
+  if (q !== sm.q) { sm.q = q; sm.sel = new Set(); }  // new filter words: a new selection (the redraw below marks it)
   const graph = mapGraph(renderIndex, renderEdges, pickups.jobs), nodes = [...graph.nodes.values()];
   const laySig = JSON.stringify(nodes.map(n => [n.key, n.parent, n.domain, n.mentions, n.linked, n.blockedBy, n.blocks]));
   if (laySig !== sm.laySig) { sm.lay = mapLayout(graph); sm.laySig = laySig; }
@@ -3289,9 +3409,12 @@ function drawMap(q, only) {  // q: the filter box's words; only: the keys the st
   for (const id of ["#mapBgs", "#mapEdges", "#mapNodes"]) $(id).replaceChildren();
   $("#mapEmpty")?.remove();
   if (!N.size) { const none = document.createElement("div"); none.id = "mapEmpty"; none.textContent = "No keyed stories to map yet."; $("#mapView").append(none); }
-  // Regions (one per domain, when there are domains), then each master's own circle.
+  // The empty domains still waiting for a story: one that a story is now drawn in is one no longer.
+  const drawn = new Set(domains.map(d => d.toLowerCase())), waiting = mapPending(saved), pending = waiting.filter(p => !drawn.has(p.toLowerCase()));
+  if (pending.length < waiting.length) try { localStorage.setItem(mapSavedKey(), JSON.stringify(mapWithPending(mapSaved(), pending))); } catch {}
+  // Regions (one per domain, when there are domains or empty ones), then each master's own circle.
   sm.regions = new Map();
-  if (domains.length) for (const d of [...domains, ...(roots.some(r => !r.domain) ? [""] : [])]) {
+  if (domains.length || pending.length) for (const d of [...domains, ...(roots.some(r => !r.domain) ? [""] : [])]) {
     const bg = svgEl("circle", { class: "m-region", "data-domain": d, style: `--dom:${hue(d)}` }, $("#mapBgs"));
     const label = svgEl("text", { class: "m-region-name", "text-anchor": "middle", "data-domain": d, style: `--dom:${hue(d)}` }, $("#mapBgs"));
     label.textContent = d || "No domain";
@@ -3333,6 +3456,7 @@ function drawMap(q, only) {  // q: the filter box's words; only: the keys the st
     sm.els.set(n.key, g);
   }
   placeMap();
+  mapPlacePending(pending);
   // The bar's domain chips, the masters list and the legend.
   const count = d => [...N.values()].filter(n => mapRoot(n).domain === d).length;
   $("#mapDomains").innerHTML = domains.map(d => `<button type="button" data-domain="${esc(d)}" style="--dom:${hue(d)}" title="Show only ${esc(d)}; click again for every domain"><i></i>${esc(d)} ${count(d)}</button>`).join("");
@@ -3349,6 +3473,8 @@ function drawMap(q, only) {  // q: the filter box's words; only: the keys the st
     + `<span><svg width="24" height="10"><path d="M1 5 H23" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="3 4"/></svg>Mentions</span>`
     + `<span><svg width="24" height="10"><path d="M1 5 H23" stroke="var(--accent)" stroke-width="1.8"/></svg>Linked</span>`;
   mapScope(sm.scope, false);
+  sm.sel = mapKeepShown(sm.sel, mapShown());  // a selected story this draw no longer shows (the filter, the strip or the scope faded it) leaves the selection
+  mapMarkSel();
   if (sm.focus && N.has(sm.focus)) mapGo(sm.focus, { remember: false, move: !sm.cam });
   else { sm.focus = null; sm.trail = []; mapSvg.classList.remove("focused"); mapPanel.hidden = true; if (sm.cam) mapCam(false); else mapFrame(mapWhole(), false); }
 }
@@ -3368,6 +3494,51 @@ function placeMap() {
     g.label.setAttribute("x", g.x); g.label.setAttribute("y", g.y - g.R - 22);
   }
 }
+// Draw the empty domains (names) as dashed regions that say "empty", each where it was first put:
+// the free spot nearest the middle of the view, clear of every region already drawn.
+function mapPlacePending(names) {
+  const R = 90, taken = [...sm.regions.values()].map(g => ({ x: g.x, y: g.y, R: g.R + 8 }));
+  sm.pending = new Map();
+  const middle = () => {
+    if (sm.cam) { const box = mapSvg.getBoundingClientRect(); return { x: (box.width / 2 - sm.cam.x) / sm.cam.k, y: (box.height / 2 - sm.cam.y) / sm.cam.k }; }
+    const all = mapWhole();
+    if (!all.length) return { x: 0, y: 0 };
+    const x0 = Math.min(...all.map(s => s.x - s.R)), x1 = Math.max(...all.map(s => s.x + s.R)), y0 = Math.min(...all.map(s => s.y - s.R)), y1 = Math.max(...all.map(s => s.y + s.R));
+    return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+  };
+  const free = p => taken.every(t => Math.hypot(p.x - t.x, p.y - t.y) >= R + t.R + 20);
+  const spot = c => {
+    if (free(c)) return c;
+    for (let d = 60; d <= 4000; d += 60) for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8, p = { x: c.x + Math.cos(a) * d, y: c.y + Math.sin(a) * d };
+      if (free(p)) return p;
+    }
+    return c;
+  };
+  for (const name of names) if (sm.pendingAt.has(name.toLowerCase())) taken.push({ ...sm.pendingAt.get(name.toLowerCase()), R });
+  const mid = names.some(n => !sm.pendingAt.has(n.toLowerCase())) ? middle() : null;
+  for (const name of names) {
+    const id = name.toLowerCase();
+    if (!sm.pendingAt.has(id)) { const p = spot(mid); sm.pendingAt.set(id, p); taken.push({ ...p, R }); }
+    const { x, y } = sm.pendingAt.get(id);
+    const bg = svgEl("circle", { class: "m-region pending", "data-pending": name, cx: x, cy: y, r: R, style: "--dom:var(--accent)" }, $("#mapBgs"));
+    const label = svgEl("text", { class: "m-region-name pending", "text-anchor": "middle", "data-pending": name, style: "--dom:var(--accent)" }, $("#mapBgs"));
+    svgEl("tspan", { x, y: y - 2 }, label).textContent = name;
+    svgEl("tspan", { x, y: y + 22 }, label).textContent = "empty";
+    sm.pending.set(name, { bg, label, x, y, R });
+  }
+}
+// The stories drawn and not faded out by the filter, the strip or the domain scope.
+const mapShown = () => new Set([...sm.els].filter(([, g]) => !g.classList.contains("miss") && !g.classList.contains("out")).map(([k]) => k));
+const mapMarkSel = () => { for (const [k, g] of sm.els) g.classList.toggle("sel", sm.sel.has(k)); };
+// The pointer in map coordinates: client pixels, less the map's box and the camera's offset, over its zoom.
+function mapPoint(e) {
+  const box = mapSvg.getBoundingClientRect();
+  return { x: (e.clientX - box.left - sm.cam.x) / sm.cam.k, y: (e.clientY - box.top - sm.cam.y) / sm.cam.k };
+}
+// The regions a drop can land in, as drawn (a hidden one is not one): {domain, x, y, R}.
+const mapTargets = () => [...[...sm.regions].filter(([, g]) => !g.bg.classList.contains("out")).map(([domain, g]) => ({ domain, x: g.x, y: g.y, R: g.R + 8 })),
+  ...[...sm.pending].map(([domain, g]) => ({ domain, x: g.x, y: g.y, R: g.R }))];
 // ----- looking around: the camera, framing some stories, and the room the side panels leave
 function mapCam(glide) {
   mapPan.classList.toggle("glide", !!glide);
@@ -3387,9 +3558,11 @@ function mapFrame(spots, glide = true, pad = 40) {  // spots: [{x, y, R}] to fit
 const mapSpot = n => ({ ...sm.at.get(n.key), R: sm.lay.hubs.get(n.key)?.R || 30 });
 // Everything in scope: its hubs and loose stories, and the regions round them (with room for their names).
 const mapWhole = () => [...mapRoots().filter(mapInScope).map(mapSpot),
-  ...[...sm.regions].filter(([d]) => !sm.scope || d === (sm.scope === "-" ? "" : sm.scope)).map(([, g]) => ({ x: g.x, y: g.y - 20, R: g.R + 30 }))];
+  ...[...sm.regions].filter(([d]) => !sm.scope || d === (sm.scope === "-" ? "" : sm.scope)).map(([, g]) => ({ x: g.x, y: g.y - 20, R: g.R + 30 })),
+  ...[...sm.pending.values()].map(g => ({ x: g.x, y: g.y, R: g.R + 20 }))];  // the empty domains, in any scope
 // ----- scope: one domain's stories only ("-": the ones with no domain)
 function mapScope(domain, reframe = true) {
+  if (domain !== sm.scope) { sm.sel = new Set(); mapMarkSel(); }  // a new scope: a new selection
   sm.scope = domain;
   const want = domain === "-" ? "" : domain;
   for (const [k, g] of sm.els) g.classList.toggle("out", !mapInScope(mapNode(k)));
@@ -3446,7 +3619,9 @@ async function mapOpen(key) {
 }
 // ----- the pointer: a plain drag pans, the wheel zooms, a click focuses, and with Ctrl or ⌘
 // held a drag moves what is under it: a master's cluster, a domain (its region or its name),
-// or with Alt as well just one sub-story.
+// or with Alt as well just one sub-story. Shift-click selects a story, Shift-drag off the
+// stories boxes some, and a plain drag that starts on a selected story carries the selection
+// to the region it is dropped on, which files them in that domain.
 function mapGrab(e) {
   if (!e.ctrlKey && !e.metaKey) return null;
   const t = e.target, hit = t.closest?.(".m-node") || (t.classList?.contains("m-hub") ? t : null);
@@ -3456,32 +3631,187 @@ function mapGrab(e) {
   return moved && moved.map(n => ({ p: sm.at.get(n.key), key: n.key, x: sm.at.get(n.key).x, y: sm.at.get(n.key).y }));
 }
 mapSvg.addEventListener("pointerdown", e => {
+  mapAbandon();  // a carry or a box whose release never came is given up before this press
   if (e.button > 0 && !e.ctrlKey) return;
-  sm.drag = { x: e.clientX, y: e.clientY, cx: sm.cam.x, cy: sm.cam.y, moved: false, items: mapGrab(e), target: e.target };
+  const g = e.target.closest?.(".m-node"), plain = !e.ctrlKey && !e.metaKey;
+  sm.drag = { x: e.clientX, y: e.clientY, cx: sm.cam.x, cy: sm.cam.y, moved: false, items: mapGrab(e), target: e.target, shift: e.shiftKey, plain,
+    carry: plain && !e.shiftKey && !!g && sm.sel.has(g.dataset.key),  // a re-file drag, once it moves
+    box: plain && e.shiftKey && !g ? { from: mapPoint(e), el: null } : null };  // a selection box, once it moves
   mapSvg.setPointerCapture(e.pointerId);
 });
 mapSvg.addEventListener("pointermove", e => {
   const d = sm.drag;
   if (!d) return;
+  if ((d.carry || d.box) && !e.buttons) return mapAbandon();  // the button came up where the map didn't hear it
   const dx = e.clientX - d.x, dy = e.clientY - d.y;
   if (Math.abs(dx) + Math.abs(dy) > 4) { d.moved = true; mapSvg.classList.add("dragging"); }
   if (!d.moved) return;
+  if (d.carry) return mapCarry(e, dx, dy);
+  if (d.box) return mapBoxTo(d.box, mapPoint(e));
   if (d.items) { for (const i of d.items) { i.p.x = i.x + dx / sm.cam.k; i.p.y = i.y + dy / sm.cam.k; } placeMap(); }
   else { sm.cam.x = d.cx + dx; sm.cam.y = d.cy + dy; mapCam(false); }
 });
-function mapDrop(e) {
+// The selected stories' dots follow the pointer (where they are drawn, not where the map keeps
+// them, so the regions stay put under them), and the region under the pointer is lit. A selected
+// master carries its whole family on screen, hub and all; a selected sub-story moves alone.
+function mapCarry(e, dx, dy) {
+  if (!sm.refile) {
+    const moving = new Set();
+    for (const k of sm.sel) { const n = sm.graph.nodes.get(k); if (n) for (const m of n.parent ? [n] : mapFamily(n)) moving.add(m.key); }
+    sm.refile = { keys: [...sm.sel], moving: [...moving], over: undefined };
+  }
+  const ox = dx / sm.cam.k, oy = dy / sm.cam.k;
+  for (const k of sm.refile.moving) {
+    const p = sm.at.get(k), g = sm.els.get(k), hub = sm.hubs.get(k);
+    if (p && g) g.setAttribute("transform", `translate(${p.x + ox},${p.y + oy})`);
+    if (p && hub) { hub.setAttribute("cx", p.x + ox); hub.setAttribute("cy", p.y + oy); }
+  }
+  sm.refile.over = mapRegionAt(mapPoint(e), mapTargets());
+  mapLight(sm.refile.over);
+}
+const mapLight = over => {
+  for (const [d, g] of sm.regions) g.bg.classList.toggle("drop", d === over);
+  for (const [d, g] of sm.pending) g.bg.classList.toggle("drop", d === over);
+};
+function mapBoxTo(box, to) {
+  box.to = to;
+  box.el = box.el || svgEl("rect", { class: "m-box" }, mapPan);
+  const { from } = box;
+  box.el.setAttribute("x", Math.min(from.x, to.x)); box.el.setAttribute("y", Math.min(from.y, to.y));
+  box.el.setAttribute("width", Math.abs(to.x - from.x)); box.el.setAttribute("height", Math.abs(to.y - from.y));
+}
+// Give up a carry or a box in progress: the carried dots go back, the lit region and the box go,
+// nothing is posted or selected, the selection stays, and the map may be drawn again (catching up
+// with a board that changed meanwhile). True when there was one to give up. Esc, a pointercancel,
+// a lost pointer capture, the window losing focus or the page being hidden all end one this way;
+// only a real release over a region files.
+function mapAbandon() {
   const d = sm.drag;
-  sm.drag = null; mapSvg.classList.remove("dragging");
+  if (!d || !(d.carry || d.box)) return false;
+  const carried = !!sm.refile;
+  sm.drag = null; sm.refile = null; mapSvg.classList.remove("dragging");
+  d.box?.el?.remove();
+  if (carried) { placeMap(); mapLight(undefined); if (doc) render(); }
+  return true;
+}
+mapSvg.addEventListener("lostpointercapture", e => { if (e.target === mapSvg) mapAbandon(); });  // the svg's own capture only: a story a touch lands on loses its implicit one to the svg at once, and that bubbles here. After a real release sm.drag is already gone, so this is a no-op then
+addEventListener("blur", mapAbandon);
+document.addEventListener("visibilitychange", () => { if (document.hidden) mapAbandon(); });
+function mapDrop(e) {
+  if (e.type === "pointercancel" && mapAbandon()) return;  // a cancelled carry files nothing, a cancelled box adds nothing
+  const d = sm.drag, carried = sm.refile;
+  sm.drag = null; sm.refile = null; mapSvg.classList.remove("dragging");
   if (!d) return;
+  d.box?.el?.remove();
+  if (carried) {  // the dots go back to their places until the board says where they belong
+    placeMap(); mapLight(undefined);
+    const over = mapRegionAt(mapPoint(e), mapTargets());
+    if (over === undefined) { if (doc) render(); return; }  // nothing written; catch up with a board that changed meanwhile
+    return mapFile(carried.keys, over === "" ? null : over);
+  }
   if (d.moved) {  // a drag that the browser cancels (a Ctrl-drag can end that way) is kept too
-    if (d.items) { const all = mapSaved(); for (const i of d.items) all[i.key] = [Math.round(i.p.x), Math.round(i.p.y)]; try { localStorage.setItem(mapSavedKey(), JSON.stringify(all)); } catch {} }
+    if (d.box?.to) { const { from, to } = d.box; sm.sel = new Set([...sm.sel, ...mapBoxed({ x0: from.x, y0: from.y, x1: to.x, y1: to.y }, sm.at, mapShown())]); mapMarkSel(); }
+    else if (d.items) { const all = mapSaved(); for (const i of d.items) all[i.key] = [Math.round(i.p.x), Math.round(i.p.y)]; try { localStorage.setItem(mapSavedKey(), JSON.stringify(all)); } catch {} }
     return;
   }
   if (e.type === "pointercancel") return;
   const t = d.target;
-  if (t.classList?.contains("m-region-name")) return mapScope(sm.scope === (t.dataset.domain || "-") ? "" : (t.dataset.domain || "-"));
+  if (t.classList?.contains("m-region-name") && !t.classList.contains("pending")) return mapScope(sm.scope === (t.dataset.domain || "-") ? "" : (t.dataset.domain || "-"));
   const g = t.closest?.(".m-node");
-  if (g) mapGo(g.dataset.key); else if (sm.focus) mapGo(null);
+  const shift = d.shift && d.plain;  // with Ctrl or ⌘ held too, a click does what it did before there were selections
+  if (g && shift) { sm.sel = mapShiftClick(sm.sel, g.dataset.key, mapShown()); return mapMarkSel(); }  // Shift-click selects a shown story or unselects any, and never focuses
+  if (g) return mapGo(g.dataset.key);
+  if (shift) return;
+  if (sm.sel.size) { sm.sel = new Set(); mapMarkSel(); }  // a click on empty space clears the selection
+  if (sm.focus) mapGo(null);
+}
+// File the keys in the domain (null: no domain) and say what happened; Undo can take it back,
+// along with the empty region the stories were dropped in, if they were.
+async function mapFile(keys, target) {
+  const wasPending = target !== null && mapPending(mapSaved()).includes(target) ? target : null;
+  const done = await mapSend(Object.fromEntries(keys.map(k => [k, target])));
+  if (!done) { if (doc) render(); return; }  // refused or failed: catch up with a board that changed during the carry
+  const { j, nodes, domains } = done, text = mapFiledText(j, target, nodes, domains), filed = Object.entries(j.filed || {});
+  if (filed.length) sm.lastFiling = { set: Object.fromEntries(filed.map(([k, f]) => [k, f.from])), filed: j.filed, text, pending: wasPending };
+  mapShowUndo();
+  flash(text);
+}
+// Undo is refused, and forgotten, when a filed story's own domain has changed since the drop
+// (on its card, or by an agent): putting the old line back would lose that edit. The page
+// refuses what it already knows of; the server, which posts are checked against (expect), the rest.
+function mapUndoOff(changed) {
+  sm.lastFiling = null; mapShowUndo();
+  flash(changed.length === 1 ? `Undo is off: ${changed[0]} has been changed since.` : `Undo is off: ${changed.length} stories have been changed since.`);
+}
+async function mapUndo() {
+  const was = sm.lastFiling;
+  if (!was) return;
+  const changed = mapUndoable(was.filed, new Map([...tileIndex()].map(([k, t]) => [k, t.domain || null])));
+  if (changed.length) return mapUndoOff(changed);
+  const done = await mapSend(was.set, Object.fromEntries(Object.entries(was.filed).map(([k, f]) => [k, f.to])));
+  if (done?.changed) {  // the files say otherwise: show what is on disk, unless that would lose unsaved edits
+    mapUndoOff(done.changed);
+    if (!dirty) reloadQuiet().catch(() => {});
+    return;
+  }
+  if (!done) return;
+  sm.lastFiling = null; mapShowUndo();
+  if (was.pending) {  // the empty domain the drop filled is empty again
+    try { localStorage.setItem(mapSavedKey(), JSON.stringify(mapWithPending(mapSaved(), [...mapPending(mapSaved()), was.pending]))); } catch {}
+    sm.sig = ""; render();
+  }
+  flash(`Undone: ${was.text}`);
+}
+function mapShowUndo() {
+  const b = $("#mapUndo");
+  b.hidden = !sm.lastFiling;
+  b.title = sm.lastFiling ? `Undo: ${sm.lastFiling.text}` : "";
+}
+// POST {set: {KEY: name | null}} to /api/domain and take the reply as the board: the stories it
+// moved forget where they were left (so they take their place in their new region), the selection
+// clears and the map is drawn afresh. expect (Undo's): {KEY: name | null}, what each tile should
+// say now. Returns {j: the reply, and the map's nodes and each story's domain as they were
+// before}, {changed: [KEY]} when the server found the tiles changed since expect, or null (said
+// why) when nothing was done.
+async function mapSend(set, expect) {
+  if (sm.filing) { flash("Still filing; try again in a moment."); return null; }  // a drop or an Undo still on its way
+  if (dirty || saving) { flash("Save the board first."); return null; }
+  const nodes = sm.graph.nodes, domains = tileDomains(renderIndex);
+  saving = sm.filing = true; setStatus("Filing…");
+  let j = null, changed = null;
+  try {
+    const r = await fetch(`/api/domain?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expect ? { set, expect } : { set }) });
+    const reply = await r.json();
+    if (r.ok) j = reply;
+    else if (expect && r.status === 409 && Array.isArray(reply.changed)) { changed = reply.changed; setStatus("Not done", true); }
+    else { flash(reply.error || `That didn't work (${r.status}).`); setStatus("Not done", true); }
+  } catch { flash("That didn't work: server down?"); setStatus("Not done", true); }
+  saving = sm.filing = false;
+  if (changed) return { changed };
+  if (!j) return null;
+  const moved = new Set(), under = k => { if (moved.has(k)) return; moved.add(k); for (const kid of nodes.get(k)?.kids || []) under(kid); };
+  for (const k of Object.keys(j.filed || {})) under(k);
+  if (moved.size) { const all = mapSaved(); for (const k of moved) delete all[k]; try { localStorage.setItem(mapSavedKey(), JSON.stringify(all)); } catch {} }
+  adopt(j); setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+  sm.sel = new Set(); sm.sig = ""; render();
+  return { j, nodes, domains };
+}
+// + New domain: an empty region to drag stories into, kept with the arrangement until one lands in it.
+async function mapNewDomain() {
+  let typed = "", note = "";
+  for (;;) {
+    const raw = await ask({ title: "Name the new domain", input: { label: "Name", value: typed }, ok: "Add", note });
+    if (raw === null) return;
+    const r = domainName(raw);
+    if (r.error) { typed = raw; note = esc(r.error); continue; }  // asked again, with why and what was typed
+    const drawn = [...new Set(mapRoots().map(n => n.domain))].filter(Boolean), pending = mapPending(mapSaved());
+    const name = mapSpelt(r.name, [...drawn, ...pending]);
+    if (drawn.includes(name)) { const g = sm.regions.get(name); return g && mapFrame([{ x: g.x, y: g.y - 20, R: g.R + 30 }]); }  // framed, as mapWhole frames a region; the scope and the selection stay
+    const p = sm.pending.get(name);
+    if (p) return mapFrame([{ x: p.x, y: p.y, R: p.R + 40 }]);
+    try { localStorage.setItem(mapSavedKey(), JSON.stringify(mapWithPending(mapSaved(), [...pending, name]))); } catch {}
+    sm.sig = ""; return render();
+  }
 }
 mapSvg.addEventListener("pointerup", mapDrop);
 mapSvg.addEventListener("pointercancel", mapDrop);
@@ -3496,6 +3826,8 @@ mapSvg.addEventListener("wheel", e => {
 mapSvg.addEventListener("keydown", e => { const g = e.target.closest?.(".m-node"); if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); mapGo(g.dataset.key); } });
 addEventListener("keydown", e => {
   if (e.key === "Control" || e.key === "Meta") mapSvg.classList.add("moving");
+  if (e.key === "Escape" && mapAbandon()) return;  // Esc gives up a carry or a box first, and keeps the selection
+  if (e.key === "Escape" && mapOn() && sm.sel.size && !document.querySelector("dialog[open]")) { sm.sel = new Set(); return mapMarkSel(); }  // Esc clears a selection first
   if (e.key === "Escape" && mapOn() && sm.focus && !document.querySelector("dialog[open]")) { sm.trail = sm.trail.filter(k => sm.graph.nodes.has(k) && k !== sm.focus); mapGo(sm.trail.pop() || null, { remember: false }); }
 });
 addEventListener("keyup", e => { if (e.key === "Control" || e.key === "Meta") mapSvg.classList.remove("moving"); });
@@ -3510,7 +3842,9 @@ $("#mapView").addEventListener("click", e => {
   if (b.dataset.domain !== undefined) return mapScope(sm.scope === b.dataset.domain ? "" : b.dataset.domain);
   if (b.id === "mapFit") { mapScope("", false); return mapGo(null); }
   if (b.id === "mapMastersBtn") { $("#mapMasters").hidden = !$("#mapMasters").hidden; try { localStorage.setItem("board.map.masters", $("#mapMasters").hidden ? "off" : "on"); } catch {} return sm.focus ? mapGo(sm.focus, { remember: false }) : mapFrame(mapWhole()); }
-  if (b.id === "mapReset") { try { localStorage.removeItem(mapSavedKey()); } catch {} sm.sig = ""; sm.cam = null; sm.focus = null; render(); }
+  if (b.id === "mapReset") { try { localStorage.removeItem(mapSavedKey()); } catch {} sm.sig = ""; sm.cam = null; sm.focus = null; sm.pendingAt = new Map(); render(); }  // the empty domains go too
+  if (b.id === "mapNewDomain") return mapNewDomain();
+  if (b.id === "mapUndo") return mapUndo();
 });
 try { $("#mapMasters").hidden = localStorage.getItem("board.map.masters") === "off"; } catch {}
 $("#viewSel").addEventListener("click", e => {

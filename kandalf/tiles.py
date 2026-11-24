@@ -12,8 +12,9 @@ holds both readers to the same cases (test_tiles.TileCases, test_page.js).
     is_pickup_column, is_decision_column
                             whether a column's name says it is the pickup column or a decision column
     session(md)             the tile's session line, as SessionLine
-    take, without, insert_after, with_session, with_status, with_decision, with_options, with_key
+    take, without, insert_after, with_session, with_status, with_decision, with_options, with_domain, with_key
                             edits that return the board's text
+    domain_name(raw)        a domain's name as it will be written, or ValueError saying why not
     Snapshot                plans, backlog and the archive log read once: the tile index, the
                             texts, the In flight tiles, a tile's lineage, the nearest line
                             of a kind up its family, what still blocks a tile and the
@@ -491,6 +492,61 @@ def with_options(store, text: str, key: str, block: list) -> str:
     body = [x for i, x in enumerate(body) if i not in drop]
     at = next((i for i, x in enumerate(body) if re.match(r"^  [-*] \[[ xX]\] ", x)), len(body))
     body[at:at] = block
+    lines[tile.start + 1:tile.end] = body
+    return "\n".join(lines)
+
+
+# The lines a tile's description ends before: a sub-task, the session line, a status, ready, options or
+# decision line, or the archive's stamp.
+AFTER_DESCRIPTION_RE = re.compile(r"^(?:  [-*] |[ \t]+(?:\*\*Status|\*\*Ready for review|Ready for review|\*\*Options|\*\*Decision|Archived ))")
+
+
+def domain_name(raw: str) -> str:
+    """A domain's name as it will be written: raw trimmed. Raises ValueError with a sentence
+    saying why when it is empty, starts with anything but a letter or a digit, holds a backtick
+    or a line break, is over 39 characters or ends in a full stop. Same rule in board.html
+    (domainName there); the cases are tile_cases.json's domainNames."""
+    name = (raw or "").strip()
+    if not name:
+        raise ValueError("A domain needs a name.")
+    if not re.match(r"[A-Za-z0-9]", name):
+        raise ValueError("A domain's name starts with a letter or a digit.")
+    if "`" in name or "\n" in name or "\r" in name:
+        raise ValueError("A domain's name can't hold a backtick or a line break.")
+    if len(name) > 39:
+        raise ValueError("A domain's name is at most 39 characters.")
+    if name.endswith("."):
+        raise ValueError("A domain's name can't end in a full stop.")
+    return name
+
+
+def with_domain(store, text: str, key: str, name) -> str:
+    """The board with the tile with this key in the domain name: its first Domain: line
+    replaced by "  Domain: name", or one added as the last line of its description (before a
+    sub-task, the session line, a status, ready, options or decision line or the archive's
+    stamp). None takes the first Domain: line off. A name domain_name refuses raises its
+    ValueError. A board with no such tile, or where nothing would change, comes back as it was."""
+    if name is not None:
+        name = domain_name(name)
+    tile = _tile(store, text, key)
+    if tile is None:
+        return text
+    lines = text.split("\n")
+    body = lines[tile.start + 1:tile.end]
+    found = next((i for i, x in enumerate(body) if DOMAIN_RE.match(x)), None)
+    if name is None:
+        if found is None:
+            return text
+        del body[found]
+    elif found is not None:
+        if domain(body[found]) == name:
+            return text
+        body[found] = f"  Domain: {name}"
+    else:
+        at = next((i for i, x in enumerate(body) if AFTER_DESCRIPTION_RE.match(x) or SESSION_LINE_RE.match(x)), len(body))
+        while at == len(body) and at > 0 and not body[at - 1].strip():
+            at -= 1  # not after the blank lines that end the tile
+        body.insert(at, f"  Domain: {name}")
     lines[tile.start + 1:tile.end] = body
     return "\n".join(lines)
 
