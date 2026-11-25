@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -816,6 +816,37 @@ test("a session's state shows on the map only for a story in flight", () => {
   const index = new Map([["A-1", mapTile("Back in the backlog")], ["A-2", mapTile("In flight", { file: "build.md", column: "In flight" })]]);
   const g = page.mapGraph(index, new Map(), [{ key: "A-1", state: "lost" }, { key: "A-2", state: "started" }]);
   assert.deepEqual([g.nodes.get("A-1").state, g.nodes.get("A-1").next, g.nodes.get("A-2").state], ["", false, "work"]);
+});
+
+test("hiding done stories leaves them off the map, with every join to them", () => {
+  const index = new Map([["A-1", mapTile("Open", { mentions: ["A-2"], blockers: ["A-2"] })], ["A-2", mapTile("Shipped", { done: true, mentions: ["A-1"] })],
+    ["A-3", mapTile("Also open", { mentions: ["A-1"] })]]);
+  const g = page.mapHideDone(page.mapGraph(index, new Map([["A-1", new Set(["A-2"])]]), []), new Set());
+  assert.deepEqual([...g.nodes.keys()], ["A-1", "A-3"]);
+  assert.deepEqual(g.edges, [{ a: "A-1", b: "A-3", kind: "mention" }]);
+  const n = g.nodes.get("A-1");
+  assert.deepEqual([n.mentions, n.linked, n.blockedBy], [["A-3"], [], []]);
+});
+
+test("hiding done stories keeps a done master whose sub-stories are not all done, and its count", () => {
+  const index = new Map([["A-1", mapTile("Master", { done: true })], ["A-2", mapTile("Done part", { parent: "A-1", done: true })],
+    ["A-3", mapTile("Open part", { parent: "A-1" })], ["A-4", mapTile("Done alone", { done: true })]]);
+  const g = page.mapHideDone(page.mapGraph(index, new Map(), []), new Set());
+  assert.deepEqual([...g.nodes.keys()], ["A-1", "A-3"]);
+  assert.deepEqual([g.nodes.get("A-1").kids, g.nodes.get("A-1").doneKids, g.nodes.get("A-1").allKids, g.nodes.get("A-3").parent], [["A-3"], 1, 2, "A-1"]);
+});
+
+test("hiding done stories keeps a done story whose branch is not merged yet", () => {
+  const index = new Map([["A-1", mapTile("Shipped", { done: true })], ["A-2", mapTile("Not merged", { done: true })]]);
+  const g = page.mapHideDone(page.mapGraph(index, new Map(), []), new Set(["A-2"]));
+  assert.deepEqual([...g.nodes.keys()], ["A-2"]);
+});
+
+test("hiding done stories leaves the graph it was given as it was", () => {
+  const index = new Map([["A-1", mapTile("Open", { mentions: ["A-2"] })], ["A-2", mapTile("Shipped", { done: true, mentions: ["A-1"] })]]);
+  const full = page.mapGraph(index, new Map(), []);
+  page.mapHideDone(full, new Set());
+  assert.deepEqual([[...full.nodes.keys()], full.nodes.get("A-1").mentions, full.edges.length], [["A-1", "A-2"], ["A-2"], 1]);
 });
 
 test("the map joins a blocker to what it blocks, and not as a mention", () => {

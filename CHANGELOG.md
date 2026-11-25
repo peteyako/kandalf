@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The map's bar has **Hide done**: it leaves finished stories off the map, keeping a done one whose branch isn't merged yet and a done master that still has open sub-stories. A master's count still counts every sub-story. The choice is kept in your browser.
+
 ## 1.3.0
 
 - The two boards are now **Plan** (was Backlog) and **Build** (was Plans), and their files `plan.md` and `build.md`. The page, the prompts agents are given, the filing rules, commit subjects (`board: PLN-26 plan.md → To do`) and `kandalf --help` all say so, and `kandalf init` makes a store with the new files. `kandalf serve` moves an existing store by itself, the first time it is safe to: `plans.md` becomes `build.md` and `backlog.md` becomes `plan.md`, in one commit (`board: plans.md → build.md, backlog.md → plan.md`) that also points the links between the store's files at the new names, brings the filing rules and the agents' notes up to date, and gives a board whose header was never edited the new one. It waits, and the page says why, while an agent session is in the middle of a turn or a `build.md` or `plan.md` of your own is in the way. A session that started before the move is told the new names in the next message it gets. A store that has not moved yet works on the old names as before, and an old `?file=plans.md` link or `kandalf check docs/plans/plans.md` opens the board under its present name. If an old file comes back beside its new one it is never read as a board: the page, the edit hook and `kandalf doctor` name it. See **Coming from 1.2** in the README.

@@ -1138,6 +1138,7 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 #mapDomains button i, #mapLegend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dom); margin-right: 6px; vertical-align: -1px; }
 #mapDomains button[aria-pressed="true"] { background: var(--dom); border-color: var(--dom); color: #fff; font-weight: 600; }
 #mapDomains button[aria-pressed="true"] i { background: #fff; }
+#mapDoneBtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
 #mapView aside { position: absolute; z-index: 4; overflow-y: auto; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
 #mapView aside[hidden] { display: none; }
 #mapMasters { left: 12px; top: 48px; bottom: 50px; width: 228px; }
@@ -1244,7 +1245,7 @@ applyTheme(themeNow, accentNow);
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="mapView" aria-label="Story map" hidden>
-  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span></span></span></div>
+  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapDoneBtn" aria-pressed="false" title="Show or hide the stories that are done (one whose branch isn't merged yet stays)">Hide done</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain. <b>Hide done</b> leaves finished stories off.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span></span></span></div>
   <svg id="mapSvg"><g id="mapPan"><g id="mapBgs"></g><g id="mapEdges"></g><g id="mapNodes"></g></g></svg>
   <aside id="mapMasters" aria-label="Masters"></aside>
   <aside id="mapPanel" aria-label="The story in focus" hidden></aside>
@@ -2437,6 +2438,7 @@ function mapGraph(index, links, jobs) {
   for (const n of nodes.values()) {
     n.kids.sort(byKeyOrder); n.mentions.sort(byKeyOrder); n.linked.sort(byKeyOrder); n.blockedBy.sort(byKeyOrder); n.blocks.sort(byKeyOrder);
     n.doneKids = n.kids.filter(k => nodes.get(k).where === "done").length;
+    n.allKids = n.kids.length;  // every sub-story, drawn or not (Hide done leaves the done ones out of kids)
     n.moving = n.kids.length > 0 && (started(n) || n.kids.some(k => started(nodes.get(k))));
   }
   for (const n of nodes.values()) {
@@ -2456,6 +2458,22 @@ function mapStats(graph) {
     else if (n.state) stats[n.state].push(n.key);
   }
   return stats;
+}
+// The graph without its done stories, for the map's Hide done: a done story stays when its branch
+// isn't merged yet (`keep`, a Set of keys) or when a sub-story of it is still shown, so a cluster
+// keeps its master. Joins to what is left out go too; a master's count of done sub-stories stays.
+// The graph it is given is left as it was.
+function mapHideDone(graph, keep) {
+  const shows = new Map();
+  const shown = n => {
+    if (!shows.has(n.key)) shows.set(n.key, n.where !== "done" || keep.has(n.key) || n.kids.some(k => shown(graph.nodes.get(k))));
+    return shows.get(n.key);
+  };
+  const nodes = new Map(), left = k => shows.get(k);
+  for (const n of graph.nodes.values()) if (shown(n)) nodes.set(n.key, n);
+  for (const [k, n] of nodes) nodes.set(k, { ...n, kids: n.kids.filter(left), mentions: n.mentions.filter(left), linked: n.linked.filter(left),
+    blockedBy: n.blockedBy.filter(left), blocks: n.blocks.filter(left) });
+  return { nodes, edges: graph.edges.filter(e => left(e.a) && left(e.b)) };
 }
 // A new selection with the key added, or taken out when it was in.
 const mapToggle = (sel, key) => { const out = new Set(sel); if (!out.delete(key)) out.add(key); return out; };
@@ -3448,7 +3466,8 @@ const sm = { graph: null, lay: null, laySig: "", sig: "", at: new Map(), els: ne
   // Filing: the selected keys, the re-file drag in progress, what Undo sends back, whether a
   // filing is on its way to the server, the empty
   // domains drawn (name -> {bg, label, x, y, R}) and where each was put (lower-cased name -> {x, y}).
-  sel: new Set(), refile: null, lastFiling: null, filing: false, pending: new Map(), pendingAt: new Map(), q: "" };
+  sel: new Set(), refile: null, lastFiling: null, filing: false, pending: new Map(), pendingAt: new Map(), q: "",
+  hideDone: false };  // Hide done: the done stories left off the map
 const mapSvg = $("#mapSvg"), mapPan = $("#mapPan"), mapPanel = $("#mapPanel");
 const svgEl = (tag, attrs = {}, parent) => {
   const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -3467,11 +3486,12 @@ function mapSaved() { try { return JSON.parse(localStorage.getItem(mapSavedKey()
 function renderMap(q) {
   if (sm.drag?.items || sm.refile) return;  // not under a cluster being dragged, or stories being carried to a domain
   if (q !== sm.q) { sm.q = q; sm.sel = new Set(); }  // new filter words: a new selection (the redraw below marks it)
-  const graph = mapGraph(renderIndex, renderEdges, pickups.jobs), nodes = [...graph.nodes.values()];
+  const full = mapGraph(renderIndex, renderEdges, pickups.jobs), graph = sm.hideDone ? mapHideDone(full, new Set(Object.keys(unmerged))) : full;
+  const nodes = [...graph.nodes.values()];
   const laySig = JSON.stringify(nodes.map(n => [n.key, n.parent, n.domain, n.mentions, n.linked, n.blockedBy, n.blocks]));
   if (laySig !== sm.laySig) { sm.lay = mapLayout(graph); sm.laySig = laySig; }
   // The strip counts what the board would on the Build board; from the Plan board, what the map shows.
-  const stats = file === PICKUP_BOARD ? buildStats() : mapStats(graph), only = statsShown() && statFilter ? new Set(stats[statFilter]) : null;
+  const stats = file === PICKUP_BOARD ? buildStats() : mapStats(full), only = statsShown() && statFilter ? new Set(stats[statFilter]) : null;
   if (file !== PICKUP_BOARD) renderStats(stats);
   const sig = laySig + JSON.stringify(nodes.map(n => [n.title, n.where, n.state, n.next, n.column])) + "\n" + q + "\n" + AGENT + "\n" + (only ? [...only] : "all");
   if (sig === sm.sig) return;
@@ -3517,7 +3537,7 @@ function drawMap(q, only) {  // q: the filter box's words; only: the keys the st
       "aria-label": `${n.key} ${n.title}, ${MAP_WHERE[n.where]}${n.state ? ", " + STATS.find(([id]) => id === n.state)[2] : ""}` }, $("#mapNodes"));
     svgEl("circle", { class: "m-halo", r: rad + 3 }, g);
     if (master) {
-      const R = rad + 6, f = n.doneKids / n.kids.length, end = f * 2 * Math.PI - Math.PI / 2;
+      const R = rad + 6, f = n.doneKids / n.allKids, end = f * 2 * Math.PI - Math.PI / 2;
       svgEl("circle", { class: "m-ring-bg", r: R }, g);
       if (f >= 1) svgEl("circle", { class: "m-ring", r: R }, g);
       else if (f > 0) svgEl("path", { class: "m-ring", d: `M0,${-R} A${R},${R} 0 ${f > .5 ? 1 : 0} 1 ${Math.cos(end) * R},${Math.sin(end) * R}` }, g);
@@ -3541,9 +3561,9 @@ function drawMap(q, only) {  // q: the filter box's words; only: the keys the st
   // The bar's domain chips, the masters list and the legend.
   const count = d => [...N.values()].filter(n => mapRoot(n).domain === d).length;
   $("#mapDomains").innerHTML = domains.map(d => `<button type="button" data-domain="${esc(d)}" style="--dom:${hue(d)}" title="Show only ${esc(d)}; click again for every domain"><i></i>${esc(d)} ${count(d)}</button>`).join("");
-  const masters = roots.filter(r => r.kids.length), finished = r => r.doneKids === r.kids.length;
-  masters.sort((a, b) => (b.moving - a.moving) || (b.doneKids / b.kids.length - a.doneKids / a.kids.length) || byKeyOrder(a.key, b.key));
-  const epic = r => `<button type="button" class="m-epic" data-go="${r.key}"><span class="m-t"><span>${esc(cutTo(r.title, 40))}</span><em>${r.doneKids}/${r.kids.length}</em></span><span class="m-bar"><span style="width:${100 * r.doneKids / r.kids.length}%"></span></span></button>`;
+  const masters = roots.filter(r => r.allKids), finished = r => r.doneKids === r.allKids;
+  masters.sort((a, b) => (b.moving - a.moving) || (b.doneKids / b.allKids - a.doneKids / a.allKids) || byKeyOrder(a.key, b.key));
+  const epic = r => `<button type="button" class="m-epic" data-go="${r.key}"><span class="m-t"><span>${esc(cutTo(r.title, 40))}</span><em>${r.doneKids}/${r.allKids}</em></span><span class="m-bar"><span style="width:${100 * r.doneKids / r.kids.length}%"></span></span></button>`;
   const group = (name, list) => list.length ? `<h2>${name}</h2>${list.map(epic).join("")}` : "";
   $("#mapMasters").innerHTML = (group("Moving", masters.filter(r => r.moving && !finished(r))) + group("Not started", masters.filter(r => !r.moving && !finished(r))) + group("Finished", masters.filter(finished)))
     || `<h2>Masters</h2><p class="m-text">No story has sub-stories yet. A tile that says "Part of ${esc(KEY)}-12" becomes a sub-story of ${esc(KEY)}-12.</p>`;
@@ -3677,7 +3697,7 @@ function mapGo(key, { remember = true, move = true } = {}) {
   mapPanel.innerHTML = `<button type="button" class="m-close" data-close title="Back to the whole map" aria-label="Close">×</button>
     <div class="m-key">${n.key}</div><h3>${esc(n.title)}</h3>
     <span class="m-chip" style="color:var(--m-${n.where})">${MAP_WHERE[n.where]}</span>${state ? `<span class="m-chip">${state[1]} ${state[2]}</span>` : ""}<span class="m-chip">${esc(n.column)}</span>${n.domain ? `<span class="m-chip" style="color:${sm.hue.get(n.domain) || "inherit"}">${esc(n.domain)}</span>` : ""}
-    ${n.kids.length ? `<div class="m-bar" style="margin-top:8px"><span style="width:${100 * n.doneKids / n.kids.length}%"></span></div><div class="m-text" style="margin-top:4px">${n.doneKids} of ${n.kids.length} sub-stories done</div>` : ""}
+    ${n.allKids ? `<div class="m-bar" style="margin-top:8px"><span style="width:${100 * n.doneKids / n.allKids}%"></span></div><div class="m-text" style="margin-top:4px">${n.doneKids} of ${n.allKids} sub-stories done</div>` : ""}
     ${words ? `<p class="m-text">${esc(cutTo(words, 420))}</p>` : ""}
     <button type="button" class="m-open" data-open="${n.key}" title="Open this story's tile on its board">Open tile</button>
     ${n.parent ? `<h2>Part of</h2>${mapHop(mapNode(n.parent))}` : ""}
@@ -3924,10 +3944,12 @@ $("#mapView").addEventListener("click", e => {
   if (b.id === "mapFit") { mapScope("", false); return mapGo(null); }
   if (b.id === "mapMastersBtn") { $("#mapMasters").hidden = !$("#mapMasters").hidden; try { localStorage.setItem("board.map.masters", $("#mapMasters").hidden ? "off" : "on"); } catch {} return sm.focus ? mapGo(sm.focus, { remember: false }) : mapFrame(mapWhole()); }
   if (b.id === "mapReset") { try { localStorage.removeItem(mapSavedKey()); } catch {} sm.sig = ""; sm.cam = null; sm.focus = null; sm.pendingAt = new Map(); render(); }  // the empty domains go too
+  if (b.id === "mapDoneBtn") { sm.hideDone = !sm.hideDone; b.setAttribute("aria-pressed", sm.hideDone); try { localStorage.setItem("board.map.done", sm.hideDone ? "hide" : "show"); } catch {} sm.sig = ""; return render(); }
   if (b.id === "mapNewDomain") return mapNewDomain();
   if (b.id === "mapUndo") return mapUndo();
 });
 try { $("#mapMasters").hidden = localStorage.getItem("board.map.masters") === "off"; } catch {}
+try { sm.hideDone = localStorage.getItem("board.map.done") === "hide"; $("#mapDoneBtn").setAttribute("aria-pressed", sm.hideDone); } catch {}
 $("#viewSel").addEventListener("click", e => {
   const b = e.target.closest("button[data-view]");
   if (!b || b.dataset.view === viewMode) return;
