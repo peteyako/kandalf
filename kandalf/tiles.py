@@ -12,8 +12,10 @@ holds both readers to the same cases (test_tiles.TileCases, test_page.js).
     is_pickup_column, is_decision_column
                             whether a column's name says it is the pickup column or a decision column
     session(md)             the tile's session line, as SessionLine
-    take, without, insert_after, with_session, with_status, with_decision, with_options, with_domain, with_key
-                            edits that return the board's text
+    take, without, insert_after, with_session, with_status, with_decision, with_options, with_domain, with_key,
+    with_tile, repointed    edits that return the board's text
+    combine, combined_note, repoint
+                            the text of stories combined into one (server only; the page sends the keys)
     domain_name(raw)        a domain's name as it will be written, or ValueError saying why not
     Snapshot                the build and plan boards and the archive log read once: the tile index, the
                             texts, the In flight tiles, a tile's lineage, the nearest line
@@ -21,6 +23,7 @@ holds both readers to the same cases (test_tiles.TileCases, test_page.js).
                             decisions made for it
 """
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -596,6 +599,232 @@ def with_domain(store, text: str, key: str, name) -> str:
     return "\n".join(lines)
 
 
+# ---------- combining stories ----------
+SUBTASK_RE = re.compile(r"^([ \t]+)[-*] \[[ xX]\] ")
+# Where a tile's description ends: its first sub-task, session, status, ready, options, decision,
+# handoff or archive-stamp line.
+DESCRIPTION_END_RE = re.compile(r"^[ \t]+(?:[-*] \[[ xX]\] |\*\*Status|\*\*Ready for review|Ready for review|\*\*Options|\*\*Decision|Handoff:|Archived )")
+_ATTRIBUTE_RES = (DOMAIN_RE, REPOS_RE, MODEL_RE, BASE_RE, TESTS_RE, SESSIONS_RE)
+_NO_PICKUP_RE = re.compile(r"[ \t]*\bno pickup\b[.,;]?", re.I)
+
+
+def _quoting(lines: list) -> set:
+    """The indexes of the lines that quote other tiles' words, which no reference is read from:
+    the session, status, ready and decision lines and the options block (what parse skips)."""
+    out = {i for i, x in enumerate(lines) if SESSION_LINE_RE.match(x) or STATUS_LINE_RE.match(x)
+           or READY_RE.match(x) or DECISION_LINE_RE.match(x)}
+    out.update(i for a, b in _options_spans(lines) for i in range(a, b))
+    return out
+
+
+def _unique(keys) -> list:
+    return list(dict.fromkeys(keys))
+
+
+def _edit_refs(store, lines: list, which: str, fn) -> list:
+    """The lines with each "Part of", "Moves with" or "Blocked by" phrase (which: part, link, blocked)
+    given the keys fn(keys) answers, in place of the keys it names; a phrase fn leaves with no key
+    goes, with the full stop after it, and a line left empty goes too. The first line is never dropped."""
+    _, keys, _, link, part, _, blocked = _patterns(store.key)
+    rx = {"part": part, "link": link, "blocked": blocked}[which]
+    skip, out = _quoting(lines), []
+    for i, line in enumerate(lines):
+        new = line
+        for m in ([] if i in skip else reversed(list(rx.finditer(line)))):
+            was = [k.group(0) for k in keys.finditer(m.group(1))]
+            want = fn(was)
+            if want == was:
+                continue
+            if want:
+                new = new[:m.start(1)] + ", ".join(want) + new[m.end(1):]
+                continue
+            end = m.end() + (1 if m.end() < len(new) and new[m.end()] in ".,;" else 0)
+            before, after = new[:m.start()], new[end:]
+            if before.strip():
+                before = before.rstrip(" \t")
+                after = after if not after or after[0] in " \t" else " " + after
+            else:
+                after = after.lstrip(" \t")
+            new = before + after
+        if new.strip() or i == 0 or not line.strip():
+            out.append(new)
+    return out
+
+
+def _refs(store, lines: list, which: str) -> list:
+    """The keys the lines' phrases of this kind name, each once, in order."""
+    found = []
+    _edit_refs(store, lines, which, lambda keys: found.extend(keys) or keys)
+    return _unique(found)
+
+
+def _description_end(lines: list) -> int:
+    """The index where a tile's description ends (after its last description line, the blank
+    lines before the next part left out): its end when it has no such part."""
+    at = next((i for i, x in enumerate(lines) if i and (DESCRIPTION_END_RE.match(x) or SESSION_LINE_RE.match(x))), len(lines))
+    while at > 1 and not lines[at - 1].strip():
+        at -= 1
+    return at
+
+
+def _subtasks(lines: list) -> list:
+    """The (start, end) line ranges of a tile's sub-tasks: a checkbox line and the lines indented
+    deeper under it."""
+    spans, i = [], 1
+    while i < len(lines):
+        m = SUBTASK_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        end = i + 1
+        while end < len(lines) and lines[end].strip() and len(lines[end]) - len(lines[end].lstrip()) > len(m.group(1)) \
+                and not DESCRIPTION_END_RE.match(lines[end]):
+            end += 1
+        spans.append((i, end))
+        i = end
+    return spans
+
+
+def opening(store, md: str):
+    """The key a tile's markdown opens with, or None."""
+    return opening_key(store, md.split("\n", 1)[0])
+
+
+def combine(store, survivor_md: str, others_md) -> str:
+    """The survivor's markdown with the other stories (their markdown, in key order) combined into it.
+    The survivor keeps its title, priority, estimate, Part of, Model, Base, Tests and Sessions lines.
+    Its description gets each other story's description as a paragraph that starts "From PLN-NN
+    (Title):" (a story with none says just that). Its sub-tasks are followed by theirs, ticks kept.
+    Blocked by and Moves with name the keys all of them did, never one of the stories combined; Repos
+    is every story's repos, and Domain the survivor's, else the first other's that has one. What
+    belongs to a story's own work (session, status, ready for review, options, decision, handoff and
+    "No pickup" lines, Part of) is left behind with the story. Not read in board.html: the page
+    sends the server the stories to combine."""
+    sk = opening(store, survivor_md)
+    others = [(opening(store, md), md.split("\n")) for md in others_md]
+    combined = {sk, *(k for k, _ in others)}
+    keyed = _patterns(store.key)[2]
+
+    # What the other stories say, with their Part of, Blocked by and Moves with taken out.
+    extra = {"blocked": [], "link": []}
+    cleaned = []
+    for key, lines in others:
+        for which in ("part", "blocked", "link"):
+            if which != "part":
+                extra[which] += _refs(store, lines, which)
+            lines = _edit_refs(store, lines, which, lambda _: [])
+        cleaned.append((key, lines))
+
+    lines = survivor_md.split("\n")
+    for which in ("blocked", "link"):
+        mine = _refs(store, lines, which)
+        want = [k for k in _unique(mine + extra[which]) if k not in combined]
+        seen = []
+        lines = _edit_refs(store, lines, which, lambda ks: [] if seen else (seen.append(1) or want))
+        extra[which] = [] if seen else want  # a phrase of its own for what the survivor had no place for
+
+    added = []
+    if extra["blocked"]:
+        added.append(f"  Blocked by {', '.join(extra['blocked'])}.")
+    if extra["link"]:
+        added.append(f"  Moves with {', '.join(extra['link'])}.")
+    if domain(survivor_md) is None:
+        first = next((d for d in (domain("\n".join(x)) for _, x in cleaned) if d), None)
+        if first:
+            added.append(f"  Domain: {first}")
+    more = [n for _, x in cleaned for n in repos("\n".join(x)) or []]
+    if more:
+        names = _unique([*(repos(survivor_md) or []), *more])
+        line = f"  Repos: {', '.join(names)}"
+        at = next((i for i, x in enumerate(lines) if REPOS_RE.match(x)), None)
+        if at is None:
+            added.append(line)
+        else:
+            lines[at] = line
+
+    paragraphs, tasks = [], []
+    for key, olines in cleaned:
+        quoted = _quoting(olines)
+        spans = _subtasks(olines)
+        inside = {i for a, b in spans for i in range(a, b)}
+        for a, b in spans:
+            tasks += olines[a:b]
+        rest = re.sub(r"^[-*] (?:\[[ xX]\] )?", "", olines[0])
+        rest = TILE_HEAD_RE.match(keyed.sub("", rest)).group(1)
+        bold = re.match(r"^\*\*(.+?)\*\*", rest)
+        text = [rest[bold.end():].strip()] if bold and rest[bold.end():].strip() else []
+        for i, x in enumerate(olines[1:], 1):
+            if i in quoted or i in inside or DESCRIPTION_END_RE.match(x) or any(r.match(x) for r in _ATTRIBUTE_RES):
+                continue
+            x = _NO_PICKUP_RE.sub("", x)
+            if x.strip():
+                text.append(x)
+            elif text and text[-1].strip():
+                text.append("")
+        while text and not text[-1].strip():
+            text.pop()
+        title = _title(store, "\n".join(olines))
+        if text:
+            paragraphs += ["", f"  From {key} ({title}): {text[0].strip()}", *text[1:]]
+        else:
+            paragraphs += ["", f"  From {key} ({title})."]
+
+    at = _description_end(lines)
+    lines[at:at] = [*added, *paragraphs]
+    spans = _subtasks(lines)
+    at = spans[-1][1] if spans else len(lines)
+    while not spans and at > 1 and not lines[at - 1].strip():
+        at -= 1
+    lines[at:at] = tasks
+    return "\n".join(lines)
+
+
+def combined_note(md: str, into: str) -> str:
+    """The markdown of a story that was combined into another, with "Combined into PLN-NN." as the
+    last line of its description."""
+    lines = md.split("\n")
+    at = _description_end(lines)
+    lines.insert(at, f"  Combined into {into}.")
+    return "\n".join(lines)
+
+
+def repoint(store, md: str, absorbed, into: str) -> str:
+    """A tile's markdown with each Part of, Moves with and Blocked by that names one of the
+    absorbed keys naming `into` instead (once, and never the tile's own key). Prose that merely
+    mentions a key is left alone."""
+    own = opening(store, md)
+    absorbed = set(absorbed)
+
+    def fn(keys):
+        if not absorbed.intersection(keys):
+            return keys
+        return [k for k in _unique(into if k in absorbed else k for k in keys) if k != own]
+    lines = md.split("\n")
+    for which in ("part", "link", "blocked"):
+        lines = _edit_refs(store, lines, which, fn)
+    return "\n".join(lines)
+
+
+def with_tile(store, text: str, key: str, md: str) -> str:
+    """The board with the tile that has this key replaced by md; a board with no such tile comes
+    back as it was."""
+    tile = _tile(store, text, key)
+    if tile is None:
+        return text
+    lines = text.split("\n")
+    lines[tile.start:tile.end] = md.split("\n")
+    return "\n".join(lines)
+
+
+def repointed(store, text: str, absorbed, into: str, skip=()) -> str:
+    """The board with repoint applied to every tile but the ones with a key in skip."""
+    lines = text.split("\n")
+    for t in sorted(parse(store, text), key=lambda t: t.start, reverse=True):
+        if t.key not in skip:
+            lines[t.start:t.end] = repoint(store, t.text, absorbed, into).split("\n")
+    return "\n".join(lines)
+
+
 # ---------- a snapshot across the boards ----------
 class Snapshot:
     """The tiles of the build board, the plan board and the archive log, read once, with what
@@ -650,14 +879,16 @@ class Snapshot:
 
     def index(self) -> dict:
         """{"KEY-NN": {"title", "file", "column", "done", "parent", "mentions", "blockers",
-        "decision", "tests", "domain"}} for every keyed tile. done: in a Done column, or in the
+        "decision", "tests", "domain", "rev"}} for every keyed tile. done: in a Done column, or in the
         archive log. parent: the master it says it is part of, or None. mentions: the other keys
         its text names, sorted. blockers: the keys its own text says block it. decision: its
         last decision line, as {"date", "text"}, or None. tests: its own "Tests:" value.
-        domain: its own "Domain:" value."""
+        domain: its own "Domain:" value. rev: a short hash of the tile's text, which a request that
+        acts on the tile sends back to say what it read."""
         return {k: {"title": t.title, "file": name, "column": t.column, "done": t.done,
                     "parent": self._parent[k], "mentions": t.mentions, "blockers": t.blockers,
-                    "decision": decision(t.text), "tests": tests(t.text), "domain": domain(t.text)}
+                    "decision": decision(t.text), "tests": tests(t.text), "domain": domain(t.text),
+                    "rev": hashlib.sha1(t.text.encode("utf-8")).hexdigest()[:12]}
                 for k, (name, t) in self._at.items()}
 
     def texts(self) -> dict:

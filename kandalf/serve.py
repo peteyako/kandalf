@@ -24,6 +24,8 @@ The map can ask the agent to sort stories into domains (/api/organize): a sessio
 the organize turn of the watch reads the proposal (organize.py), and the page files what the
 person ticks through /api/domain. /api/organize/end ends the run.
 
+Two or more stories can be combined into one (/api/combine): the others go to the archive log.
+
 Tiles that say "Moves with KEY-NN" are linked: the page moves them together, and asks
 this server for the ones on the other board (/api/move takes them along, /api/pull
 fetches them).
@@ -244,13 +246,17 @@ def undo_clear(store, board: Path, text: str, record: dict) -> tuple:
     return new, [log, *touched]
 
 
-def file_in_archive_log(log: Path, tile: str):
-    """Put a tile at the top of the archive log's "## Archived" column, with today's date."""
-    text = log.read_text(encoding="utf-8") if log.is_file() else ARCHIVE_HEAD
+def filed_in_archive(text: str, tile: str) -> str:
+    """The archive log's text with a tile at the top of its "## Archived" column, with today's date."""
     marker = "## Archived\n"
     at = text.index(marker) + len(marker)
     entry = f"{tile}\n  Archived {datetime.date.today().isoformat()}.\n"
-    write_atomic(log, text[:at] + "\n" + entry + text[at:].lstrip("\n"))
+    return text[:at] + "\n" + entry + text[at:].lstrip("\n")
+
+
+def file_in_archive_log(log: Path, tile: str):
+    """Put a tile at the top of the archive log's "## Archived" column, with today's date."""
+    write_atomic(log, filed_in_archive(log.read_text(encoding="utf-8") if log.is_file() else ARCHIVE_HEAD, tile))
 
 
 def moves(store) -> dict:
@@ -468,6 +474,72 @@ def set_domains(store, changes, expect=None) -> tuple:
                    else f"board: {many} → {tos.pop() or 'no domain'}")
         gitlog.record(store, paths, subject)
     return 200, {"filed": filed, "unchanged": unchanged, "skipped": skipped}
+
+
+def combine_stories(store, keys, into, expect=None) -> tuple:
+    """Combine stories into one: keys is the list of keys to combine and into the one that
+    survives (tiles.combine says what its text becomes). The others go to the top of the archive log
+    with "Combined into KEY." on them, their plan docs stay where they are, and any other tile that
+    says Blocked by, Moves with or Part of one of them says the survivor instead. One commit.
+    expect, when given, is {KEY: rev}, what Snapshot.index said of each key's tile when the page
+    read it. Returns (200, {combined: [the absorbed keys], into}), (400, {error}) when the request
+    isn't one, (409, {error}) when a story can't be combined (archived, in flight with a session
+    or job, or a master of another of them), or (409, {error: "changed since", changed: [KEY]})
+    when a tile differs from expect, with nothing written."""
+    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys) or not isinstance(into, str):
+        return 400, {"error": "Say which stories to combine, and which one stays."}
+    keys = list(dict.fromkeys(keys))
+    if len(keys) < 2:
+        return 400, {"error": "Combining needs at least two stories."}
+    if into not in keys:
+        return 400, {"error": "The story that stays has to be one of those combined."}
+    snap = reader.Snapshot.read(store)
+    for key in keys:
+        if snap.tile(key) is None:
+            return 409, {"error": f"{key} isn't on the boards any more."}
+    for key in keys:
+        if snap.index()[key]["file"] == ARCHIVE_LOG:
+            return 409, {"error": f"{key} is archived; an archived story can't be combined."}
+    held = {j["key"] for j in ledger.Ledger(store).live()}
+    for key in keys:
+        if reader.session(snap.tile(key).text) or key in held:
+            return 409, {"error": f"{key} has a session (or a place in the pickup queue); end it before combining it."}
+    for key in keys:
+        up = [m.key for m in snap.lineage(key) if m.key in keys]
+        if up:
+            return 409, {"error": f"{key} is part of {up[0]}, so they can't be combined: a master isn't combined with its own sub-story."}
+    if isinstance(expect, dict):
+        index = snap.index()
+        changed = [k for k, rev in expect.items() if k not in index or index[k]["rev"] != rev]
+        if changed:
+            return 409, {"error": "changed since", "changed": changed}
+    others = sorted((k for k in keys if k != into), key=store.num)
+    files, index = dict(snap.files), snap.index()
+    merged = reader.combine(store, snap.tile(into).text, [snap.tile(k).text for k in others])
+    for name in files:
+        files[name] = reader.repointed(store, files[name], others, into, skip={into, *others})
+    survivor_file = index[into]["file"]
+    files[survivor_file] = reader.with_tile(store, files[survivor_file], into, merged)
+    notes = []
+    for key in others:
+        name = index[key]["file"]
+        tile = reader.parse(store, files[name], file=name)
+        tile = next(t for t in tile if t.key == key)
+        notes.append(rebase_into_archive(reader.combined_note(tile.text, into), name))
+        files[name] = reader.without(files[name], [tile])
+    log = files.get(ARCHIVE_LOG, ARCHIVE_HEAD)
+    for note in reversed(notes):
+        log = filed_in_archive(log, note)
+    files[ARCHIVE_LOG] = log
+    paths = []
+    for name, text in files.items():
+        if text != snap.files.get(name):
+            (store.dir / name).parent.mkdir(exist_ok=True)
+            write_atomic(store.dir / name, text)
+            paths.append(store.dir / name)
+    gitlog.record(store, paths, f"board: {', '.join(others)} combined into {into}")
+    end_drafts(store, others)
+    return 200, {"combined": others, "into": into}
 
 
 def end_drafts(store, keys):
@@ -1409,6 +1481,13 @@ class Handler(BaseHTTPRequestHandler):
             data = self.read_body()
             expect = data.get("expect")  # Undo's {KEY: name | null}: what each tile should say now; anything but a map is ignored
             status, reply = set_domains(self.store, data.get("set"), expect if isinstance(expect, dict) else None)
+            return self.send_json(status, {**self.board_reply(p), **reply} if status == 200 else reply)
+        if u.path == "/api/combine":  # {keys, into, expect: {KEY: rev}}: combine stories into one
+            p = self.target(parse_qs(u.query))
+            if p is None or not p.is_file() or p.parent != self.plans:
+                return self.send_json(404, {"error": "no such board"})
+            data = self.read_body()
+            status, reply = combine_stories(self.store, data.get("keys"), data.get("into"), data.get("expect"))
             return self.send_json(status, {**self.board_reply(p), **reply} if status == 200 else reply)
         if u.path == "/api/decide":
             p = self.target(parse_qs(u.query))

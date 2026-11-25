@@ -1062,6 +1062,12 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 /* ---------- story map ---------- */
 .agent-icon { vertical-align: -2.5px; flex: none; }
 #viewSel { display: inline-flex; gap: 4px; }
+#pickBar { display: inline-flex; gap: 4px; }
+#pickBar [hidden] { display: none; }
+.card .pick { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.card.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
+body.picking .card { cursor: pointer; position: relative; }
+.combine-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
 :root #fileSel button:disabled { opacity: .4; cursor: default; }
 #viewSel[hidden], #mapView[hidden] { display: none; }
 #mapView { flex: 1 1 auto; min-height: 440px; position: relative; overflow: hidden; margin: 10px 20px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
@@ -1242,6 +1248,7 @@ applyTheme(themeNow, accentNow);
   <h1 id="docTitle">Plan and Build</h1>
   <nav id="fileSel" role="tablist" aria-label="Boards"></nav>
   <span id="viewSel" role="group" aria-label="View" hidden><button type="button" data-view="board" title="The columns of tiles">Board</button><button type="button" data-view="map" title="Every story as a map: masters with their sub-stories, grouped by domain, and what is joined to what">Map</button></span>
+  <span id="pickBar"><button type="button" id="pickBtn" aria-pressed="false" hidden title="Tick stories to combine into one. Esc, or Select again, leaves it.">Select</button><button type="button" id="combineBtn" class="primary" hidden>Combine</button></span>
   <input id="search" type="text" placeholder="Filter tiles…">
   <label id="colSortLabel" class="hint">Sort <select id="colSort" title="Order tiles in every column (display only; the file keeps its order)">
     <option value="file">Board order</option><option value="prio">Priority, highest first</option>
@@ -1258,7 +1265,7 @@ applyTheme(themeNow, accentNow);
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="mapView" aria-label="Story map" hidden>
-  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapDoneBtn" aria-pressed="false" title="Show or hide the stories that are done (one whose branch isn't merged yet stays)">Hide done</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapOrganize" aria-expanded="false" aria-controls="orgPanel" title="Ask the agent to sort stories into domains; you review what it proposes before anything is filed">Organize…</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain. <b>Hide done</b> leaves finished stories off.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span><span><b>Organize…</b> asks the agent to propose a domain for the stories that have none; tick what to keep and <b>Apply</b> files it, and one <b>Undo</b> takes it all back.</span></span></span></div>
+  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapDoneBtn" aria-pressed="false" title="Show or hide the stories that are done (one whose branch isn't merged yet stays)">Hide done</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapOrganize" aria-expanded="false" aria-controls="orgPanel" title="Ask the agent to sort stories into domains; you review what it proposes before anything is filed">Organize…</button><button type="button" id="mapCombine" hidden title="Combine the selected stories into one">Combine</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain. <b>Hide done</b> leaves finished stories off.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span><span><b>Combine</b> shows once two or more stories are selected: it merges them into one story and archives the others.</span><span><b>Organize…</b> asks the agent to propose a domain for the stories that have none; tick what to keep and <b>Apply</b> files it, and one <b>Undo</b> takes it all back.</span></span></span></div>
   <svg id="mapSvg"><g id="mapPan"><g id="mapBgs"></g><g id="mapEdges"></g><g id="mapNodes"></g></g></svg>
   <aside id="mapMasters" aria-label="Masters"></aside>
   <aside id="mapPanel" aria-label="The story in focus" hidden></aside>
@@ -2490,6 +2497,15 @@ function mapHideDone(graph, keep) {
     blockedBy: n.blockedBy.filter(left), blocks: n.blocks.filter(left) });
   return { nodes, edges: graph.edges.filter(e => left(e.a) && left(e.b)) };
 }
+// Combining: the Combine buttons show once two or more stories are selected (`keys`).
+const combineShown = keys => keys.length >= 2;
+// The confirm dialog's paragraphs for these keys (the first stays unless another is picked, `into`):
+// a radio per story, and in one sentence what will happen. `index` maps a key to {title}.
+function combineBody(keys, into, index) {
+  const rows = keys.map(k => `<label class="combine-row"><input type="radio" name="combineInto" value="${esc(k)}"${k === into ? " checked" : ""}> <span><b>${esc(k)}</b> ${esc(index.get(k)?.title ?? "")}</span></label>`);
+  return [`Combine these ${keys.length} stories into one. The one you pick stays, with its key and title:`, rows.join(""),
+    "It takes in the others' descriptions, sub-tasks and links; the others move to the archive, marked as combined into it, and stay there. There is no Undo (git history has the rest)."];
+}
 // A new selection with the key added, or taken out when it was in.
 const mapToggle = (sel, key) => { const out = new Set(sel); if (!out.delete(key)) out.add(key); return out; };
 // A Shift-click's new selection: a selected key taken out, shown or not, and an unselected one
@@ -2779,6 +2795,10 @@ function isDocFile() { return (file.includes("/") && file !== "archive/archived.
 // Drawing the board again keeps a reply being typed (its text, ticks, focus and caret) and
 // where the board, its columns and its log panes are scrolled to.
 function render() {
+  renderPlain();
+  drawPicks();
+}
+function renderPlain() {
   const el = document.activeElement, typing = el?.dataset?.reply ? { key: el.dataset.reply, from: el.selectionStart, to: el.selectionEnd } : null;
   const back = scrollPlaces(boardEl);
   renderBoard();
@@ -3417,11 +3437,88 @@ async function jumpTo(key) {
   setTimeout(() => el.classList.remove("jumped"), 1900);
 }
 
+// ---------- combining stories ----------
+// Select mode puts a checkbox on each keyed card; a click on a card ticks it instead of opening it.
+// picked holds the ticked keys in the order they were ticked: the first stays when they are combined.
+let pickMode = false;
+const picked = new Set();
+const pickKeys = () => mapOn() ? [...sm.sel] : [...picked];
+function pickRefresh() {
+  const board = !isDocFile() && file !== ARCHIVE_LOG && !mapOn();
+  $("#pickBtn").hidden = !board; $("#pickBtn").setAttribute("aria-pressed", pickMode);
+  $("#pickBtn").classList.toggle("primary", pickMode);
+  const keys = pickKeys();
+  $("#combineBtn").hidden = !board || !pickMode || !combineShown(keys); $("#combineBtn").textContent = `Combine (${keys.length})`;
+  const bar = $("#mapCombine"); bar.hidden = !(mapOn() && combineShown(keys)); bar.textContent = `Combine (${keys.length})`;
+  document.body.classList.toggle("picking", pickMode && board);
+  for (const el of boardEl.querySelectorAll(".card")) {
+    const f = findCard(el.dataset.id), key = f && cardKey(f.c);
+    el.classList.toggle("picked", !!key && picked.has(key));
+    const box = el.querySelector(":scope > .pick"); if (box) box.checked = el.classList.contains("picked");
+  }
+}
+// Put a checkbox on each keyed card while Select is on (after the board is drawn).
+function drawPicks() {
+  if (!pickMode || mapOn() || file === ARCHIVE_LOG) return pickRefresh();
+  for (const el of boardEl.querySelectorAll(".card")) {
+    const f = findCard(el.dataset.id);
+    if (!f || !cardKey(f.c)) continue;
+    const box = document.createElement("input");
+    box.type = "checkbox"; box.className = "pick"; box.title = "Tick to combine";
+    box.setAttribute("aria-label", `Select ${cardKey(f.c)}`);
+    el.prepend(box); el.draggable = false;
+  }
+  pickRefresh();
+}
+function setPickMode(on) {
+  pickMode = on && !isDocFile() && file !== ARCHIVE_LOG && !mapOn();
+  if (!pickMode) picked.clear();
+  render();
+}
+function togglePick(cardEl) {
+  const f = findCard(cardEl.dataset.id), key = f && cardKey(f.c);
+  if (!key) return;
+  if (!picked.delete(key)) picked.add(key);
+  pickRefresh();
+}
+// Ask, then combine `keys` into one story (POST /api/combine) and take the reply as the board.
+async function combineStories(keys) {
+  if (!combineShown(keys)) return;
+  if (dirty || saving) return flash("Save the board first.");
+  const index = tileIndex();
+  const yes = await ask({ title: "Combine stories", body: combineBody(keys, keys[0], index), ok: "Combine" });
+  if (!yes) return;
+  const into = document.querySelector('#askBody input[name="combineInto"]:checked')?.value || keys[0];
+  const expect = Object.fromEntries(keys.filter(k => serverTiles[k]?.rev).map(k => [k, serverTiles[k].rev]));
+  saving = true; setStatus("Combining…");
+  let reply = null;
+  try {
+    const r = await fetch(`/api/combine?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys, into, expect }) });
+    reply = await r.json();
+    if (!r.ok) {
+      flash(reply.changed ? `Not combined: ${reply.changed.join(", ")} changed since the board was read.` : reply.error || `That didn't work (${r.status}).`);
+      setStatus("Not done", true);
+      saving = false;
+      if (reply.changed && !dirty) reloadQuiet().catch(() => {});
+      return;
+    }
+  } catch { saving = false; setStatus("Not done", true); return flash("That didn't work: server down?"); }
+  saving = false;
+  adopt(reply); setStatus("Saved ✓ " + new Date().toLocaleTimeString());
+  picked.clear(); pickMode = false; sm.sel = new Set(); sm.sig = ""; render();
+  flash(`${reply.combined.join(", ")} combined into ${reply.into}.`);
+}
+$("#pickBtn").addEventListener("click", () => setPickMode(!pickMode));
+$("#combineBtn").addEventListener("click", () => combineStories([...picked]));
+$("#mapCombine").addEventListener("click", () => combineStories([...sm.sel]));
+addEventListener("keydown", e => { if (e.key === "Escape" && pickMode && !document.querySelector("dialog[open]")) setPickMode(false); });
+
 // ---------- clicks ----------
 boardEl.addEventListener("click", e => {
   const act = e.target.closest("[data-act]")?.dataset.act;
   const col = e.target.closest(".column"), sec = col && findSec(col.dataset.id);
   const cardEl = e.target.closest(".card");
+  if (pickMode && cardEl) { e.preventDefault(); e.stopPropagation(); return togglePick(cardEl); }  // Select: a click ticks the card
   if (e.target.closest(".session-reply")) {  // typing, ticking or folding the message box doesn't open the tile
     e.stopPropagation();
     noteReplyToggle(e);
@@ -3685,7 +3782,7 @@ function mapPlacePending(names) {
 }
 // The stories drawn and not faded out by the filter, the strip or the domain scope.
 const mapShown = () => new Set([...sm.els].filter(([, g]) => !g.classList.contains("miss") && !g.classList.contains("out")).map(([k]) => k));
-const mapMarkSel = () => { for (const [k, g] of sm.els) g.classList.toggle("sel", sm.sel.has(k)); };
+const mapMarkSel = () => { for (const [k, g] of sm.els) g.classList.toggle("sel", sm.sel.has(k)); pickRefresh(); };
 // The pointer in map coordinates: client pixels, less the map's box and the camera's offset, over its zoom.
 function mapPoint(e) {
   const box = mapSvg.getBoundingClientRect();
@@ -4108,6 +4205,7 @@ $("#viewSel").addEventListener("click", e => {
   const b = e.target.closest("button[data-view]");
   if (!b || b.dataset.view === viewMode) return;
   viewMode = b.dataset.view;
+  pickMode = false; picked.clear();  // Select is for the board; the map has its own selection
   try { localStorage.setItem("board.view", viewMode); } catch {}
   sm.sig = "";  // drawn afresh: the map was hidden, so it had no size to fit to
   sm.cam = null;

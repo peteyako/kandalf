@@ -393,7 +393,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_the_index_says_where_each_keyed_tile_is_and_its_own_tests_line(self):
         index = self.snap.index()
-        self.assertEqual(index["PLN-83"], {"title": "Master", "file": "build.md", "column": "In flight", "done": False,
+        self.assertEqual({k: v for k, v in index["PLN-83"].items() if k != "rev"}, {"title": "Master", "file": "build.md", "column": "In flight", "done": False,
                                            "parent": None, "mentions": [], "blockers": [], "decision": None,
                                            "tests": "full", "domain": None})
         self.assertEqual((index["PLN-41"]["file"], index["PLN-41"]["done"], index["PLN-41"]["tests"]),
