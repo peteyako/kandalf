@@ -1151,12 +1151,13 @@ class Server(Repos):
         self.assertNotIn("PLN-30 **", self.board())
         self.assertEqual([c.args[0] for c in log.call_args_list], ["PLN-30: the draft could not be ended: no git"])
 
-    def test_the_pickup_reply_carries_the_drafts_why_they_cannot_run_and_the_organize_run(self):
+    def test_the_pickup_reply_carries_the_drafts_why_they_cannot_run_and_the_organize_and_split_runs(self):
         self.ask({"key": "PLN-30"})
         with mock.patch.object(drafts, "why_not", lambda store: "Draft options is off: no app."):
             got = serve.pickup_reply(self.store)
-        self.assertEqual({k: v for k, v in got.items() if k not in ("drafts", "draftsOff", "organize")}, pickup.summary(self.store))
+        self.assertEqual({k: v for k, v in got.items() if k not in ("drafts", "draftsOff", "organize", "split")}, pickup.summary(self.store))
         self.assertIsNone(got["organize"])
+        self.assertIsNone(got["split"])
         self.assertEqual(got["drafts"], drafts.summary(self.store))
         self.assertEqual(got["draftsOff"], "Draft options is off: no app.")
 

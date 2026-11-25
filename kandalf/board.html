@@ -1161,6 +1161,21 @@ body.picking .card { cursor: pointer; position: relative; }
 #orgPanel .org-row .m-key { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); white-space: nowrap; }
 #orgPanel .org-new { margin-left: 6px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); font-size: 10px; letter-spacing: .04em; vertical-align: 1px; }
 #orgPanel .m-close { position: absolute; top: 8px; right: 8px; padding: 0 8px; line-height: 1.5; }
+dialog#splitDlg { width: min(560px, 94vw); max-height: 90vh; overflow-y: auto; }
+#splitBody h3 { margin: 0 0 8px; }
+#splitBody textarea, #splitBody input[type="text"] { width: 100%; box-sizing: border-box; font: inherit; }
+#splitBody textarea { resize: vertical; min-height: 3.4em; height: auto; }
+#splitBody .split-field, #splitBody .split-note, #splitBody .split-stays, #splitBody .split-none { display: block; color: var(--muted); margin: 6px 0; }
+#splitBody .split-why, #splitBody .split-error { color: var(--danger, #c0392b); margin: 6px 0; }
+#splitBody .split-rows { display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; margin: 8px 0; }
+#splitBody .split-row { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+#splitBody .split-row.off { opacity: .55; }
+#splitBody .split-head { display: flex; gap: 8px; align-items: center; }
+#splitBody .split-head input[type="text"] { font-weight: 600; }
+#splitBody .split-tasks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+#splitBody .split-tasks li.done { color: var(--muted); text-decoration: line-through; }
+#splitBody .split-moved { color: var(--muted); font-size: 11px; font-style: normal; text-decoration: none; display: inline-block; }
+#splitBody .split-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 10px; }
 #mapOrganize[aria-expanded="true"] { border-color: var(--accent); }
 #mapView aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 5px; font-weight: 700; }
 #mapView aside h2:first-child { margin-top: 0; }
@@ -1300,12 +1315,17 @@ applyTheme(themeNow, accentNow);
       <button type="button" class="danger" id="cardDelete">Delete</button>
       <button type="button" id="cardMode">Edit</button>
       <button type="button" id="cardAddKid" title="Save this tile, then start a new tile that is part of it. This tile becomes its master and shows its progress.">+ Sub-story</button>
+      <button type="button" id="cardSplit" title="Ask the agent to split this story into sub-stories; you review what it proposes before anything is written">Split…</button>
       <span class="spacer"></span>
       <span class="hint">⌘↵ to save</span>
       <button value="cancel" formnovalidate>Cancel</button>
       <button value="save" class="primary" id="cardSave">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="splitDlg" class="ask" tabindex="-1" aria-labelledby="splitHead">
+  <div class="dlg" id="splitBody"></div>
 </dialog>
 
 <dialog id="askDlg" class="ask">
@@ -2628,6 +2648,44 @@ function organizeFiledText(filed) {
   const keys = Object.keys(filed).sort(byKeyOrder), tos = new Set(keys.map(k => filed[k].to));
   if (keys.length === 1) return `${keys[0]} → ${filed[keys[0]].to}`;
   return tos.size === 1 ? `${keys.length} stories → ${[...tos][0]}` : `${keys.length} stories sorted into ${tos.size} domains`;
+}
+// Split: a story's card asks the agent to split it into sub-stories (/api/pickup's split, one run
+// per store: {state, key, title, note, rev, why, stories: [{title, description, tasks: [{text,
+// done, moved}]}], stays: [the story's sub-tasks no sub-story takes]}). What the card's Split
+// button reads for the story with this key: the run's state when the run is this story's.
+function splitLabel(run, key) {
+  if (!run || run.key !== key) return "Split…";
+  return { working: "Splitting…", ready: "Review split…", need: "Split didn't finish…" }[run.state] || "Split…";
+}
+// The review of a ready run: per proposed sub-story a tick (on unless its index is in off), its
+// title and description to edit, and its sub-tasks as they will be written (a moved one marked),
+// then a line for the story's sub-tasks that stay on it.
+function splitReviewHTML(run, off = new Set()) {
+  const task = t => `<li class="${t.done ? "done" : ""}">${t.done ? "☑" : "☐"} ${esc(t.text)}${t.moved ? ' <em class="split-moved">moved from the story</em>' : ""}</li>`;
+  const rows = (run.stories || []).map((s, i) => `<fieldset class="split-row${off.has(i) ? " off" : ""}" data-split-row="${i}">`
+    + `<div class="split-head"><input type="checkbox" data-split-on="${i}"${off.has(i) ? "" : " checked"} aria-label="Create sub-story ${i + 1}">`
+    + `<input type="text" data-split-title="${i}" value="${esc(s.title || "")}" aria-label="Title of sub-story ${i + 1}"></div>`
+    + `<textarea data-split-desc="${i}" rows="2" aria-label="Description of sub-story ${i + 1}" placeholder="What it does (optional)">${esc(s.description || "")}</textarea>`
+    + ((s.tasks || []).length ? `<ul class="split-tasks">${s.tasks.map(task).join("")}</ul>` : `<span class="split-none">No sub-tasks</span>`)
+    + `</fieldset>`).join("");
+  const stays = run.stays || [];
+  return `<div class="split-rows">${rows}</div>`
+    + (stays.length ? `<p class="split-stays">Stays on ${esc(run.key)}: ${esc(stays.join("; "))}</p>` : "");
+}
+// What Create sends /api/split/create for the review's rows ([{on, title, description}], as the
+// person left them, in the proposal's order): the ticked sub-stories with their edited title and
+// description and the proposal's sub-tasks, and the story's rev when the run read it, so a story
+// changed since writes nothing.
+function splitSend(run, rows) {
+  const stories = (run.stories || []).map((s, i) => [s, rows[i] || {}]).filter(([, r]) => r.on !== false)
+    .map(([s, r]) => ({ title: String(r.title ?? s.title ?? "").trim(), description: String(r.description ?? s.description ?? "").trim(),
+      tasks: (s.tasks || []).map(t => ({ text: t.text, done: !!t.done })) }));
+  return { key: run.key, expect: run.rev, stories };
+}
+// What the page says after Create, from its reply ({into, created: [keys]}).
+function splitCreatedText(reply) {
+  const k = reply.created || [], list = k.length < 2 ? k.join("") : `${k.slice(0, -1).join(", ")} and ${k[k.length - 1]}`;
+  return `${reply.into} split into ${list}.`;
 }
 // Where the map puts each story: {at: Map key -> {x, y, angle}, hubs: Map root key -> {R}}.
 // A master is a hub with its sub-stories on a ring round it (theirs fan out beyond), each
@@ -4165,6 +4223,120 @@ async function organizeAct(act) {
   }
 }
 orgPanel.addEventListener("click", e => { const b = e.target.closest("button[data-org-act]"); if (b) { e.stopPropagation(); organizeAct(b.dataset.orgAct); } });
+
+// Split…: the card's story split into sub-stories the agent proposes (one run per store, kept by
+// the server and told on /api/pickup's reply as split); Create writes the ones the person ticks.
+// spl: the key the box is open for, the sentence a refused start or Create gave, and what was
+// drawn (so a poll doesn't wipe a typed note, an edited title or the ticks).
+const spl = { key: null, error: "", sig: "" };
+const splitDlg = $("#splitDlg"), splitBody = $("#splitBody");
+const splitRun = () => pickups.split || null;
+// The card's Split button: on a keyed tile of the Build or Plan board, saying where a run for it stands,
+// and not to be pressed while another story's run is going.
+function splitButton() {
+  const b = $("#cardSplit"), key = editing?.card ? cardKey(editing.card) : null, run = splitRun();
+  b.classList.toggle("hidden", !key || isDocFile() || file === ARCHIVE_LOG || readonly);
+  if (!key) return;
+  const other = !!run && run.key !== key;
+  b.disabled = other;
+  b.title = other ? `A split of ${run.key} is under way: finish it first.` : `Ask ${AGENT_LABEL} to split this story into sub-stories; you review what it proposes before anything is written`;
+  b.textContent = splitLabel(run, key);
+}
+function splitDraw() {
+  splitButton();
+  if (!splitDlg.open) return;
+  const run = splitRun(), mine = run && run.key === spl.key ? run : null, state = mine?.state || null;
+  const sig = JSON.stringify([spl.key, spl.error, mine]) + (state === "working" ? ageText(Date.now() / 1000 - mine.started) : "");
+  if (sig === spl.sig) return;
+  const kept = splitBody.querySelector("#splitNote")?.value;
+  spl.sig = sig;
+  const key = esc(spl.key || ""), error = spl.error ? `<p class="split-error">${esc(spl.error)}</p>` : "";
+  let html;
+  if (!mine) {
+    html = `<h3 id="splitHead">Split ${key} into sub-stories</h3><p class="split-note">${esc(AGENT_LABEL)} reads the story's tile and its plan doc and proposes sub-stories. Nothing is written until you create them.</p>`
+      + `<label class="split-field" for="splitNote">Anything to tell ${esc(AGENT_LABEL)}? (optional)</label><textarea id="splitNote" rows="2" placeholder="e.g. one per screen, or separate the API from the UI"></textarea>`
+      + error + `<div class="split-acts"><button type="button" data-split-act="hide">Close</button><button type="button" class="primary" data-split-act="ask">Ask ${esc(AGENT_LABEL)}</button></div>`;
+  } else if (state === "working") {
+    const age = ageText(Date.now() / 1000 - mine.started);
+    html = `<h3 id="splitHead">Splitting…</h3><p class="split-note">${agentIcon()} ${esc(AGENT_LABEL)} is splitting ${key}${age ? ` (${age})` : ""}. You review what it proposes before anything is written.</p>`
+      + `<div class="split-acts"><button type="button" data-split-act="hide" title="Close this box; the split goes on">Hide</button><button type="button" data-split-act="end">Cancel</button></div>`;
+  } else if (state === "ready") {
+    html = `<h3 id="splitHead">Proposed sub-stories of ${key}</h3>${error}${splitReviewHTML(mine)}`
+      + `<p class="split-note">Each ticked one becomes a tile below ${key}, part of it. The story's sub-tasks they take leave it.</p>`
+      + `<div class="split-acts"><button type="button" data-split-act="end">Discard</button><button type="button" class="primary" data-split-act="create">Create</button></div>`;
+  } else {
+    html = `<h3 id="splitHead">The split didn't finish</h3><p class="split-why">${esc(mine.why || "It stopped without a proposal.")}</p>`
+      + `<div class="split-acts"><button type="button" data-split-act="end">Close</button><button type="button" class="primary" data-split-act="again">Try again</button></div>`;
+  }
+  splitBody.innerHTML = html;
+  if (kept !== undefined && splitBody.querySelector("#splitNote")) splitBody.querySelector("#splitNote").value = kept;
+}
+// POST to a split route; the reply's split is the run from then on. {error} (and changed) when it didn't work.
+async function splitPost(path, body = {}) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const reply = await r.json();
+    if (!r.ok) return { error: reply.error || `That didn't work (${r.status}).`, changed: reply.changed };
+    if ("split" in reply) pickups.split = reply.split ?? null;
+    return reply;
+  } catch { return { error: "That didn't work: server down?" }; }
+}
+async function splitStart(note) {
+  const got = await splitPost("/api/split", { key: spl.key, note });
+  spl.error = got.error || ""; spl.sig = "";
+  splitDraw();
+}
+async function splitAct(act) {
+  const run = splitRun();
+  if (act === "hide") { splitDlg.close(); return; }
+  if (act === "ask") {  // the server cuts the worktree and starts the session before it answers
+    const b = splitBody.querySelector('[data-split-act="ask"]');
+    b.disabled = true; b.textContent = "Starting…";
+    return splitStart(splitBody.querySelector("#splitNote").value);
+  }
+  if (act === "end" || act === "again") {
+    const got = await splitPost("/api/split/end");
+    if (got.error) return flash(got.error);
+    spl.error = ""; spl.sig = "";
+    if (act === "again") return splitStart(run?.note || "");
+    splitDlg.close();
+    return;
+  }
+  if (act === "create" && run?.state === "ready") {
+    if (dirty || saving) return flash("Save the board first.");
+    if (editing && $("#cardText").value !== editing.original) return flash("Save or cancel the card's edits first.");
+    const rows = (run.stories || []).map((_, i) => ({ on: !!splitBody.querySelector(`[data-split-on="${i}"]`)?.checked,
+      title: splitBody.querySelector(`[data-split-title="${i}"]`)?.value, description: splitBody.querySelector(`[data-split-desc="${i}"]`)?.value }));
+    const body = splitSend(run, rows);
+    if (!body.stories.length) return flash("Tick a sub-story to create, or press Discard.");
+    if (body.stories.some(s => !s.title)) return flash("Every sub-story needs a title.");
+    saving = true; setStatus("Splitting…");
+    const got = await splitPost(`/api/split/create?file=${encodeURIComponent(file)}`, body);
+    saving = false;
+    if (got.error) {
+      setStatus("Not done", true);
+      spl.error = got.changed ? `${run.key} has changed since ${AGENT_LABEL} read it, so nothing was created. Discard, and ask again for a proposal that fits the story as it is now.` : got.error;
+      spl.sig = ""; splitDraw();
+      if (got.changed && !dirty) reloadQuiet().catch(() => {});
+      return;
+    }
+    splitDlg.close();
+    if (dlg.open) dlg.close("cancel");
+    adopt(got); setStatus("Saved ✓ " + new Date().toLocaleTimeString()); render();
+    flash(splitCreatedText(got));
+  }
+}
+splitBody.addEventListener("click", e => { const b = e.target.closest("button[data-split-act]"); if (b) { e.preventDefault(); splitAct(b.dataset.splitAct); } });
+splitBody.addEventListener("change", e => { const on = e.target.closest("[data-split-on]"); if (on) on.closest(".split-row").classList.toggle("off", !on.checked); });
+splitDlg.addEventListener("close", () => { spl.sig = ""; });
+$("#cardSplit").addEventListener("click", () => {
+  const key = editing?.card && cardKey(editing.card);
+  if (!key) return;
+  if (spl.key !== key) spl.error = "";
+  spl.key = key; spl.sig = "";
+  splitDlg.showModal();
+  splitDraw();
+});
 mapSvg.addEventListener("pointerup", mapDrop);
 mapSvg.addEventListener("pointercancel", mapDrop);
 mapSvg.addEventListener("contextmenu", e => e.preventDefault());  // Ctrl-click is a drag here, not the Mac's menu
@@ -4529,7 +4701,7 @@ async function sendDraft(body) {
     const r = await fetch(`/api/draft?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...body }) });
     const j = await r.json();
     if (!r.ok) return flash((body.stop ? "Stop failed: " : "Draft failed: ") + (j.error || r.status));
-    pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, organize: j.organize ?? null };
+    pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, organize: j.organize ?? null, split: j.split ?? null };
     if (!body.stop) { againOpen.delete(key); delete draftNotes[key]; }
     render();
   } catch { flash("Draft failed: server down?"); }
@@ -4621,6 +4793,7 @@ function openCard(card, sec, kidOf) {
   fillCard(text);
   $("#cardDelete").classList.toggle("hidden", !card);
   $("#cardAddKid").classList.toggle("hidden", !card || !cardKey(card) || file === ARCHIVE_LOG);
+  splitButton();
   $("#cardModelLabel").classList.toggle("hidden", file === ARCHIVE_LOG);
   $("#cardBaseLabel").classList.toggle("hidden", file === ARCHIVE_LOG);
   $("#cardTestsLabel").classList.toggle("hidden", file === ARCHIVE_LOG);
@@ -4942,7 +5115,7 @@ const pickupId = job => `${job.key}@${job.at}`;
 async function postPickup(body, failed = `${AGENT} wasn't started`) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
-  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, boards: j.boards, renaming: j.renaming ?? null, organize: j.organize ?? null }; render(); }
+  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, boards: j.boards, renaming: j.renaming ?? null, organize: j.organize ?? null, split: j.split ?? null }; render(); }
   return r.ok ? j : (flash(`${failed}: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });
@@ -5057,7 +5230,7 @@ async function pollPickups() {
   const { poll, stories } = pollsFor(file, mapOn(), decisions);
   // A board the poll doesn't run on asks once when it opens, and again while there is a notice about the move.
   const again = pickupsAskedOn !== file || !!renamingNotice(pickups.renaming);
-  if ((!poll && !again) || document.hidden) return;
+  if ((!poll && !again && !pickups.split) || document.hidden) return;  // a split under way is followed on any board
   pickupsAskedOn = file;
   const next = await (await fetch("/api/pickup")).json();
   if (namesMoved(next.boards, NAMES)) {  // moved: start again on the new names, once nothing is unsaved
@@ -5068,6 +5241,7 @@ async function pollPickups() {
   const before = editing && dlg.open ? JSON.stringify(draftOf(cardKey(editing.card))) : "";
   pickups = next;
   organizeDraw();
+  splitDraw();
   if (stories) pickupsLoaded = true;  // only a poll that tells stories' news counts, so its first run tells none (as before drafts)
   if (editing && dlg.open && JSON.stringify(draftOf(cardKey(editing.card))) !== before) draftChanged(); else if (changed && editing && dlg.open) refreshOptions();
   if (stories) for (const job of pickups.jobs) {

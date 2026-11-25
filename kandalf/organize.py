@@ -14,6 +14,9 @@ per store at a time.
 The session can't reach the store: the store isn't linked into its worktree (the plan docs it
 reads are copies) and it runs without the store's hooks, so nothing it writes is committed.
   - look, busy, summary: the server's one pass over the run, and what it and the page are told
+
+The run's lifecycle (of, end, busy, _launch_run, _look) takes the ledger slot and the worktree's
+key, so a card's Split (split.py) runs the same way under its own slot.
 """
 
 import re
@@ -226,9 +229,12 @@ def why_not(store, **kw):
 
 
 # ---------- the run in the ledger ----------
-def of(store):
-    """The run in the ledger, or None."""
-    return ledger.Ledger(store).read().get("organize")
+SLOT = "organize"  # the run's key in the ledger's state
+
+
+def of(store, slot=SLOT):
+    """The run in the ledger (under slot), or None."""
+    return ledger.Ledger(store).read().get(slot)
 
 
 def _same(rec, run) -> bool:
@@ -236,11 +242,11 @@ def _same(rec, run) -> bool:
     return bool(rec) and rec.get("started") == run.get("started")
 
 
-def _set(store, run: dict, was: str, fields: dict) -> bool:
+def _set(store, run: dict, was: str, fields: dict, slot=SLOT) -> bool:
     """Set fields on the run's record if it is still in state was; a record that is no longer
     in need loses its why. False, with nothing changed, when it was ended meanwhile."""
     with ledger.Ledger(store).change() as state:
-        rec = state.get("organize")
+        rec = state.get(slot)
         if not _same(rec, run) or rec["state"] != was:
             return False
         rec.update(fields)
@@ -249,17 +255,18 @@ def _set(store, run: dict, was: str, fields: dict) -> bool:
         return True
 
 
-def _path(store) -> Path:
-    """Where the run's worktree goes in the main repo."""
-    return pickup.worktree(store, {"key": KEY, "title": ""}, store.main_repo)
+def _path(store, key=KEY) -> Path:
+    """Where the run's worktree goes in the main repo: where a story with this key would have its own."""
+    return pickup.worktree(store, {"key": key, "title": ""}, store.main_repo)
 
 
-def _cut_worktree(store) -> Path:
+def _cut_worktree(store, key=KEY, who="a sort") -> Path:
     """A detached worktree of the main repo's trunk at the run's path. What is there already is
     cleared only when it is a detached worktree (drafts.clear_for); anything else, or other
-    trouble, raises RuntimeError with git's words or a plain sentence naming the path."""
-    repo, path = store.main_repo, _path(store)
-    drafts.clear_for(repo.path, path, "a sort")
+    trouble, raises RuntimeError with git's words or a plain sentence naming the path. who: what
+    cuts it, as the refusal says it."""
+    repo, path = store.main_repo, _path(store, key)
+    drafts.clear_for(repo.path, path, who)
     pickup._git(repo.path, "worktree", "prune")
     pickup.keep_out(repo.path, path)
     made = pickup._git(repo.path, "worktree", "add", "--detach", str(path), repo.trunk)
@@ -314,33 +321,44 @@ def start(store, note, refile: bool, *, sessions) -> dict:
            "stories": [{"key": s["key"], "title": s["title"], "domain": s["domain"]} for s in chosen],
            "repo": store.main_repo.name, "worktree": str(_path(store))}
     with ledger.Ledger(store).change() as state:
-        if state.get("organize"):
-            raise Refused(STILL_ENDING if state["organize"]["state"] == "ending" else "A sort is already under way: finish it or cancel it first.")
+        if state.get(SLOT):
+            raise Refused(STILL_ENDING if state[SLOT]["state"] == "ending" else "A sort is already under way: finish it or cancel it first.")
         if not chosen:
             raise Refused("There are no stories to sort." if refile else
                           "Every story is in a domain already; tick Re-sort filed stories too to sort them again.")
-        state["organize"] = dict(run)
+        state[SLOT] = dict(run)
+    args = pickup.session_args({"key": "Organize", "title": "domains", "model": store.model})
+    return _launch_run(store, run, sessions=sessions, docs=chosen, args=args,
+                       text=lambda: prompt(store, chosen, domains(snap), note))
+
+
+def _launch_run(store, run: dict, *, sessions, docs, args, text, slot=SLOT, key=KEY, who="a sort") -> dict:
+    """The rest of a start, once the run is recorded working under slot: a detached worktree of
+    the main repo cut at the key's path (_cut_worktree), the plan docs of docs ([{"doc"}])
+    copied in (_copy_docs), and one background session started there (_launch) with text()
+    for its prompt. The record as it then is: working with the session's id, or need with why
+    when the worktree or the session didn't come (any worktree cut is removed again); one ended
+    while it started is ending, and what started goes too."""
     cut = None
     try:
-        cut = _cut_worktree(store)
-        _copy_docs(store, cut, chosen)
-        args = pickup.session_args({"key": "Organize", "title": "domains", "model": store.model})
-        launched = _launch(store, args, cut, prompt(store, chosen, domains(snap), note))
+        cut = _cut_worktree(store, key, who)
+        _copy_docs(store, cut, docs)
+        launched = _launch(store, args, cut, text())
         failed = None if launched["state"] == "started" else f"The session didn't start: {launched.get('error') or 'no reason given'}"
     except Exception as e:  # git's trouble, or anything else
         launched, failed = {}, f"The worktree couldn't be made: {e}" if cut is None else f"The session didn't start: {e}"
     if failed:
         stayed = cut is not None and drafts._drop(store.main_repo.path, cut)
-        _set(store, run, "working", {"state": "need", "why": failed, **({} if stayed else {"worktree": None, "tidied": True})})
-        return of(store) or {**run, "state": "need", "why": failed}
+        _set(store, run, "working", {"state": "need", "why": failed, **({} if stayed else {"worktree": None, "tidied": True})}, slot)
+        return of(store, slot) or {**run, "state": "need", "why": failed}
     fields = {"id": launched["id"], "session": launched.get("session")}
-    if not _set(store, run, "working", fields):  # cancelled while it started: what started goes too
-        _tidy(store, {**run, **fields}, sessions)
+    if not _set(store, run, "working", fields, slot):  # cancelled while it started: what started goes too
+        _tidy(store, {**run, **fields}, sessions, slot)
         return {**run, **fields, "state": "ending"}
-    return of(store)
+    return of(store, slot)
 
 
-def _tidy(store, run: dict, sessions) -> bool:
+def _tidy(store, run: dict, sessions, slot=SLOT) -> bool:
     """Retire the run's session (it must then be gone from the session list) and remove its
     worktree with what it changed. A path git doesn't list as a detached worktree of the main
     repo is not the run's: it is left alone, and said on pickup's log. False when the session is
@@ -363,41 +381,41 @@ def _tidy(store, run: dict, sessions) -> bool:
         return True
     if block is not None and "detached" in block:
         return not drafts._drop(repo.path, path)
-    pickup.log(f"organize: left {path} alone, it is not a worktree this run cut")
+    pickup.log(f"{slot}: left {path} alone, it is not a worktree this run cut")
     return True
 
 
-def end(store, *, sessions) -> bool:
+def end(store, *, sessions, slot=SLOT) -> bool:
     """End the run, in any state: marked ending first (so a crash part-way leaves it findable),
     its session retired and worktree removed (_tidy), then its record taken out. True when it is
     gone, as it is when there was none; a step that doesn't finish leaves it ending and gives
     False, for a later look to finish."""
     with ledger.Ledger(store).change() as state:
-        rec = state.get("organize")
+        rec = state.get(slot)
         if not rec:
             return True
         rec["state"] = "ending"
         run = dict(rec)
-    if not run.get("tidied") and not _tidy(store, run, sessions):
+    if not run.get("tidied") and not _tidy(store, run, sessions, slot):
         return False
     with ledger.Ledger(store).change() as state:
-        if _same(state.get("organize"), run):
-            del state["organize"]
+        if _same(state.get(slot), run):
+            del state[slot]
     return True
 
 
 # ---------- the look ----------
-def busy(store, rec=None) -> bool:
+def busy(store, rec=None, slot=SLOT) -> bool:
     """Whether the run needs looking at again soon: at work, being ended, or done with but not
     yet tidied up. rec: the record (of), when the caller has read it already."""
-    rec = of(store) if rec is None else rec
+    rec = of(store, slot) if rec is None else rec
     return bool(rec) and (rec["state"] in ("working", "ending") or not rec.get("tidied"))
 
 
-def _output(run: dict):
-    """The text of the run's ORGANIZE.md, or None when there is none."""
+def _output(run: dict, name=OUTPUT):
+    """The text of the file the run's session writes (name, at its worktree's top), or None when there is none."""
     try:
-        return (Path(run["worktree"]) / OUTPUT).read_text(encoding="utf-8", errors="replace") if run.get("worktree") else None
+        return (Path(run["worktree"]) / name).read_text(encoding="utf-8", errors="replace") if run.get("worktree") else None
     except OSError:
         return None
 
@@ -431,11 +449,19 @@ def look(store, *, sessions) -> list:
     that said, and idle or gone from the list needs you (no file, or no move); a list that
     can't be read changes nothing. A run that leaves working has its session
     retired and worktree removed, then or on a later look. The lines to log."""
-    rec = of(store)
+    return _look(store, sessions=sessions, read=lambda rec, text: _proposal(store, rec, text),
+                 ready=lambda fields: f"{len(fields['moves'])} moves ready to review")
+
+
+def _look(store, *, sessions, read, ready, slot=SLOT, output=OUTPUT) -> list:
+    """look, for the run under slot whose session writes output: read(rec, text) gives the
+    fields of a run whose file says text (state ready, or need with why), and ready(fields) the
+    words logged when it is ready."""
+    rec = of(store, slot)
     if not rec:
         return []
     if rec["state"] == "ending":
-        return ["organize: the run is ended"] if end(store, sessions=sessions) else []
+        return [f"{slot}: the run is ended"] if end(store, sessions=sessions, slot=slot) else []
     said = []
     if rec["state"] == "working":
         if sessions.now() - rec.get("started", 0) < ledger.SETTLE:
@@ -447,8 +473,8 @@ def look(store, *, sessions) -> list:
         seen = listing.get(sid) if sid else None
         if seen == "busy":
             return said
-        text = _output(rec)
-        fields = _proposal(store, rec, text) if text is not None else None
+        text = _output(rec, output)
+        fields = read(rec, text) if text is not None else None
         waits = None
         if not (fields and fields["state"] == "ready") and seen:
             waits = sessions.why(sid)
@@ -459,15 +485,15 @@ def look(store, *, sessions) -> list:
         elif waits:
             fields = {"state": "need", "why": f"{agent.label()} stopped before it finished: {ledger.WAITING.get(waits, ledger.WAITING['question'])}."}
         elif fields is None:
-            fields = {"state": "need", "why": f"The session is gone and wrote no {OUTPUT}." if seen is None
-                      else f"The session finished without writing {OUTPUT}."}
-        if not _set(store, rec, "working", fields):
+            fields = {"state": "need", "why": f"The session is gone and wrote no {output}." if seen is None
+                      else f"The session finished without writing {output}."}
+        if not _set(store, rec, "working", fields, slot):
             return said
-        said.append(f"organize: {len(fields['moves'])} moves ready to review" if fields["state"] == "ready"
-                    else f"organize: the run needs you: {fields['why']}")
-        rec = of(store)
-    if rec and rec["state"] in ("ready", "need") and not rec.get("tidied") and _tidy(store, rec, sessions):
-        _set(store, rec, rec["state"], {"tidied": True, "worktree": None})
+        said.append(f"{slot}: {ready(fields)}" if fields["state"] == "ready"
+                    else f"{slot}: the run needs you: {fields['why']}")
+        rec = of(store, slot)
+    if rec and rec["state"] in ("ready", "need") and not rec.get("tidied") and _tidy(store, rec, sessions, slot):
+        _set(store, rec, rec["state"], {"tidied": True, "worktree": None}, slot)
     return said
 
 

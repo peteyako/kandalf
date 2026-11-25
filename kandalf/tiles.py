@@ -823,6 +823,65 @@ def repoint(store, md: str, absorbed, into: str) -> str:
     return "\n".join(lines)
 
 
+# ---------- splitting a story ----------
+# Not read in board.html: the page sends the server the sub-stories to write.
+def task_key(text: str) -> str:
+    """A sub-task's text as a split matches it: lower case, spaces collapsed, no full stop at the end."""
+    return " ".join(text.split()).rstrip(".").strip().lower()
+
+
+def subtasks(md: str) -> list:
+    """A tile's own sub-tasks, in order: [{"text", "done"}], the text of each one's checkbox line
+    (the lines indented under it are left out)."""
+    lines = md.split("\n")
+    out = []
+    for a, _ in _subtasks(lines):
+        line = lines[a]
+        out.append({"text": SUBTASK_RE.sub("", line).strip(), "done": line.lstrip()[3] in "xX"})
+    return out
+
+
+def subtask_lines(md: str) -> dict:
+    """{task_key: the lines of that sub-task (its checkbox line and the lines under it)} for a
+    tile's own sub-tasks; the first of two that match wins."""
+    lines, out = md.split("\n"), {}
+    for a, b in _subtasks(lines):
+        out.setdefault(task_key(SUBTASK_RE.sub("", lines[a])), lines[a:b])
+    return out
+
+
+def without_subtasks(md: str, keys) -> str:
+    """A tile's markdown without its own sub-tasks whose task_key is in keys (each with the lines
+    under it); every other line, and every other sub-task's tick, as it was."""
+    lines, keys = md.split("\n"), set(keys)
+    drop = {i for a, b in _subtasks(lines) if task_key(SUBTASK_RE.sub("", lines[a])) in keys for i in range(a, b)}
+    return "\n".join(x for i, x in enumerate(lines) if i not in drop)
+
+
+def story_title(raw: str) -> str:
+    """A title as a new tile's bold takes it: on one line, without asterisks, backticks or a full
+    stop or colon at the end; "" when nothing is left."""
+    return " ".join(raw.replace("*", "").replace("`", "").split()).rstrip(".:").strip()
+
+
+def sub_story(key: str, master: str, title: str, description: str, tasks) -> str:
+    """A new sub-story's markdown: "- [ ] KEY **Title.** Part of MASTER. Description" on one line
+    (the title as story_title gives it, the description with its line breaks folded), then its
+    sub-tasks, each given as its lines (a checkbox line and any lines under it) or as
+    {"text", "done"}, indented as a tile's are. No Domain or Repos line: a sub-story takes its master's."""
+    title = story_title(title)
+    end = "" if title.endswith(("?", "!")) else "."
+    first = f"- [ ] {key} **{title}{end}** Part of {master}."
+    words = " ".join(description.split())
+    out = [f"{first} {words}" if words else first]
+    for task in tasks:
+        if isinstance(task, dict):
+            out.append(f"  - [{'x' if task.get('done') else ' '}] {' '.join(str(task.get('text') or '').split())}")
+        else:
+            out += task
+    return "\n".join(out)
+
+
 def with_tile(store, text: str, key: str, md: str) -> str:
     """The board with the tile that has this key replaced by md; a board with no such tile comes
     back as it was."""

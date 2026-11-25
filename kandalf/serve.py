@@ -26,6 +26,10 @@ person ticks through /api/domain. /api/organize/end ends the run.
 
 Two or more stories can be combined into one (/api/combine): the others go to the archive log.
 
+A story's card can ask the agent to split it into sub-stories (/api/split): a session proposes,
+the split turn of the watch reads the proposal (split.py), and the page's Create writes the
+sub-stories the person ticks (/api/split/create). /api/split/end ends the run.
+
 Tiles that say "Moves with KEY-NN" are linked: the page moves them together, and asks
 this server for the ones on the other board (/api/move takes them along, /api/pull
 fetches them).
@@ -63,6 +67,7 @@ from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
 from . import drafts  # noqa: E402  a decision's options, drafted by a session
 from . import organize  # noqa: E402  the map's stories sorted into domains by a session
+from . import split  # noqa: E402  a story split into sub-stories proposed by a session
 from . import jobs as ledger  # noqa: E402  board-pickup.json, the record of each pickup job
 from . import renaming  # noqa: E402  the move from plans.md and backlog.md to build.md and plan.md
 from . import store as stores  # noqa: E402  which store, and its settings
@@ -355,6 +360,8 @@ PICKUP_RECHECK = 20  # seconds between looks at the sessions while a job waits o
 DRAFTS_ASKED = threading.Event()
 # Set by /api/organize and /api/organize/end so the organize turn looks at once; the turn clears it.
 ORGANIZE_ASKED = threading.Event()
+# Set by /api/split and /api/split/end so the split turn looks at once; the turn clears it.
+SPLIT_ASKED = threading.Event()
 
 
 _listed = {"by": None, "at": 0.0, "sessions": None}  # the last listing recent_sessions made, by which adapter
@@ -370,11 +377,13 @@ def recent_sessions():
 
 
 def pickup_reply(store) -> dict:
-    """What /api/pickup, /api/draft and /api/organize answer: pickup.summary (its notice about the
-    move going by recent_sessions), with the drafts (drafts.summary), why Draft options can't run
-    (drafts.why_not, or None) and the map's sorting run (organize.summary, or None)."""
+    """What /api/pickup, /api/draft, /api/organize and /api/split answer: pickup.summary (its
+    notice about the move going by recent_sessions), with the drafts (drafts.summary), why Draft
+    options can't run (drafts.why_not, or None), the map's sorting run (organize.summary, or
+    None) and a card's split run (split.summary, or None)."""
     return {**pickup.summary(store, sessions=pickup.Sessions(sessions=recent_sessions)),
-            "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store), "organize": organize.summary(store)}
+            "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store), "organize": organize.summary(store),
+            "split": split.summary(store)}
 
 
 def write_options(store, key: str, block: list, subject: str):
@@ -547,6 +556,83 @@ def combine_stories(store, keys, into, expect=None) -> tuple:
     gitlog.record(store, paths, f"board: {', '.join(others)} combined into {into}", subject=True)
     end_drafts(store, others)
     return 200, {"combined": others, "into": into}
+
+
+def split_story(store, key, stories, expect=None) -> tuple:
+    """Split a story: stories is the list of sub-stories to write, [{title, description, tasks:
+    [{text, done}]}], in order. Each gets the next free key (one past the highest key on a tile
+    line of the boards and the archive log, so keys are never reused) and a Part of line, and
+    goes in the story's board and column, directly below it (tiles.sub_story). A task that
+    matches one of the story's own sub-tasks (tiles.task_key) is moved: it leaves the story and
+    goes over as the story has it, its tick and the lines under it kept; any other is new. The
+    story's other sub-tasks stay as they are. One commit, "board: PLN-72 split into PLN-90,
+    PLN-91". expect, when given, is the story's rev as the run read it (Snapshot.index). Returns
+    (200, {into, created: [keys]}), (400, {error}) when the request isn't one, (409, {error})
+    when the story can't be split (split.refusal), or (409, {error: "changed since", changed:
+    [key]}) when the story differs from expect, with nothing written."""
+    if not isinstance(key, str) or not isinstance(stories, list) or not all(isinstance(s, dict) for s in stories):
+        return 400, {"error": "Say which story to split, and into what."}
+    if not stories:
+        return 400, {"error": "Tick a sub-story to create, or press Discard."}
+    for s in stories:
+        if not isinstance(s.get("title"), str) or not reader.story_title(s["title"]):
+            return 400, {"error": "Every sub-story needs a title."}
+        if not isinstance(s.get("description") or "", str) or not isinstance(s.get("tasks") or [], list):
+            return 400, {"error": "Say which story to split, and into what."}
+    snap = reader.Snapshot.read(store)
+    why = split.refusal(store, snap, key)
+    if why:
+        return 409, {"error": why}
+    if expect is not None and snap.index()[key]["rev"] != expect:
+        return 409, {"error": "changed since", "changed": [key]}
+    name, master = snap.index()[key]["file"], snap.tile(key).text
+    own = reader.subtask_lines(master)
+    n = max((x for text in snap.files.values() for x in reader.numbers(store, text)), default=0)
+    keys, mds, moved = [], [], set()
+    for s in stories:
+        n += 1
+        keys.append(store.fmt(n))
+        tasks = []
+        for t in s.get("tasks") or []:
+            if not isinstance(t, dict) or not str(t.get("text") or "").strip():
+                continue
+            k = reader.task_key(str(t["text"]))
+            if k not in own:  # a new sub-task
+                tasks.append(t)
+            elif k not in moved:  # the story's own, moved with its tick and the lines under it; only once
+                moved.add(k)
+                tasks.append(own[k])
+        mds.append(reader.sub_story(keys[-1], key, s["title"], s.get("description") or "", tasks))
+    text = reader.with_tile(store, snap.files[name], key, reader.without_subtasks(master, moved))
+    text = reader.insert_after(store, text, key, mds)
+    write_atomic(store.dir / name, text)
+    gitlog.record(store, [store.dir / name], f"board: {key} split into {', '.join(keys)}", subject=True)
+    return 200, {"into": key, "created": keys}
+
+
+def split_request(store, data: dict) -> tuple:
+    """The status and reply for /api/split. Body: {key, note} starts a run (split.start); one
+    refused says why (409). A start that fails part-way is recorded as a run that needs you, so
+    the reply is pickup_reply's either way, and the split turn looks on its next turn."""
+    try:
+        split.start(store, str(data.get("key") or ""), str(data.get("note") or ""), sessions=SESSIONS)
+    except split.Refused as e:
+        return 409, {"error": str(e)}
+    SPLIT_ASKED.set()
+    return 200, pickup_reply(store)
+
+
+def split_end(store) -> tuple:
+    """The status and reply for /api/split/end (Cancel, Discard, Close): the run ended in any
+    state (split.end), and with none there is nothing to do. One whose ending stops part-way is
+    left ending for the split turn; the page is told no run either way."""
+    try:
+        if not split.end(store, sessions=SESSIONS):
+            pickup.log("split: the run is ending; a later look finishes it")
+    except Exception as e:  # marked ending first, so the look finishes it
+        pickup.log(f"split: the run could not be ended yet, so a later look ends it: {e}")
+    SPLIT_ASKED.set()
+    return 200, pickup_reply(store)
 
 
 def end_drafts(store, keys):
@@ -783,27 +869,45 @@ def look_organize(store):
         pickup.log(line)
 
 
-def watch_organize_turn(store, ctx: dict):
-    """One turn of the organize watch, whether or not pickup is on: with a run that is busy
-    (organize.busy), a look (look_organize) when one was just asked for or ended
-    (ORGANIZE_ASKED), or PICKUP_RECHECK seconds have passed since the last look, or its
-    ORGANIZE.md changed since the last look and is as it was a turn ago (settled). ctx carries
-    o_last (when it last looked), o_seen (the file's mtime then) and o_before (a turn ago)."""
-    ctx.setdefault("o_last", 0.0)
-    asked = ORGANIZE_ASKED.is_set()
-    if asked:
-        ORGANIZE_ASKED.clear()
-    rec = organize.of(store)
-    if not rec or not organize.busy(store, rec):
+def watch_run_turn(run, asked: threading.Event, look, store, ctx: dict, tag: str):
+    """One turn of a session run's watch (run: organize or split), whether or not pickup is on:
+    with a run that is busy (run.busy), a look (look(store)) when one was just asked for or ended
+    (asked), or PICKUP_RECHECK seconds have passed since the last look, or the file its session
+    writes (run.OUTPUT) changed since the last look and is as it was a turn ago (settled). ctx
+    carries <tag>last (when it last looked), <tag>seen (the file's mtime then) and <tag>before
+    (a turn ago)."""
+    last, seen, before = tag + "last", tag + "seen", tag + "before"
+    ctx.setdefault(last, 0.0)
+    was_asked = asked.is_set()
+    if was_asked:
+        asked.clear()
+    rec = run.of(store)
+    if not rec or not run.busy(store, rec):
         return
     try:
-        at = (Path(rec["worktree"]) / organize.OUTPUT).stat().st_mtime_ns if rec.get("worktree") else None
+        at = (Path(rec["worktree"]) / run.OUTPUT).stat().st_mtime_ns if rec.get("worktree") else None
     except OSError:
         at = None
-    settled, ctx["o_before"] = at == ctx.get("o_before"), at
-    if asked or time.time() - ctx["o_last"] > PICKUP_RECHECK or (settled and at != ctx.get("o_seen")):
-        ctx["o_last"], ctx["o_seen"] = time.time(), at
-        look_organize(store)
+    settled, ctx[before] = at == ctx.get(before), at
+    if was_asked or time.time() - ctx[last] > PICKUP_RECHECK or (settled and at != ctx.get(seen)):
+        ctx[last], ctx[seen] = time.time(), at
+        look(store)
+
+
+def watch_organize_turn(store, ctx: dict):
+    """One turn of the organize watch (watch_run_turn, asked by ORGANIZE_ASKED; ctx's o_ keys)."""
+    watch_run_turn(organize, ORGANIZE_ASKED, look_organize, store, ctx, "o_")
+
+
+def look_split(store):
+    """One split.look, its lines on the console."""
+    for line in split.look(store, sessions=SESSIONS):
+        pickup.log(line)
+
+
+def watch_split_turn(store, ctx: dict):
+    """One turn of the split watch (watch_run_turn, asked by SPLIT_ASKED; ctx's s_ keys)."""
+    watch_run_turn(split, SPLIT_ASKED, look_split, store, ctx, "s_")
 
 
 def old_board_mtimes(store) -> tuple:
@@ -845,8 +949,9 @@ def watch_move_turn(store, ctx: dict):
 def watch_pickups(store, every: float = 2.0):
     """Forever, from the server's start: move the store to Plan and Build if it is due and free
     to, say what is in flight, adopt what has no session when pickup can run, look at the drafts
-    and the organize run once, then a watch_move_turn, a watch_drafts_turn, a
-    watch_organize_turn and a watch_turn every few seconds, so pickup follows board.json."""
+    and the organize and split runs once, then a watch_move_turn, a watch_drafts_turn, a
+    watch_organize_turn, a watch_split_turn and a watch_turn every few seconds, so pickup
+    follows board.json."""
     moving = {"m_before": old_board_mtimes(store)}  # at the start nothing of the server's is being written
     watch_move_turn(store, moving)
     report_in_flight(store)
@@ -868,6 +973,11 @@ def watch_pickups(store, every: float = 2.0):
             look_organize(store)
     except Exception as e:
         pickup.log(f"the organize look at the start failed: {e}")
+    try:  # the same for a split
+        if split.of(store):
+            look_split(store)
+    except Exception as e:
+        pickup.log(f"the split look at the start failed: {e}")
     while True:
         watch_move_turn(store, ctx)  # first, so the turns after it read the store as it is now
         try:
@@ -878,6 +988,10 @@ def watch_pickups(store, every: float = 2.0):
             watch_organize_turn(store, ctx)
         except Exception as e:  # nor a bad organize turn
             pickup.log(f"the organize turn failed: {e}")
+        try:
+            watch_split_turn(store, ctx)
+        except Exception as e:  # nor a bad split turn
+            pickup.log(f"the split turn failed: {e}")
         try:
             watch_turn(store, ctx)
         except Exception as e:  # nor a bad turn
@@ -1513,6 +1627,23 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/organize/end":  # Cancel, Discard, Close, and after Apply
             status, reply = organize_end(self.store)
             return self.send_json(status, reply)
+        if u.path == "/api/split":  # {key, note}: a card's Ask button under Split
+            status, reply = split_request(self.store, self.read_body())
+            return self.send_json(status, reply)
+        if u.path == "/api/split/end":  # Cancel, Discard, Close
+            status, reply = split_end(self.store)
+            return self.send_json(status, reply)
+        if u.path == "/api/split/create":  # {key, expect: rev, stories: [{title, description, tasks}]}: Create
+            p = self.target(parse_qs(u.query))
+            if p is None or not p.is_file() or p.parent != self.plans:
+                return self.send_json(404, {"error": "no such board"})
+            data = self.read_body()
+            status, reply = split_story(self.store, data.get("key"), data.get("stories"), data.get("expect"))
+            if status != 200:
+                return self.send_json(status, reply)
+            if (split.of(self.store) or {}).get("key") == reply["into"]:
+                split_end(self.store)
+            return self.send_json(status, {**self.board_reply(p), **reply, "split": split.summary(self.store)})
         if u.path == "/api/settings":  # {mtime, changes}: the settings panel's Save
             return self.save_settings(self.read_body())
         self.send_json(404, {"error": "not found"})

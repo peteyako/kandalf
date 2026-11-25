@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -1700,4 +1700,40 @@ test("the combine dialog lists the stories, ticks the first as the one that stay
   assert.match(said, /archive/);
   assert.match(said, /no Undo/i);
   assert.match(page.combineBody(["PLN-72", "PLN-73"], "PLN-73", index)[1], /value="PLN-73" checked/);
+});
+
+// A split run as /api/pickup tells it, ready to review.
+const SPLIT_RUN = { state: "ready", key: "PLN-72", title: "Checkout", rev: "abc123", note: null, stays: ["receipts"],
+  stories: [{ title: "Card form", description: "Build the <card> form.", tasks: [{ text: "card form", done: false, moved: true }, { text: "Validate the expiry", done: false, moved: false }] },
+            { title: "Refunds", description: "", tasks: [{ text: "refund API", done: true, moved: true }] }] };
+
+test("the card's Split button says where a run for its story stands", () => {
+  assert.equal(page.splitLabel(null, "PLN-72"), "Split…");
+  assert.equal(page.splitLabel({ ...SPLIT_RUN, state: "working" }, "PLN-72"), "Splitting…");
+  assert.equal(page.splitLabel(SPLIT_RUN, "PLN-72"), "Review split…");
+  assert.equal(page.splitLabel({ ...SPLIT_RUN, state: "need" }, "PLN-72"), "Split didn't finish…");
+  assert.equal(page.splitLabel(SPLIT_RUN, "PLN-80"), "Split…");  // another story's run
+});
+
+test("the split review lists each sub-story ticked with its title and description to edit, its sub-tasks and what stays", () => {
+  const html = page.splitReviewHTML(SPLIT_RUN);
+  assert.equal((html.match(/data-split-on="\d" checked/g) || []).length, 2);
+  assert.match(html, /<input type="text" data-split-title="0" value="Card form"/);
+  assert.match(html, /<textarea data-split-desc="0"[^>]*>Build the &lt;card&gt; form\.<\/textarea>/);
+  assert.match(html, /<li class="">☐ card form <em class="split-moved">moved from the story<\/em><\/li>/);
+  assert.match(html, /<li class="">☐ Validate the expiry<\/li>/);
+  assert.match(html, /<li class="done">☑ refund API/);
+  assert.match(html, /Stays on PLN-72: receipts/);
+  assert.match(page.splitReviewHTML(SPLIT_RUN, new Set([1])), /class="split-row off" data-split-row="1"><div class="split-head"><input type="checkbox" data-split-on="1" aria-label/);
+  assert.doesNotMatch(page.splitReviewHTML({ ...SPLIT_RUN, stays: [] }), /Stays on/);
+});
+
+test("Create sends the ticked sub-stories with their edited titles and descriptions, the proposal's sub-tasks and the story's rev", () => {
+  const body = page.splitSend(SPLIT_RUN, [{ on: true, title: "  Card form and checks ", description: " Take a card. " }, { on: false, title: "Refunds", description: "" }]);
+  assert.deepEqual(body, { key: "PLN-72", expect: "abc123", stories: [{ title: "Card form and checks", description: "Take a card.",
+    tasks: [{ text: "card form", done: false }, { text: "Validate the expiry", done: false }] }] });
+  const all = page.splitSend(SPLIT_RUN, [{ on: true }, { on: true, title: "Money back", description: "Give it back." }]);
+  assert.deepEqual(all.stories.map(s => [s.title, s.description]), [["Card form", "Build the <card> form."], ["Money back", "Give it back."]]);
+  assert.deepEqual(all.stories[1].tasks, [{ text: "refund API", done: true }]);
+  assert.equal(page.splitCreatedText({ into: "PLN-72", created: ["PLN-90", "PLN-91", "PLN-92"] }), "PLN-72 split into PLN-90, PLN-91 and PLN-92.");
 });
