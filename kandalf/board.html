@@ -1067,6 +1067,8 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 .card .pick { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--accent); }
 .card.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
 body.picking .card { cursor: pointer; position: relative; }
+.ask #combineTitle { width: 100%; box-sizing: border-box; margin: 2px 0; }
+.ask #combineUse { margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combine-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
 :root #fileSel button:disabled { opacity: .4; cursor: default; }
 #viewSel[hidden], #mapView[hidden] { display: none; }
@@ -2528,6 +2530,20 @@ function combineBody(keys, into, index) {
   return [`Combine these ${keys.length} stories into one. The one you pick stays, with its key and title:`, rows.join(""),
     "It takes in the others' descriptions, sub-tasks and links; the others move to the archive, marked as combined into it, and stay there. There is no Undo (git history has the rest)."];
 }
+// The dialog's Title field, first in it: filled with the title of the story that stays (the person's
+// to change), with a note beside it for the agent's suggestion and a button, hidden, to take it.
+function combineTitleHTML(into, index) {
+  return `<label for="combineTitle"><b>Title</b></label> <input id="combineTitle" type="text" maxlength="120" autocomplete="off" value="${esc(index.get(into)?.title ?? "")}">`
+    + ` <span id="combineNote" class="ask-note"></span><br><button type="button" id="combineUse" hidden></button>`;
+}
+// What the agent's reply (POST /api/combine/title: {title} or {title: null, why}, or null when the
+// request failed) does to the Title field: {fill: what the field takes, note, offer: what the Use
+// button offers}. A field the person has typed in (`touched`) is never filled, only offered.
+function suggestionFor(reply, touched, label) {
+  const title = typeof reply?.title === "string" ? reply.title.trim() : "";
+  if (!title) return { fill: null, note: reply?.why || "No suggestion: the agent didn't answer.", offer: null };
+  return { fill: touched ? null : title, note: `Suggested by ${label}`, offer: touched ? title : null };
+}
 // A new selection with the key added, or taken out when it was in.
 const mapToggle = (sel, key) => { const out = new Set(sel); if (!out.delete(key)) out.add(key); return out; };
 // A Shift-click's new selection: a selected key taken out, shown or not, and an unselected one
@@ -3554,14 +3570,32 @@ async function combineStories(keys) {
   if (!combineShown(keys)) return;
   if (dirty || saving) return flash("Save the board first.");
   const index = tileIndex();
-  const yes = await ask({ title: "Combine stories", body: combineBody(keys, keys[0], index), ok: "Combine" });
+  const asking = ask({ title: "Combine stories", body: [combineTitleHTML(keys[0], index), ...combineBody(keys, keys[0], index)], ok: "Combine" });
+  const field = $("#combineTitle"), note = $("#combineNote"), use = $("#combineUse");
+  let touched = false;
+  field.addEventListener("input", () => { touched = true; use.hidden = true; });
+  field.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#askOk").click(); } });
+  use.addEventListener("click", () => { field.value = use.dataset.title; use.hidden = true; note.textContent = `Suggested by ${AGENT_LABEL}`; field.focus(); });
+  for (const radio of document.querySelectorAll('#askBody input[name="combineInto"]'))
+    radio.addEventListener("change", () => { if (!touched) field.value = index.get(radio.value)?.title ?? ""; });
+  note.textContent = `Asking ${AGENT_LABEL}…`;
+  fetch(`/api/combine/title?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys }) })
+    .then(r => r.json()).catch(() => null).then(reply => {
+      if (!askDlg.open || !field.isConnected) return;
+      const got = suggestionFor(reply, touched, AGENT_LABEL);
+      note.textContent = got.note;
+      if (got.fill !== null) field.value = got.fill;
+      if (got.offer) { use.dataset.title = got.offer; use.textContent = `Use "${got.offer}"`; use.hidden = false; }
+    });
+  const yes = await asking;
   if (!yes) return;
   const into = document.querySelector('#askBody input[name="combineInto"]:checked')?.value || keys[0];
+  const title = field.value.trim();
   const expect = Object.fromEntries(keys.filter(k => serverTiles[k]?.rev).map(k => [k, serverTiles[k].rev]));
   saving = true; setStatus("Combining…");
   let reply = null;
   try {
-    const r = await fetch(`/api/combine?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys, into, expect }) });
+    const r = await fetch(`/api/combine?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys, into, expect, ...(title && title !== (index.get(into)?.title ?? "") ? { title } : {}) }) });
     reply = await r.json();
     if (!r.ok) {
       flash(reply.changed ? `Not combined: ${reply.changed.join(", ")} changed since the board was read.` : reply.error || `That didn't work (${r.status}).`);

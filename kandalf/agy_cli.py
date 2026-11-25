@@ -214,6 +214,13 @@ def start(args, cwd, permission: str, text: str, dirs=()) -> dict:
     return {"id": short}
 
 
+# ---------- a one-shot question ----------
+def ask(text: str, cwd, timeout: int = 45) -> None:
+    """Antigravity has no one-shot mode this module knows to give no tools, so it makes no
+    suggestion: always None, and nothing is run."""
+    return None
+
+
 # ---------- the sessions there are ----------
 def sessions():
     """{id: "busy" or "idle"} for the sessions that are still there: busy while the process

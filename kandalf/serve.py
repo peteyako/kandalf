@@ -485,7 +485,62 @@ def set_domains(store, changes, expect=None) -> tuple:
     return 200, {"filed": filed, "unchanged": unchanged, "skipped": skipped}
 
 
-def combine_stories(store, keys, into, expect=None) -> tuple:
+TITLE_LIMIT = 120  # the longest title a person may give a combined story (oneshot.LIMIT says the same)
+SUGGEST_SECONDS = 45  # how long the agent has to suggest one
+
+
+def valid_title(title) -> tuple:
+    """(the title trimmed, None), or (None, the sentence that says what is wrong with it): text that
+    is not empty once trimmed, on one line, at most TITLE_LIMIT characters, with no ** in it."""
+    if not isinstance(title, str):
+        return None, "The title has to be text."
+    title = title.strip()
+    if not title:
+        return None, "The title can't be empty."
+    if "\n" in title or "\r" in title:
+        return None, "The title has to be on one line."
+    if len(title) > TITLE_LIMIT:
+        return None, f"The title can be at most {TITLE_LIMIT} characters."
+    if "**" in title:
+        return None, "The title can't contain **."
+    return title, None
+
+
+def combine_question(store, tiles_md) -> str:
+    """The one question the agent is asked for a combined story's title: each story's key, title
+    and the first 200 characters of its description (tiles_md, their markdown), then what to reply."""
+    lines = []
+    for md in tiles_md:
+        brief = reader.brief(store, md)
+        lines.append(f"- {reader.opening(store, md)}: {reader._title(store, md)}" + (f" - {brief}" if brief else ""))
+    return ("These stories are to be combined into one:\n" + "\n".join(lines)
+            + "\n\nReply with one short title for a single story that covers all of them, and nothing else.")
+
+
+def combine_suggestion(store, keys) -> tuple:
+    """/api/combine/title: ask the store's agent for a title for the stories in keys, in a fresh
+    empty folder that is deleted after. Returns (200, {title}), or (200, {title: None, why}) when the
+    agent gives none, (400, {error}) for keys that are not two or more, (409, {error}) for one that
+    isn't on the boards. Runs on the request's own thread (the server is threaded)."""
+    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys) or len(set(keys)) < 2:
+        return 400, {"error": "Say which stories to combine."}
+    keys = list(dict.fromkeys(keys))
+    snap = reader.Snapshot.read(store)
+    for key in keys:
+        if snap.tile(key) is None:
+            return 409, {"error": f"{key} isn't on the boards any more."}
+    question = combine_question(store, [snap.tile(k).text for k in keys])
+    with tempfile.TemporaryDirectory(prefix="kandalf-ask-") as empty:
+        try:
+            title = agent.ask(question, empty, SUGGEST_SECONDS)
+        except Exception:
+            title = None
+    if not title:
+        return 200, {"title": None, "why": f"No suggestion from {agent.label()}."}
+    return 200, {"title": title}
+
+
+def combine_stories(store, keys, into, expect=None, title=None) -> tuple:
     """Combine stories into one: keys is the list of keys to combine and into the one that
     survives (tiles.combine says what its text becomes). The others go to the top of the archive log
     with "Combined into KEY." on them, their plan docs stay where they are, and any other tile that
@@ -494,9 +549,14 @@ def combine_stories(store, keys, into, expect=None) -> tuple:
     read it. Returns (200, {combined: [the absorbed keys], into}), (400, {error}) when the request
     isn't one, (409, {error}) when a story can't be combined (archived, in flight with a session
     or job, or a master of another of them), or (409, {error: "changed since", changed: [KEY]})
-    when a tile differs from expect, with nothing written."""
+    when a tile differs from expect, with nothing written. title, when given, is the survivor's new
+    title (valid_title: a sentence in a 400 when it isn't one)."""
     if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys) or not isinstance(into, str):
         return 400, {"error": "Say which stories to combine, and which one stays."}
+    if title is not None:
+        title, wrong = valid_title(title)
+        if wrong:
+            return 400, {"error": wrong}
     keys = list(dict.fromkeys(keys))
     if len(keys) < 2:
         return 400, {"error": "Combining needs at least two stories."}
@@ -531,7 +591,7 @@ def combine_stories(store, keys, into, expect=None) -> tuple:
     union = list(dict.fromkeys(n for k in [into, *others] for n in works_in(k)))
     same = {n.lower() for n in union} == {n.lower() for n in works_in(into)}
     merged = reader.combine(store, snap.tile(into).text, [snap.tile(k).text for k in others],
-                            repos=None if same else union, has_master=bool(snap.parent(into)))
+                            repos=None if same else union, has_master=bool(snap.parent(into)), title=title)
     for name in files:
         files[name] = reader.repointed(store, files[name], others, into, skip={into, *others})
     survivor_file = index[into]["file"]
@@ -1608,12 +1668,15 @@ class Handler(BaseHTTPRequestHandler):
             expect = data.get("expect")  # Undo's {KEY: name | null}: what each tile should say now; anything but a map is ignored
             status, reply = set_domains(self.store, data.get("set"), expect if isinstance(expect, dict) else None)
             return self.send_json(status, {**self.board_reply(p), **reply} if status == 200 else reply)
+        if u.path == "/api/combine/title":  # {keys}: the agent's suggestion for the combined story's title
+            status, reply = combine_suggestion(self.store, self.read_body().get("keys"))
+            return self.send_json(status, reply)
         if u.path == "/api/combine":  # {keys, into, expect: {KEY: rev}}: combine stories into one
             p = self.target(parse_qs(u.query))
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             data = self.read_body()
-            status, reply = combine_stories(self.store, data.get("keys"), data.get("into"), data.get("expect"))
+            status, reply = combine_stories(self.store, data.get("keys"), data.get("into"), data.get("expect"), data.get("title"))
             return self.send_json(status, {**self.board_reply(p), **reply} if status == 200 else reply)
         if u.path == "/api/decide":
             p = self.target(parse_qs(u.query))

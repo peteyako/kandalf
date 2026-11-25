@@ -704,7 +704,7 @@ def opening(store, md: str):
     return opening_key(store, md.split("\n", 1)[0])
 
 
-def combine(store, survivor_md: str, others_md, repos=None, has_master=False) -> str:
+def combine(store, survivor_md: str, others_md, repos=None, has_master=False, title=None) -> str:
     """The survivor's markdown with the other stories (their markdown, in key order) combined into it.
     The survivor keeps its title, priority, estimate, Part of, Model, Base, Tests and Sessions lines.
     Its description gets each other story's description as a paragraph that starts "From PLN-NN
@@ -715,7 +715,8 @@ def combine(store, survivor_md: str, others_md, repos=None, has_master=False) ->
     survivor's own, else the first other's that has one. What
     belongs to a story's own work (session, status, ready for review, options, decision, handoff and
     "No pickup" lines, Part of) is left behind with the story. Not read in board.html: the page
-    sends the server the stories to combine."""
+    sends the server the stories to combine. title, when given, is the survivor's new title (already
+    valid: serve.valid_title), written as its bold with the rest of its first line kept."""
     sk = opening(store, survivor_md)
     others = [(opening(store, md), md.split("\n")) for md in others_md]
     combined = {sk, *(k for k, _ in others)}
@@ -777,11 +778,11 @@ def combine(store, survivor_md: str, others_md, repos=None, has_master=False) ->
                 text.append("")
         while text and not text[-1].strip():
             text.pop()
-        title = _title(store, "\n".join(olines))
+        named = _title(store, "\n".join(olines))
         if text:
-            paragraphs += ["", f"  From {key} ({title}): {text[0].strip()}", *text[1:]]
+            paragraphs += ["", f"  From {key} ({named}): {text[0].strip()}", *text[1:]]
         else:
-            paragraphs += ["", f"  From {key} ({title})."]
+            paragraphs += ["", f"  From {key} ({named})."]
 
     at = _description_end(lines)
     lines[at:at] = [*added, *paragraphs]
@@ -794,7 +795,38 @@ def combine(store, survivor_md: str, others_md, repos=None, has_master=False) ->
         while at > 1 and not lines[at - 1].strip():
             at -= 1
     lines[at:at] = tasks
+    if title:
+        lines[0] = retitled(store, lines[0], title)
     return "\n".join(lines)
+
+
+def retitled(store, line: str, title: str) -> str:
+    """A tile's first line with its title replaced: the bold after its key, priority and estimate is
+    written "**Title.**" as a new tile's is (no full stop added after ? or !), and the rest of the
+    line is kept. A line with no bold has all of what follows the key and estimate replaced."""
+    bullet = re.match(r"^[-*] (?:\[[ xX]\] )?", line).end()
+    key = _patterns(store.key)[2].match(line[bullet:])
+    at = bullet + (key.end() if key else 0)
+    head = TILE_HEAD_RE.match(line[at:])
+    at += head.start(1)
+    title = title.strip()
+    bold = f"**{title}{'' if title.endswith(('.', '?', '!')) else '.'}**"
+    old = re.match(r"^\*\*(.+?)\*\*", line[at:])
+    return line[:at] + bold + (line[at + old.end():] if old else "")
+
+
+def brief(store, md: str, limit: int = 200) -> str:
+    """The start of a tile's description on one line, at most `limit` characters: what follows its
+    title on the first line, then the lines under it up to the first attribute, sub-task or status line."""
+    lines = md.split("\n")
+    first = TILE_HEAD_RE.match(_patterns(store.key)[2].sub("", re.sub(r"^[-*] (?:\[[ xX]\] )?", "", lines[0]))).group(1)
+    bold = re.match(r"^\*\*(.+?)\*\*", first)
+    text = [first[bold.end():] if bold else ""]
+    for x in lines[1:]:
+        if DESCRIPTION_END_RE.match(x) or any(r.match(x) for r in _ATTRIBUTE_RES):
+            break
+        text.append(x)
+    return " ".join(" ".join(text).split())[:limit].strip()
 
 
 def combined_note(store, md: str, into: str) -> str:

@@ -24,6 +24,8 @@ import subprocess
 import uuid
 from pathlib import Path
 
+from . import oneshot
+
 CLI = "copilot"
 LABEL = "Copilot CLI"
 NAME = "Copilot"
@@ -158,6 +160,20 @@ def start(args, cwd, permission: str, text: str, dirs=()) -> dict:
         return {"error": str(e)}
     _children[short] = child
     return {"id": short}
+
+
+# ---------- a one-shot question ----------
+def ask(text: str, cwd, timeout: int = 45) -> "str | None":
+    """Ask one short question and return the reply as a title line (oneshot.reply_title), or None
+    on an error, a timeout, a failed exit or an empty reply. `copilot -p <text> -s --no-ask-user`
+    in cwd: -s prints only the reply, and with no --allow-* option it is granted no tool, so it
+    can read and run nothing; the caller gives it an empty folder."""
+    try:
+        run = subprocess.run([CLI, "-p", text, "-s", "--no-ask-user"],
+                             cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return oneshot.reply_title(run.stdout) if run.returncode == 0 else None
 
 
 # ---------- the sessions there are ----------

@@ -15,6 +15,7 @@ Another agent's module would provide the same plain functions:
     waiting_for(output), screen_tail(output)
                                     what that output says: why it waits for input, its last words
     stop(sid), remove(sid)          stop a session; take it off the list
+    ask(text, cwd, timeout)         a one-shot question with no tools: a title line, or None
 
 start's args are pickup's: "--model m", "-n name" and "--resume <full id>".
 """
@@ -25,6 +26,8 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+
+from . import oneshot
 
 CLI = "claude"
 NAME = "Claude"
@@ -83,6 +86,20 @@ def start(args, cwd, permission: str, text: str, dirs=()) -> dict:
     if run.returncode != 0 or not found:
         return {"error": (run.stderr or run.stdout).strip()[-300:] or "claude --bg gave no session id"}
     return {"id": found.group(1)}
+
+
+# ---------- a one-shot question ----------
+def ask(text: str, cwd, timeout: int = 45) -> "str | None":
+    """Ask one short question and return the reply as a title line (oneshot.reply_title), or None
+    on an error, a timeout, a failed exit or an empty reply. `claude -p --tools "" <text>` in cwd:
+    print mode with every tool off, so it can read and run nothing; the caller gives it an empty
+    folder. --no-session-persistence keeps the question out of the sessions list."""
+    try:
+        run = subprocess.run([CLI, "-p", "--tools", "", "--no-session-persistence", text],
+                             cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return oneshot.reply_title(run.stdout) if run.returncode == 0 else None
 
 
 # ---------- the sessions there are ----------

@@ -114,6 +114,12 @@ def start(args, cwd, permission, text, dirs=(), store_dir=None):
     return _module().start(args, cwd, permission, text, dirs)
 
 
+def ask(text, cwd, timeout=45):
+    """One short question to the agent in use, with no tools, in cwd: its reply as a title line,
+    or None when it can't answer (an error, a timeout, an agent with no one-shot mode)."""
+    return _module().ask(text, cwd, timeout)
+
+
 def sessions():
     return _module().sessions()
 

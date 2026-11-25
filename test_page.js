@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, splitOffered, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, combineTitleHTML, suggestionFor, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, splitOffered, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -1689,6 +1689,24 @@ test("the Combine button shows once two or more stories are selected", () => {
   assert.equal(page.combineShown([]), false);
   assert.equal(page.combineShown(["PLN-72"]), false);
   assert.equal(page.combineShown(["PLN-72", "PLN-73"]), true);
+});
+
+test("the combine dialog opens with a Title field filled with the kept story's title", () => {
+  const index = new Map([["PLN-72", { title: 'Main "&" more' }], ["PLN-73", { title: "Other" }]]);
+  const html = page.combineTitleHTML("PLN-72", index);
+  assert.match(html, /<input id="combineTitle"[^>]*maxlength="120"[^>]*value="Main &quot;&amp;&quot; more"/);
+  assert.match(html, /<label for="combineTitle"><b>Title/);
+  assert.match(html, /id="combineNote"/);
+  assert.match(html, /<button type="button" id="combineUse" hidden>/);
+  assert.match(page.combineTitleHTML("PLN-73", index), /value="Other"/);
+});
+
+test("a suggestion fills the title field only when untouched, else offers to use it", () => {
+  assert.deepEqual(page.suggestionFor({ title: "Merged" }, false, "Claude Code"), { fill: "Merged", note: "Suggested by Claude Code", offer: null });
+  assert.deepEqual(page.suggestionFor({ title: "Merged" }, true, "Claude Code"), { fill: null, note: "Suggested by Claude Code", offer: "Merged" });
+  assert.deepEqual(page.suggestionFor({ title: null, why: "No suggestion: it took too long." }, false, "Copilot CLI"), { fill: null, note: "No suggestion: it took too long.", offer: null });
+  assert.deepEqual(page.suggestionFor(null, true, "Copilot CLI"), { fill: null, note: "No suggestion: the agent didn't answer.", offer: null });
+  assert.equal(page.suggestionFor({ title: "  " }, false, "x").fill, null);
 });
 
 test("the combine dialog lists the stories, ticks the first as the one that stays and says what happens", () => {
