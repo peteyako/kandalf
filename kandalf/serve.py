@@ -515,7 +515,14 @@ def combine_stories(store, keys, into, expect=None) -> tuple:
             return 409, {"error": "changed since", "changed": changed}
     others = sorted((k for k in keys if k != into), key=store.num)
     files, index = dict(snap.files), snap.index()
-    merged = reader.combine(store, snap.tile(into).text, [snap.tile(k).text for k in others])
+    main = [store.main_repo.name] if store.main_repo else []
+
+    def works_in(key):  # what pickup resolves: the nearest Repos line up the family, else the main repo
+        return snap.nearest(key, reader.repos) or main
+    union = list(dict.fromkeys(n for k in [into, *others] for n in works_in(k)))
+    same = {n.lower() for n in union} == {n.lower() for n in works_in(into)}
+    merged = reader.combine(store, snap.tile(into).text, [snap.tile(k).text for k in others],
+                            repos=None if same else union, has_master=bool(snap.parent(into)))
     for name in files:
         files[name] = reader.repointed(store, files[name], others, into, skip={into, *others})
     survivor_file = index[into]["file"]
@@ -525,19 +532,19 @@ def combine_stories(store, keys, into, expect=None) -> tuple:
         name = index[key]["file"]
         tile = reader.parse(store, files[name], file=name)
         tile = next(t for t in tile if t.key == key)
-        notes.append(rebase_into_archive(reader.combined_note(tile.text, into), name))
+        notes.append(rebase_into_archive(reader.combined_note(store, tile.text, into), name))
         files[name] = reader.without(files[name], [tile])
     log = files.get(ARCHIVE_LOG, ARCHIVE_HEAD)
     for note in reversed(notes):
         log = filed_in_archive(log, note)
     files[ARCHIVE_LOG] = log
     paths = []
-    for name, text in files.items():
+    for name, text in sorted(files.items(), key=lambda f: f[0] != ARCHIVE_LOG):  # the archive first: a failed write never loses a story
         if text != snap.files.get(name):
             (store.dir / name).parent.mkdir(exist_ok=True)
             write_atomic(store.dir / name, text)
             paths.append(store.dir / name)
-    gitlog.record(store, paths, f"board: {', '.join(others)} combined into {into}")
+    gitlog.record(store, paths, f"board: {', '.join(others)} combined into {into}", subject=True)
     end_drafts(store, others)
     return 200, {"combined": others, "into": into}
 

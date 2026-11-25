@@ -617,6 +617,19 @@ def _quoting(lines: list) -> set:
     return out
 
 
+def _fenced(lines: list) -> set:
+    """The indexes of the lines inside a fenced code block, fences included: what they say is
+    text, never a sub-task, an attribute or a reference."""
+    out, inside = set(), False
+    for i, x in enumerate(lines):
+        if re.match(r"^\s*(```|~~~)", x):
+            out.add(i)
+            inside = not inside
+        elif inside:
+            out.add(i)
+    return out
+
+
 def _unique(keys) -> list:
     return list(dict.fromkeys(keys))
 
@@ -627,7 +640,7 @@ def _edit_refs(store, lines: list, which: str, fn) -> list:
     goes, with the full stop after it, and a line left empty goes too. The first line is never dropped."""
     _, keys, _, link, part, _, blocked = _patterns(store.key)
     rx = {"part": part, "link": link, "blocked": blocked}[which]
-    skip, out = _quoting(lines), []
+    skip, out = _quoting(lines) | _fenced(lines), []
     for i, line in enumerate(lines):
         new = line
         for m in ([] if i in skip else reversed(list(rx.finditer(line)))):
@@ -661,7 +674,8 @@ def _refs(store, lines: list, which: str) -> list:
 def _description_end(lines: list) -> int:
     """The index where a tile's description ends (after its last description line, the blank
     lines before the next part left out): its end when it has no such part."""
-    at = next((i for i, x in enumerate(lines) if i and (DESCRIPTION_END_RE.match(x) or SESSION_LINE_RE.match(x))), len(lines))
+    fenced = _fenced(lines)
+    at = next((i for i, x in enumerate(lines) if i and i not in fenced and (DESCRIPTION_END_RE.match(x) or SESSION_LINE_RE.match(x))), len(lines))
     while at > 1 and not lines[at - 1].strip():
         at -= 1
     return at
@@ -670,9 +684,9 @@ def _description_end(lines: list) -> int:
 def _subtasks(lines: list) -> list:
     """The (start, end) line ranges of a tile's sub-tasks: a checkbox line and the lines indented
     deeper under it."""
-    spans, i = [], 1
+    spans, i, fenced = [], 1, _fenced(lines)
     while i < len(lines):
-        m = SUBTASK_RE.match(lines[i])
+        m = SUBTASK_RE.match(lines[i]) if i not in fenced else None
         if not m:
             i += 1
             continue
@@ -690,13 +704,15 @@ def opening(store, md: str):
     return opening_key(store, md.split("\n", 1)[0])
 
 
-def combine(store, survivor_md: str, others_md) -> str:
+def combine(store, survivor_md: str, others_md, repos=None, has_master=False) -> str:
     """The survivor's markdown with the other stories (their markdown, in key order) combined into it.
     The survivor keeps its title, priority, estimate, Part of, Model, Base, Tests and Sessions lines.
     Its description gets each other story's description as a paragraph that starts "From PLN-NN
     (Title):" (a story with none says just that). Its sub-tasks are followed by theirs, ticks kept.
-    Blocked by and Moves with name the keys all of them did, never one of the stories combined; Repos
-    is every story's repos, and Domain the survivor's, else the first other's that has one. What
+    Blocked by and Moves with name the keys all of them did, never one of the stories combined. repos,
+    when given, is the list the survivor's Repos line is to say (the caller works out what every story
+    combined works in); a survivor with a master takes its Domain from it, so only one without gets the
+    survivor's own, else the first other's that has one. What
     belongs to a story's own work (session, status, ready for review, options, decision, handoff and
     "No pickup" lines, Part of) is left behind with the story. Not read in board.html: the page
     sends the server the stories to combine."""
@@ -728,23 +744,21 @@ def combine(store, survivor_md: str, others_md) -> str:
         added.append(f"  Blocked by {', '.join(extra['blocked'])}.")
     if extra["link"]:
         added.append(f"  Moves with {', '.join(extra['link'])}.")
-    if domain(survivor_md) is None:
+    if domain(survivor_md) is None and not has_master:
         first = next((d for d in (domain("\n".join(x)) for _, x in cleaned) if d), None)
         if first:
             added.append(f"  Domain: {first}")
-    more = [n for _, x in cleaned for n in repos("\n".join(x)) or []]
-    if more:
-        names = _unique([*(repos(survivor_md) or []), *more])
-        line = f"  Repos: {', '.join(names)}"
+    if repos:
         at = next((i for i, x in enumerate(lines) if REPOS_RE.match(x)), None)
         if at is None:
-            added.append(line)
+            added.append(f"  Repos: {', '.join(repos)}")
         else:
-            lines[at] = line
+            lines[at] = f"  Repos: {', '.join(repos)}"
 
     paragraphs, tasks = [], []
     for key, olines in cleaned:
         quoted = _quoting(olines)
+        fenced = _fenced(olines)
         spans = _subtasks(olines)
         inside = {i for a, b in spans for i in range(a, b)}
         for a, b in spans:
@@ -754,7 +768,7 @@ def combine(store, survivor_md: str, others_md) -> str:
         bold = re.match(r"^\*\*(.+?)\*\*", rest)
         text = [rest[bold.end():].strip()] if bold and rest[bold.end():].strip() else []
         for i, x in enumerate(olines[1:], 1):
-            if i in quoted or i in inside or DESCRIPTION_END_RE.match(x) or any(r.match(x) for r in _ATTRIBUTE_RES):
+            if i not in fenced and (i in quoted or i in inside or DESCRIPTION_END_RE.match(x) or any(r.match(x) for r in _ATTRIBUTE_RES)):
                 continue
             x = _NO_PICKUP_RE.sub("", x)
             if x.strip():
@@ -772,17 +786,21 @@ def combine(store, survivor_md: str, others_md) -> str:
     at = _description_end(lines)
     lines[at:at] = [*added, *paragraphs]
     spans = _subtasks(lines)
-    at = spans[-1][1] if spans else len(lines)
-    while not spans and at > 1 and not lines[at - 1].strip():
-        at -= 1
+    if spans:
+        at = spans[-1][1]
+    else:  # where its own would go: before the status, ready, decision, handoff and archive lines
+        skip = _fenced(lines) | {i for a, b in _options_spans(lines) for i in range(a, b)}
+        at = next((i for i, x in enumerate(lines) if i and i not in skip and DESCRIPTION_END_RE.match(x)), len(lines))
+        while at > 1 and not lines[at - 1].strip():
+            at -= 1
     lines[at:at] = tasks
     return "\n".join(lines)
 
 
-def combined_note(md: str, into: str) -> str:
+def combined_note(store, md: str, into: str) -> str:
     """The markdown of a story that was combined into another, with "Combined into PLN-NN." as the
-    last line of its description."""
-    lines = md.split("\n")
+    last line of its description, and no Part of, so its master doesn't count it as a sub-story never done."""
+    lines = _edit_refs(store, md.split("\n"), "part", lambda _: [])
     at = _description_end(lines)
     lines.insert(at, f"  Combined into {into}.")
     return "\n".join(lines)

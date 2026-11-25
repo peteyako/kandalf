@@ -3176,6 +3176,7 @@ const TOP_TILE = ".card:not(.dragging), .ghost";
 let ph = null;
 function placeholder(cls) { if (!ph || ph.className !== cls) { ph?.remove(); ph = document.createElement("div"); ph.className = cls; } return ph; }
 boardEl.addEventListener("dragstart", e => {
+  if (pickMode) return e.preventDefault();  // Select: nothing drags
   const card = e.target.closest?.(".card");
   const head = e.target.closest?.(".col-head");
   if (card) { dragging = { kind: "card", id: card.dataset.id, el: card }; }
@@ -3518,7 +3519,7 @@ boardEl.addEventListener("click", e => {
   const act = e.target.closest("[data-act]")?.dataset.act;
   const col = e.target.closest(".column"), sec = col && findSec(col.dataset.id);
   const cardEl = e.target.closest(".card");
-  if (pickMode && cardEl) { e.preventDefault(); e.stopPropagation(); return togglePick(cardEl); }  // Select: a click ticks the card
+  if (pickMode && cardEl) { if (!e.target.classList.contains("pick")) e.preventDefault(); e.stopPropagation(); return togglePick(cardEl); }  // the checkbox ticks itself; the rest of the card is a click on it  // Select: a click ticks the card
   if (e.target.closest(".session-reply")) {  // typing, ticking or folding the message box doesn't open the tile
     e.stopPropagation();
     noteReplyToggle(e);
@@ -4979,7 +4980,7 @@ document.addEventListener("keydown", e => {
 });
 boardEl.addEventListener("pointerdown", e => {
   const card = e.target.closest(".card");
-  if (card) card.draggable = !e.target.closest(".session-reply");
+  if (card) card.draggable = !pickMode && !e.target.closest(".session-reply");
 });
 // Queue: a paused story waits its turn again.
 async function queuePickup(key) {
