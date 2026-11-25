@@ -1143,6 +1143,19 @@ dialog#settingsDlg { width: min(560px, 94vw); }
 #mapView aside[hidden] { display: none; }
 #mapMasters { left: 12px; top: 48px; bottom: 50px; width: 228px; }
 #mapPanel { right: 12px; top: 48px; bottom: 12px; width: 290px; }
+#orgPanel { right: 12px; top: 48px; z-index: 5; width: 330px; max-width: calc(100% - 24px); max-height: calc(100% - 60px); font-size: 13px; }
+#orgPanel h3 { margin: 0 0 8px; font-size: 15px; padding-right: 26px; }
+#orgPanel textarea { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; font: inherit; margin: 4px 0 8px; }
+#orgPanel .org-field { display: block; color: var(--muted); }
+#orgPanel .org-check { display: flex; gap: 6px; align-items: center; margin: 0 0 10px; }
+#orgPanel .org-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+#orgPanel .org-note, #orgPanel .org-left { color: var(--muted); margin: 6px 0; }
+#orgPanel .org-why, #orgPanel .org-error { color: var(--danger, #c0392b); margin: 6px 0; }
+#orgPanel .org-row { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; cursor: pointer; overflow-wrap: anywhere; }
+#orgPanel .org-row .m-key { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); white-space: nowrap; }
+#orgPanel .org-new { margin-left: 6px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); font-size: 10px; letter-spacing: .04em; vertical-align: 1px; }
+#orgPanel .m-close { position: absolute; top: 8px; right: 8px; padding: 0 8px; line-height: 1.5; }
+#mapOrganize[aria-expanded="true"] { border-color: var(--accent); }
 #mapView aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 5px; font-weight: 700; }
 #mapView aside h2:first-child { margin-top: 0; }
 #mapPanel .m-key { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
@@ -1245,10 +1258,11 @@ applyTheme(themeNow, accentNow);
 <div id="toasts" role="status" aria-live="polite"></div>
 <main id="board"></main>
 <section id="mapView" aria-label="Story map" hidden>
-  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapDoneBtn" aria-pressed="false" title="Show or hide the stories that are done (one whose branch isn't merged yet stays)">Hide done</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain. <b>Hide done</b> leaves finished stories off.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span></span></span></div>
+  <div id="mapBar"><span id="mapDomains" role="group" aria-label="Domains"></span><button type="button" id="mapFit" title="Show the whole map, every domain">Whole map</button><button type="button" id="mapDoneBtn" aria-pressed="false" title="Show or hide the stories that are done (one whose branch isn't merged yet stays)">Hide done</button><button type="button" id="mapMastersBtn" title="Show or hide the list of masters">Masters</button><button type="button" id="mapReset" title="Put everything back where the map first laid it out">Reset layout</button><button type="button" id="mapNewDomain" title="Add an empty domain to drag stories into">+ New domain</button><button type="button" id="mapOrganize" aria-expanded="false" aria-controls="orgPanel" title="Ask the agent to sort stories into domains; you review what it proposes before anything is filed">Organize…</button><button type="button" id="mapUndo" hidden>Undo</button><span id="mapHelp" tabindex="0" role="button" aria-label="How to use the map" aria-describedby="mapHelpTip"><span aria-hidden="true">i</span><span id="mapHelpTip" role="tooltip"><b>Getting around</b><span><kbd>Click</kbd> a story to bring it to the middle with what it is joined to. <kbd>Esc</kbd> steps back.</span><span><kbd>Drag</kbd> to pan, <kbd>scroll</kbd> to zoom. Click a domain's name to show only that domain. <b>Hide done</b> leaves finished stories off.</span><b>Arranging</b><span><kbd>Ctrl</kbd> or <kbd>⌘</kbd> + drag a master to move its cluster, or a region to move a whole domain; add <kbd>Alt</kbd> for one sub-story. Kept in this browser; changes no file.</span><b>Filing into domains</b><span><kbd>Shift</kbd> + click stories to select them, or <kbd>Shift</kbd> + drag a box from empty space.</span><span>Drag a selected story onto a domain to file the whole selection there. A family moves with its master. Release elsewhere, or press <kbd>Esc</kbd>, to change nothing.</span><span><b>+ New domain</b> adds an empty domain to drag into. <b>Undo</b> takes back the last move.</span><span><b>Organize…</b> asks the agent to propose a domain for the stories that have none; tick what to keep and <b>Apply</b> files it, and one <b>Undo</b> takes it all back.</span></span></span></div>
   <svg id="mapSvg"><g id="mapPan"><g id="mapBgs"></g><g id="mapEdges"></g><g id="mapNodes"></g></g></svg>
   <aside id="mapMasters" aria-label="Masters"></aside>
   <aside id="mapPanel" aria-label="The story in focus" hidden></aside>
+  <aside id="orgPanel" aria-label="Sort stories into domains" hidden></aside>
   <div id="mapLegend"></div>
 </section>
 <section id="docView" hidden></section>
@@ -1416,7 +1430,7 @@ const EST = String.raw`\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?[hdw]`;  // 4h, 1.5d, 2-3
 const EST_RE = new RegExp(`^${EST}$`);
 // The store's key prefix (PLN, FLY, …) and name; /api/files reports them (listFiles).
 let STORE_FULL_SUITE = false;  // board.json's fullSuiteOnMerge
-let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_BRANCHES = [], STORE_ATTACH = "kandalf attach {id}", AGENT = "Claude";  // STORE_MODEL: what a story's session runs on unless its tile says
+let KEY = "PLN", STORE_NAME = "", STORE_MODEL = "opus", STORE_REPOS = [], STORE_SESSIONS = 2, STORE_TRUNK = "main", STORE_BRANCHES = [], STORE_ATTACH = "kandalf attach {id}", AGENT = "Claude", AGENT_LABEL = "Claude Code";  // AGENT_LABEL: the agent's full name (agent.label()); STORE_MODEL: what a story's session runs on unless its tile says
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const headRe = k => new RegExp(String.raw`^((?:${reEsc(k)}-\d+ )?)(?:(P[1-4]) )?(?:~(${EST}) )?(.*)$`);
 let HEAD_RE, KEY_NUM_RE, LINK_RE, BLOCKED_RE, KEY_ANY_RE, KEY_LINK_RE, PART_RE;
@@ -2558,6 +2572,28 @@ const mapSpelt = (name, known) => known.find(k => k.toLowerCase() === name.toLow
 function mapUndoable(filed, own) {
   const same = (a, b) => (a || "").toLowerCase() === (b || "").toLowerCase();
   return Object.entries(filed).filter(([k, f]) => !own.has(k) || !same(own.get(k), f.to)).map(([k]) => k).sort(byKeyOrder);
+}
+// Organize's review: the agent's proposal (/api/pickup's organize, ready: {moves: [{key, title,
+// domain, new}], left: [keys]}) grouped by domain in the order it first names them, a domain no
+// story has today marked new, a ticked checkbox per story, and a line for the stories it left.
+function organizeReviewHTML(org) {
+  const groups = new Map();
+  for (const m of org.moves || []) {
+    if (!groups.has(m.domain)) groups.set(m.domain, { new: !!m.new, moves: [] });
+    groups.get(m.domain).moves.push(m);
+  }
+  const row = m => `<label class="org-row"><input type="checkbox" data-org="${esc(m.key)}" checked> <span class="m-key">${esc(m.key)}</span> ${esc(m.title || "")}</label>`;
+  const html = [...groups].map(([name, g]) => `<div class="org-group"><h2>${esc(name)}${g.new ? '<span class="org-new">new</span>' : ""}</h2>${g.moves.map(row).join("")}</div>`).join("");
+  const left = org.left || [];
+  return html + (left.length ? `<p class="org-left">${left.length === 1 ? "1 story" : `${left.length} stories`} left as they are: ${esc(left.join(", "))}</p>` : "");
+}
+// What Apply files: {KEY: domain} for each move whose key is ticked (a Set), for /api/domain's set.
+const organizeSet = (org, ticked) => Object.fromEntries((org.moves || []).filter(m => ticked.has(m.key)).map(m => [m.key, m.domain]));
+// What the page says after Apply (and Undo after it), from /api/domain's filed ({KEY: {from, to}}).
+function organizeFiledText(filed) {
+  const keys = Object.keys(filed).sort(byKeyOrder), tos = new Set(keys.map(k => filed[k].to));
+  if (keys.length === 1) return `${keys[0]} → ${filed[keys[0]].to}`;
+  return tos.size === 1 ? `${keys.length} stories → ${[...tos][0]}` : `${keys.length} stories sorted into ${tos.size} domains`;
 }
 // Where the map puts each story: {at: Map key -> {x, y, angle}, hubs: Map root key -> {R}}.
 // A master is a hub with its sub-stories on a ring round it (theirs fan out beyond), each
@@ -3914,6 +3950,96 @@ async function mapNewDomain() {
     sm.sig = ""; return render();
   }
 }
+// Organize…: the store's agent proposes domains for the stories (one run per store, kept by the
+// server and told on /api/pickup's reply as organize), and the person files what they tick.
+// org: whether the panel is open, the sentence a refused start gave, the state last drawn (to
+// open the panel when a run finishes) and what was drawn (so a poll doesn't wipe a typed note
+// or the ticks).
+const org = { open: false, error: "", was: null, sig: "" };
+const orgPanel = $("#orgPanel");
+const orgRun = () => pickups.organize || null;
+function organizeDraw() {
+  const run = orgRun(), state = run?.state || null;
+  if (org.was === "working" && (state === "ready" || state === "need")) org.open = true;  // the run finished: show it
+  org.was = state;
+  const btn = $("#mapOrganize");
+  btn.textContent = state === "working" ? "Organizing…" : "Organize…";
+  btn.setAttribute("aria-expanded", org.open);
+  orgPanel.hidden = !org.open;
+  const sig = JSON.stringify([org.open, org.error, run && { ...run, started: undefined }]) + (state === "working" ? ageText(Date.now() / 1000 - run.started) : "");
+  if (!org.open || sig === org.sig) return;
+  const kept = orgPanel.querySelector("#orgNote")?.value, keptRefile = orgPanel.querySelector("#orgRefile")?.checked;
+  org.sig = sig;
+  const hide = '<button type="button" class="m-close" data-org-act="hide" aria-label="Hide" title="Hide (the run goes on)">×</button>';
+  let html;
+  if (!run) {
+    html = `<h3>Sort stories into domains</h3><p class="org-note">${esc(AGENT_LABEL)} proposes a domain for each story that has none. Nothing is filed until you apply it.</p>`
+      + `<label class="org-field" for="orgNote">Anything to tell ${esc(AGENT_LABEL)}? (optional)</label><textarea id="orgNote" placeholder="e.g. keep payments separate from clubs"></textarea>`
+      + `<label class="org-check"><input type="checkbox" id="orgRefile"> Re-sort filed stories too</label>`
+      + (org.error ? `<p class="org-error">${esc(org.error)}</p>` : "")
+      + `<div class="org-acts"><button type="button" class="primary" data-org-act="ask">Ask ${esc(AGENT_LABEL)}</button></div>`;
+  } else if (state === "working") {
+    const age = ageText(Date.now() / 1000 - run.started);
+    html = `<h3>Organizing…</h3><p class="org-note">${agentIcon()} ${esc(AGENT_LABEL)} is sorting the stories into domains${age ? ` (${age})` : ""}. You review what it proposes before anything is filed.</p>`
+      + `<div class="org-acts"><button type="button" data-org-act="end">Cancel</button></div>`;
+  } else if (state === "ready") {
+    html = `<h3>Proposed domains</h3>${organizeReviewHTML(run)}`
+      + `<div class="org-acts"><button type="button" class="primary" data-org-act="apply">Apply</button><button type="button" data-org-act="end">Discard</button></div>`;
+  } else {
+    html = `<h3>The sort didn't finish</h3><p class="org-why">${esc(run.why || "It stopped without a proposal.")}</p>`
+      + `<div class="org-acts"><button type="button" class="primary" data-org-act="again">Try again</button><button type="button" data-org-act="end">Close</button></div>`;
+  }
+  orgPanel.innerHTML = hide + html;
+  if (kept !== undefined && orgPanel.querySelector("#orgNote")) { orgPanel.querySelector("#orgNote").value = kept; orgPanel.querySelector("#orgRefile").checked = keptRefile; }
+}
+// POST to an organize route; the reply's organize is the run from then on. null (said why) when it didn't work.
+async function organizePost(path, body = {}) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const reply = await r.json();
+    if (!r.ok) return { error: reply.error || `That didn't work (${r.status}).` };
+    pickups.organize = reply.organize ?? null;
+    return reply;
+  } catch { return { error: "That didn't work: server down?" }; }
+}
+async function organizeStart(note, refile) {
+  const got = await organizePost("/api/organize", { note, refile });
+  org.error = got.error || "";
+  org.sig = "";  // drawn afresh, so the Ask button comes back after a refusal
+  organizeDraw();
+}
+async function organizeAct(act) {
+  const run = orgRun();
+  if (act === "hide") { org.open = false; return organizeDraw(); }
+  if (act === "ask") {  // the server cuts the worktree and starts the session before it answers
+    const b = orgPanel.querySelector('[data-org-act="ask"]');
+    b.disabled = true; b.textContent = "Starting…";
+    return organizeStart($("#orgNote").value, $("#orgRefile").checked);
+  }
+  if (act === "end" || act === "again") {
+    const got = await organizePost("/api/organize/end");
+    if (got.error) return flash(got.error);
+    if (act === "again") return organizeStart(run?.note || "", !!run?.refile);
+    org.error = ""; org.open = false;
+    return organizeDraw();
+  }
+  if (act === "apply" && run?.state === "ready") {
+    const ticked = new Set([...orgPanel.querySelectorAll("input[data-org]:checked")].map(i => i.dataset.org));
+    const set = organizeSet(run, ticked);
+    if (!Object.keys(set).length) return flash("Tick a story to file, or press Discard.");
+    const done = await mapSend(set);
+    if (!done) return;  // refused or failed, and said why: the proposal stays to try again
+    const filed = Object.entries(done.j.filed || {});
+    const text = filed.length ? organizeFiledText(done.j.filed) : "Nothing to move: they are already there";
+    if (filed.length) sm.lastFiling = { set: Object.fromEntries(filed.map(([k, f]) => [k, f.from])), filed: done.j.filed, text, pending: null };
+    mapShowUndo();
+    flash(text);
+    await organizePost("/api/organize/end");
+    org.open = false;
+    organizeDraw();
+  }
+}
+orgPanel.addEventListener("click", e => { const b = e.target.closest("button[data-org-act]"); if (b) { e.stopPropagation(); organizeAct(b.dataset.orgAct); } });
 mapSvg.addEventListener("pointerup", mapDrop);
 mapSvg.addEventListener("pointercancel", mapDrop);
 mapSvg.addEventListener("contextmenu", e => e.preventDefault());  // Ctrl-click is a drag here, not the Mac's menu
@@ -3946,6 +4072,7 @@ $("#mapView").addEventListener("click", e => {
   if (b.id === "mapReset") { try { localStorage.removeItem(mapSavedKey()); } catch {} sm.sig = ""; sm.cam = null; sm.focus = null; sm.pendingAt = new Map(); render(); }  // the empty domains go too
   if (b.id === "mapDoneBtn") { sm.hideDone = !sm.hideDone; b.setAttribute("aria-pressed", sm.hideDone); try { localStorage.setItem("board.map.done", sm.hideDone ? "hide" : "show"); } catch {} sm.sig = ""; return render(); }
   if (b.id === "mapNewDomain") return mapNewDomain();
+  if (b.id === "mapOrganize") { org.open = !org.open; if (org.open) org.sig = ""; return organizeDraw(); }
   if (b.id === "mapUndo") return mapUndo();
 });
 try { $("#mapMasters").hidden = localStorage.getItem("board.map.masters") === "off"; } catch {}
@@ -4276,7 +4403,7 @@ async function sendDraft(body) {
     const r = await fetch(`/api/draft?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...body }) });
     const j = await r.json();
     if (!r.ok) return flash((body.stop ? "Stop failed: " : "Draft failed: ") + (j.error || r.status));
-    pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null };
+    pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, organize: j.organize ?? null };
     if (!body.stop) { againOpen.delete(key); delete draftNotes[key]; }
     render();
   } catch { flash("Draft failed: server down?"); }
@@ -4584,6 +4711,7 @@ async function loadStoreFacts() {
   $("#version").title = label.title;
   STORE_ATTACH = j.attach || "kandalf attach {id}";
   AGENT = j.agent || "Claude";
+  AGENT_LABEL = j.agentLabel || AGENT;
   if (j.models) MODELS = j.models;
   STORE_PICKUP_COLUMN = j.pickupColumn || "";
   // The server's names are the truth: a board named by an old link or bookmark is the present one.
@@ -4688,7 +4816,7 @@ const pickupId = job => `${job.key}@${job.at}`;
 async function postPickup(body, failed = `${AGENT} wasn't started`) {
   const r = await fetch("/api/pickup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
-  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, boards: j.boards, renaming: j.renaming ?? null }; render(); }
+  if (j.jobs) { pickups = { enabled: j.enabled, why: j.why ?? null, jobs: j.jobs, blocked: j.blocked ?? pickups.blocked, drafts: j.drafts, draftsOff: j.draftsOff ?? null, boards: j.boards, renaming: j.renaming ?? null, organize: j.organize ?? null }; render(); }
   return r.ok ? j : (flash(`${failed}: ` + (j.error || r.status)), null);
 }
 const startPickup = key => postPickup({ key });
@@ -4813,6 +4941,7 @@ async function pollPickups() {
   const changed = JSON.stringify(next) !== JSON.stringify(pickups), first = !pickupsLoaded;
   const before = editing && dlg.open ? JSON.stringify(draftOf(cardKey(editing.card))) : "";
   pickups = next;
+  organizeDraw();
   if (stories) pickupsLoaded = true;  // only a poll that tells stories' news counts, so its first run tells none (as before drafts)
   if (editing && dlg.open && JSON.stringify(draftOf(cardKey(editing.card))) !== before) draftChanged(); else if (changed && editing && dlg.open) refreshOptions();
   if (stories) for (const job of pickups.jobs) {

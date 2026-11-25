@@ -20,6 +20,10 @@ back to undo it (/api/unclear).
 A tile in a decision column can have its options drafted (/api/draft): a session researches
 them in a research doc, and the drafts' turn of the watch puts them on the tile (drafts.py).
 
+The map can ask the agent to sort stories into domains (/api/organize): a session proposes,
+the organize turn of the watch reads the proposal (organize.py), and the page files what the
+person ticks through /api/domain. /api/organize/end ends the run.
+
 Tiles that say "Moves with KEY-NN" are linked: the page moves them together, and asks
 this server for the ones on the other board (/api/move takes them along, /api/pull
 fetches them).
@@ -56,6 +60,7 @@ from . import pln  # noqa: E402  tile keys
 from . import gitlog  # noqa: E402  one commit per board change
 from . import agent, pickup  # noqa: E402  a tile that lands in In flight goes to Claude Code
 from . import drafts  # noqa: E402  a decision's options, drafted by a session
+from . import organize  # noqa: E402  the map's stories sorted into domains by a session
 from . import jobs as ledger  # noqa: E402  board-pickup.json, the record of each pickup job
 from . import renaming  # noqa: E402  the move from plans.md and backlog.md to build.md and plan.md
 from . import store as stores  # noqa: E402  which store, and its settings
@@ -342,6 +347,8 @@ PICKUP_RECHECK = 20  # seconds between looks at the sessions while a job waits o
 # Set by /api/draft (and a draft that didn't finish ending) so the drafts' turn looks at once;
 # the turn clears it. An Event, as the handler threads set it and the watch's thread reads it.
 DRAFTS_ASKED = threading.Event()
+# Set by /api/organize and /api/organize/end so the organize turn looks at once; the turn clears it.
+ORGANIZE_ASKED = threading.Event()
 
 
 _listed = {"by": None, "at": 0.0, "sessions": None}  # the last listing recent_sessions made, by which adapter
@@ -357,11 +364,11 @@ def recent_sessions():
 
 
 def pickup_reply(store) -> dict:
-    """What /api/pickup and /api/draft answer: pickup.summary (its notice about the move going by
-    recent_sessions), with the drafts (drafts.summary) and why Draft options can't run
-    (drafts.why_not, or None)."""
+    """What /api/pickup, /api/draft and /api/organize answer: pickup.summary (its notice about the
+    move going by recent_sessions), with the drafts (drafts.summary), why Draft options can't run
+    (drafts.why_not, or None) and the map's sorting run (organize.summary, or None)."""
     return {**pickup.summary(store, sessions=pickup.Sessions(sessions=recent_sessions)),
-            "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store)}
+            "drafts": drafts.summary(store), "draftsOff": drafts.why_not(store), "organize": organize.summary(store)}
 
 
 def write_options(store, key: str, block: list, subject: str):
@@ -520,6 +527,31 @@ def draft_request(store, board: Path, data: dict) -> tuple:
     return 200, pickup_reply(store)
 
 
+def organize_request(store, data: dict) -> tuple:
+    """The status and reply for /api/organize. Body: {note, refile} starts a run (organize.start);
+    one refused says why (409). A start that fails part-way is recorded as a run that needs you,
+    so the reply is pickup_reply's either way, and the organize turn looks on its next turn."""
+    try:
+        organize.start(store, str(data.get("note") or ""), bool(data.get("refile")), sessions=SESSIONS)
+    except organize.Refused as e:
+        return 409, {"error": str(e)}
+    ORGANIZE_ASKED.set()
+    return 200, pickup_reply(store)
+
+
+def organize_end(store) -> tuple:
+    """The status and reply for /api/organize/end (Cancel, Discard, Close, and after Apply): the
+    run ended in any state (organize.end), and with none there is nothing to do. One whose
+    ending stops part-way is left ending for the organize turn; the page is told no run either way."""
+    try:
+        if not organize.end(store, sessions=SESSIONS):
+            pickup.log("organize: the run is ending; a later look finishes it")
+    except Exception as e:  # marked ending first, so the look finishes it
+        pickup.log(f"organize: the run could not be ended yet, so a later look ends it: {e}")
+    ORGANIZE_ASKED.set()
+    return 200, pickup_reply(store)
+
+
 def report_in_flight(store):
     """On the console, once at startup: what is in flight, and the Claude session on each."""
     board = store.dir / pickup_board(store)
@@ -666,6 +698,35 @@ def watch_drafts_turn(store, ctx: dict):
         ctx["d_said"] = look_drafts(store, ctx["d_said"])
 
 
+def look_organize(store):
+    """One organize.look, its lines on the console."""
+    for line in organize.look(store, sessions=SESSIONS):
+        pickup.log(line)
+
+
+def watch_organize_turn(store, ctx: dict):
+    """One turn of the organize watch, whether or not pickup is on: with a run that is busy
+    (organize.busy), a look (look_organize) when one was just asked for or ended
+    (ORGANIZE_ASKED), or PICKUP_RECHECK seconds have passed since the last look, or its
+    ORGANIZE.md changed since the last look and is as it was a turn ago (settled). ctx carries
+    o_last (when it last looked), o_seen (the file's mtime then) and o_before (a turn ago)."""
+    ctx.setdefault("o_last", 0.0)
+    asked = ORGANIZE_ASKED.is_set()
+    if asked:
+        ORGANIZE_ASKED.clear()
+    rec = organize.of(store)
+    if not rec or not organize.busy(store, rec):
+        return
+    try:
+        at = (Path(rec["worktree"]) / organize.OUTPUT).stat().st_mtime_ns if rec.get("worktree") else None
+    except OSError:
+        at = None
+    settled, ctx["o_before"] = at == ctx.get("o_before"), at
+    if asked or time.time() - ctx["o_last"] > PICKUP_RECHECK or (settled and at != ctx.get("o_seen")):
+        ctx["o_last"], ctx["o_seen"] = time.time(), at
+        look_organize(store)
+
+
 def old_board_mtimes(store) -> tuple:
     """The mtimes of the old names' two board files (plans.md, backlog.md), None for one not there."""
     def mtime_of(path):
@@ -705,8 +766,8 @@ def watch_move_turn(store, ctx: dict):
 def watch_pickups(store, every: float = 2.0):
     """Forever, from the server's start: move the store to Plan and Build if it is due and free
     to, say what is in flight, adopt what has no session when pickup can run, look at the drafts
-    once, then a watch_move_turn, a watch_drafts_turn and a watch_turn every few seconds, so
-    pickup follows board.json."""
+    and the organize run once, then a watch_move_turn, a watch_drafts_turn, a
+    watch_organize_turn and a watch_turn every few seconds, so pickup follows board.json."""
     moving = {"m_before": old_board_mtimes(store)}  # at the start nothing of the server's is being written
     watch_move_turn(store, moving)
     report_in_flight(store)
@@ -723,12 +784,21 @@ def watch_pickups(store, every: float = 2.0):
             ctx.update(d_seen=seen, d_before=seen, d_said=said, d_last=time.time())
     except Exception as e:  # never stop the server for it
         pickup.log(f"the drafts' look at the start failed: {e}")
+    try:  # a run whose session went with the server is lost, and one left ending is finished
+        if organize.of(store):
+            look_organize(store)
+    except Exception as e:
+        pickup.log(f"the organize look at the start failed: {e}")
     while True:
         watch_move_turn(store, ctx)  # first, so the turns after it read the store as it is now
         try:
             watch_drafts_turn(store, ctx)
         except Exception as e:  # a bad drafts' turn must not end the watch, nor keep pickup's from running
             pickup.log(f"the drafts' turn failed: {e}")
+        try:
+            watch_organize_turn(store, ctx)
+        except Exception as e:  # nor a bad organize turn
+            pickup.log(f"the organize turn failed: {e}")
         try:
             watch_turn(store, ctx)
         except Exception as e:  # nor a bad turn
@@ -1058,7 +1128,7 @@ class Handler(BaseHTTPRequestHandler):
             if (self.plans / ARCHIVE_LOG).is_file():
                 files.append(ARCHIVE_LOG)
             self.send_json(200, {"dir": str(self.plans), "files": files,
-                                 "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(),
+                                 "name": self.store.name, "key": self.store.key, "model": self.store.model, "attach": agent.attach("{id}"), "models": agent.models(), "agent": agent.short(), "agentLabel": agent.label(),
                                  "sessions": self.store.sessions, "pickupColumn": self.store.pickup_column,
                                  "trunk": self.store.trunk, "fullSuiteOnMerge": self.store.full_suite_on_merge, "branches": local_branches(self.store),
                                  "repos": [{"name": r.name, "main": r.main} for r in self.store.repos], "build": BUILD,
@@ -1350,6 +1420,12 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             status, reply = draft_request(self.store, p, self.read_body())
+            return self.send_json(status, reply)
+        if u.path == "/api/organize":  # {note, refile}: the map's Ask button
+            status, reply = organize_request(self.store, self.read_body())
+            return self.send_json(status, reply)
+        if u.path == "/api/organize/end":  # Cancel, Discard, Close, and after Apply
+            status, reply = organize_end(self.store)
             return self.send_json(status, reply)
         if u.path == "/api/settings":  # {mtime, changes}: the settings panel's Save
             return self.save_settings(self.read_body())

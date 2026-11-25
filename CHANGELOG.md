@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The map's bar has **Hide done**: it leaves finished stories off the map, keeping a done one whose branch isn't merged yet and a done master that still has open sub-stories. A master's count still counts every sub-story. The choice is kept in your browser.
+- The map's bar has **Organize…**: the store's agent proposes a domain for each story that has none (or for every story, with **Re-sort filed stories too**), and you tick what to keep. **Apply** files it in one commit, and one **Undo** takes it all back. The session runs in a throwaway worktree and writes nothing but its proposal, `ORGANIZE.md`, which the server reads (`POST /api/organize`, `POST /api/organize/end`).
 
 ## 1.3.0
 

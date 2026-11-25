@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSet, organizeFiledText, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -1631,4 +1631,37 @@ describe("OldNames", () => {
       }
     }
   });
+});
+
+// Organize: the agent's proposal, reviewed on the map before anything is filed.
+const PROPOSAL = { state: "ready", left: ["PLN-90", "PLN-91"], moves: [
+  { key: "PLN-72", title: "Pay <by> card", domain: "Payments", new: true },
+  { key: "PLN-81", title: "Club invites", domain: "Clubs", new: false },
+  { key: "PLN-80", title: "Refunds", domain: "Payments", new: true },
+] };
+
+test("the review panel lists a proposal grouped by domain, a new domain marked and every row ticked", () => {
+  const html = page.organizeReviewHTML(PROPOSAL);
+  const pay = html.indexOf(">Payments<"), clubs = html.indexOf(">Clubs<");
+  assert.ok(pay >= 0 && clubs > pay, html);
+  assert.ok(html.indexOf('data-org="PLN-80"') < clubs, "PLN-80 is under Payments with PLN-72");
+  assert.match(html, />Payments<span class="org-new">new<\/span>/);
+  assert.doesNotMatch(html, />Clubs<span class="org-new">/);
+  assert.equal((html.match(/type="checkbox"/g) || []).length, 3);
+  assert.equal((html.match(/ checked/g) || []).length, 3);
+  assert.match(html, /PLN-72<\/span> Pay &lt;by&gt; card/);
+  assert.match(html, /left as they are: PLN-90, PLN-91/);
+  assert.doesNotMatch(page.organizeReviewHTML({ ...PROPOSAL, left: [] }), /left as they are/);
+});
+
+test("Apply sends the domain of each ticked row and nothing for the rest", () => {
+  assert.deepEqual(page.organizeSet(PROPOSAL, new Set(["PLN-72", "PLN-81"])), { "PLN-72": "Payments", "PLN-81": "Clubs" });
+  assert.deepEqual(page.organizeSet(PROPOSAL, new Set(["PLN-99"])), {});
+  assert.deepEqual(page.organizeSet(PROPOSAL, new Set()), {});
+});
+
+test("what Apply says names one story, one domain or how many of each", () => {
+  assert.equal(page.organizeFiledText({ "PLN-72": { from: null, to: "Payments" } }), "PLN-72 → Payments");
+  assert.equal(page.organizeFiledText({ "PLN-72": { from: null, to: "Payments" }, "PLN-80": { from: null, to: "Payments" } }), "2 stories → Payments");
+  assert.equal(page.organizeFiledText({ "PLN-72": { from: null, to: "Payments" }, "PLN-81": { from: "X", to: "Clubs" } }), "2 stories sorted into 2 domains");
 });
