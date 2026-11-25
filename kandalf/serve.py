@@ -497,8 +497,10 @@ def valid_title(title) -> tuple:
     title = title.strip()
     if not title:
         return None, "The title can't be empty."
-    if "\n" in title or "\r" in title:
+    if len(title.splitlines()) > 1 or "\n" in title or "\r" in title:
         return None, "The title has to be on one line."
+    if not title.isprintable():
+        return None, "The title can't contain control characters."
     if len(title) > TITLE_LIMIT:
         return None, f"The title can be at most {TITLE_LIMIT} characters."
     if "**" in title:

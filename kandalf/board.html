@@ -2544,6 +2544,10 @@ function suggestionFor(reply, touched, label) {
   if (!title) return { fill: null, note: reply?.why || "No suggestion: the agent didn't answer.", offer: null };
   return { fill: touched ? null : title, note: `Suggested by ${label}`, offer: touched ? title : null };
 }
+// Enter in the Title field presses Combine, but not the Enter that ends an IME composition.
+const enterCommits = e => e.key === "Enter" && !e.isComposing && e.keyCode !== 229;
+// Whether picking another story to keep puts its title in the field: not once the person typed in it or a suggestion filled it.
+const switchFills = (touched, filled) => !touched && !filled;
 // A new selection with the key added, or taken out when it was in.
 const mapToggle = (sel, key) => { const out = new Set(sel); if (!out.delete(key)) out.add(key); return out; };
 // A Shift-click's new selection: a selected key taken out, shown or not, and an unselected one
@@ -3566,28 +3570,37 @@ function togglePick(cardEl) {
   pickRefresh();
 }
 // Ask, then combine `keys` into one story (POST /api/combine) and take the reply as the board.
+let titleAsk = { sig: "", promise: null };  // the suggestion request in flight, for the keys it was made for
 async function combineStories(keys) {
   if (!combineShown(keys)) return;
   if (dirty || saving) return flash("Save the board first.");
   const index = tileIndex();
   const asking = ask({ title: "Combine stories", body: [combineTitleHTML(keys[0], index), ...combineBody(keys, keys[0], index)], ok: "Combine" });
   const field = $("#combineTitle"), note = $("#combineNote"), use = $("#combineUse");
-  let touched = false;
+  let touched = false, filled = false;
   field.addEventListener("input", () => { touched = true; use.hidden = true; });
-  field.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#askOk").click(); } });
+  field.addEventListener("keydown", e => { if (enterCommits(e)) { e.preventDefault(); $("#askOk").click(); } });
+  $("#askOk").onclick = e => { if (!field.value.trim()) { e.preventDefault(); note.textContent = "A title can't be empty."; field.focus(); } };
   use.addEventListener("click", () => { field.value = use.dataset.title; use.hidden = true; note.textContent = `Suggested by ${AGENT_LABEL}`; field.focus(); });
   for (const radio of document.querySelectorAll('#askBody input[name="combineInto"]'))
-    radio.addEventListener("change", () => { if (!touched) field.value = index.get(radio.value)?.title ?? ""; });
+    radio.addEventListener("change", () => { if (switchFills(touched, filled)) field.value = index.get(radio.value)?.title ?? ""; });
   note.textContent = `Asking ${AGENT_LABEL}…`;
-  fetch(`/api/combine/title?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys }) })
-    .then(r => r.json()).catch(() => null).then(reply => {
+  // One request per selection: opening the dialog again while it is out waits for the same one.
+  const sig = keys.join();
+  if (titleAsk.sig !== sig) {
+    titleAsk = { sig, promise: fetch(`/api/combine/title?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys }) })
+      .then(r => r.json()).catch(() => null) };
+    titleAsk.promise.then(() => { if (titleAsk.sig === sig) titleAsk = { sig: "", promise: null }; });
+  }
+  titleAsk.promise.then(reply => {
       if (!askDlg.open || !field.isConnected) return;
       const got = suggestionFor(reply, touched, AGENT_LABEL);
       note.textContent = got.note;
-      if (got.fill !== null) field.value = got.fill;
+      if (got.fill !== null) { field.value = got.fill; filled = true; }
       if (got.offer) { use.dataset.title = got.offer; use.textContent = `Use "${got.offer}"`; use.hidden = false; }
     });
   const yes = await asking;
+  $("#askOk").onclick = null;
   if (!yes) return;
   const into = document.querySelector('#askBody input[name="combineInto"]:checked')?.value || keys[0];
   const title = field.value.trim();

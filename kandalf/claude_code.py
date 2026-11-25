@@ -91,11 +91,13 @@ def start(args, cwd, permission: str, text: str, dirs=()) -> dict:
 # ---------- a one-shot question ----------
 def ask(text: str, cwd, timeout: int = 45) -> "str | None":
     """Ask one short question and return the reply as a title line (oneshot.reply_title), or None
-    on an error, a timeout, a failed exit or an empty reply. `claude -p --tools "" <text>` in cwd:
-    print mode with every tool off, so it can read and run nothing; the caller gives it an empty
+    on an error, a timeout, a failed exit or an empty reply. `claude -p --restricted --strict-mcp-config --tools "" <text>`
+    in cwd: print mode with every tool off and no settings, hooks or MCP servers loaded; the caller gives it an empty
     folder. --no-session-persistence keeps the question out of the sessions list."""
     try:
-        run = subprocess.run([CLI, "-p", "--tools", "", "--no-session-persistence", text],
+        # --restricted and --strict-mcp-config load none of the user's settings, hooks or MCP servers.
+        # --tools takes a list, so the flag after its "" ends it.
+        run = subprocess.run([CLI, "-p", "--restricted", "--strict-mcp-config", "--tools", "", "--no-session-persistence", text],
                              cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return None

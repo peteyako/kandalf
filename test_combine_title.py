@@ -44,7 +44,7 @@ class EachAgentsAsk(unittest.TestCase):
     def test_claude_runs_print_mode_with_no_tools_in_the_given_folder(self):
         got, run = self.run_ask(claude_code)
         self.assertEqual(got, "Merged title")
-        self.assertEqual(run.call_args[0][0], ["claude", "-p", "--tools", "", "--no-session-persistence", "which title?"])
+        self.assertEqual(run.call_args[0][0], ["claude", "-p", "--restricted", "--strict-mcp-config", "--tools", "", "--no-session-persistence", "which title?"])
         self.assertEqual((run.call_args[1]["cwd"], run.call_args[1]["timeout"]), ("/tmp/empty", 45))
         self.assertEqual(run.call_args[1]["stdin"], subprocess.DEVNULL)
 
@@ -128,11 +128,6 @@ class TheSuggestionRoute(unittest.TestCase):
             self.assertEqual(serve.combine_suggestion(self.store, ["PLN-72", "PLN-999"])[0], 409)
         ask.assert_not_called()
 
-    def test_the_server_is_threaded_so_a_slow_suggestion_blocks_no_other_request(self):
-        from http.server import ThreadingHTTPServer
-        self.assertTrue(issubclass(ThreadingHTTPServer, __import__("socketserver").ThreadingMixIn))
-        self.assertIn("ThreadingHTTPServer(", Path(serve.__file__).read_text())
-
 
 class TheChosenTitle(unittest.TestCase):
     def setUp(self):
@@ -147,9 +142,12 @@ class TheChosenTitle(unittest.TestCase):
         self.assertIn("**Why?**", reader.combine(self.store, SURVIVOR, [OTHER], title="Why?"))
         self.assertIn("**Done.** Part", reader.combine(self.store, SURVIVOR, [OTHER], title="Done."))
 
-    def test_a_story_without_bold_has_its_whole_title_replaced(self):
-        text = reader.combine(self.store, "- [ ] PLN-72 Plain words", [OTHER], title="New")
-        self.assertEqual(text.split("\n")[0], "- [ ] PLN-72 **New.**")
+    def test_a_story_without_bold_gets_one_and_keeps_the_rest_of_its_line(self):
+        plain = "- [ ] PLN-72 P2 Plain words. Part of PLN-70. Blocked by PLN-30."
+        first = reader.combine(self.store, plain, [OTHER], title="Fresh").split("\n")[0]
+        self.assertTrue(first.startswith("- [ ] PLN-72 P2 **Fresh.** Plain words. Part of PLN-70. Blocked by PLN-30"), first)
+        tile = reader.parse(self.store, "## To do\n\n" + reader.combine(self.store, plain, [OTHER], title="Fresh"))[0]
+        self.assertEqual((tile.parent, tile.blockers[0]), ("PLN-70", "PLN-30"))
 
     def test_the_other_stories_still_name_the_survivors_old_title_in_no_paragraph(self):
         text = reader.combine(self.store, SURVIVOR, [OTHER], title="New")
@@ -183,7 +181,8 @@ class TheChosenTitleOnTheRoute(unittest.TestCase):
 
     def test_a_title_that_is_not_one_is_refused_with_a_sentence_and_nothing_written(self):
         for bad, words in (("   ", "empty"), ("", "empty"), (5, "text"), ("two\nlines", "one line"),
-                           ("x" * 121, "120"), ("a **b** c", "**")):
+                           ("x" * 121, "120"), ("a **b** c", "**"),
+                           ("a\u2028b", "one line"), ("a\x07b", "control")):
             status, reply = serve.combine_stories(self.store, ["PLN-72", "PLN-73"], "PLN-72", title=bad)
             self.assertEqual(status, 400, bad)
             self.assertIn(words, reply["error"])

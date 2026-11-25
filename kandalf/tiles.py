@@ -803,7 +803,7 @@ def combine(store, survivor_md: str, others_md, repos=None, has_master=False, ti
 def retitled(store, line: str, title: str) -> str:
     """A tile's first line with its title replaced: the bold after its key, priority and estimate is
     written "**Title.**" as a new tile's is (no full stop added after ? or !), and the rest of the
-    line is kept. A line with no bold has all of what follows the key and estimate replaced."""
+    line is kept. A line with no bold gets one in front of the rest of its line, which stays as it was."""
     bullet = re.match(r"^[-*] (?:\[[ xX]\] )?", line).end()
     key = _patterns(store.key)[2].match(line[bullet:])
     at = bullet + (key.end() if key else 0)
@@ -812,7 +812,9 @@ def retitled(store, line: str, title: str) -> str:
     title = title.strip()
     bold = f"**{title}{'' if title.endswith(('.', '?', '!')) else '.'}**"
     old = re.match(r"^\*\*(.+?)\*\*", line[at:])
-    return line[:at] + bold + (line[at + old.end():] if old else "")
+    if old:
+        return line[:at] + bold + line[at + old.end():]
+    return line[:at] + bold + (" " + line[at:] if line[at:].strip() else "")
 
 
 def brief(store, md: str, limit: int = 200) -> str:
