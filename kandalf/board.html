@@ -2596,8 +2596,14 @@ function organizeSend(org, ticked) {
   return { set: Object.fromEntries(moves.map(m => [m.key, m.domain])), expect: Object.fromEntries(moves.map(m => [m.key, m.from ?? null])) };
 }
 // What the page says when Apply is refused because these stories changed since the proposal.
-function organizeChangedText(changed) {
-  const keys = [...changed].sort(byKeyOrder), one = keys.length === 1;
+// rows: the keys the panel lists. A changed story with no row (a master a sorted story has since
+// been put under) can't be unticked, so the proposal is out of date: ask again.
+function organizeChangedText(changed, rows = changed) {
+  const keys = [...changed].sort(byKeyOrder), one = keys.length === 1, listed = new Set(rows);
+  if (keys.some(k => !listed.has(k))) {
+    const all = one ? keys[0] : `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
+    return `${all} ${one ? "has" : "have"} changed since the proposal, so nothing was filed. Ask again for a proposal that fits the boards as they are now.`;
+  }
   const named = one ? keys[0] : `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
   return `${named} ${one ? "has" : "have"} changed since the proposal, so nothing was filed. ${one ? "Its row is" : "Their rows are"} unticked: Apply again to file the rest.`;
 }
@@ -4045,7 +4051,7 @@ async function organizeAct(act) {
     if (done.changed) {  // changed since the proposal (on a card, by an agent, in an editor): nothing filed
       org.off = new Set([...org.off, ...done.changed]);
       for (const box of orgPanel.querySelectorAll("input[data-org]")) if (!box.checked) org.off.add(box.dataset.org);
-      org.said = organizeChangedText(done.changed);
+      org.said = organizeChangedText(done.changed, (run.moves || []).map(m => m.key));
       organizeDraw();
       if (!dirty) reloadQuiet().catch(() => {});  // the map shows what is on disk
       return;

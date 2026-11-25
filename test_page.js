@@ -1665,6 +1665,12 @@ test("Apply sends the domain of each ticked row, and what each story's domain wa
   assert.deepEqual(page.organizeSend(org, new Set(["PLN-99"])), { set: {}, expect: {} });
 });
 
+test("a changed story with no row of its own asks for a fresh proposal", () => {
+  assert.equal(page.organizeChangedText(["PLN-70"], ["PLN-72"]),
+    "PLN-70 has changed since the proposal, so nothing was filed. Ask again for a proposal that fits the boards as they are now.");
+  assert.match(page.organizeChangedText(["PLN-72"], ["PLN-72"]), /Its row is unticked/);
+});
+
 test("stories changed since the proposal are said, and their rows come back unticked", () => {
   assert.equal(page.organizeChangedText(["PLN-72"]), "PLN-72 has changed since the proposal, so nothing was filed. Its row is unticked: Apply again to file the rest.");
   assert.equal(page.organizeChangedText(["PLN-80", "PLN-72"]), "PLN-72 and PLN-80 have changed since the proposal, so nothing was filed. Their rows are unticked: Apply again to file the rest.");

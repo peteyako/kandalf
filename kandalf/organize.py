@@ -76,7 +76,8 @@ def _doc(store, md: str):
     """The first plan doc a tile links that is in the store, as its path in the store; else None."""
     for found in _DOC_RE.finditer(md):
         path = found.group(1)
-        if path != tiles.ARCHIVE_LOG and (store.dir / path).is_file():
+        at = (store.dir / path).resolve()
+        if path != tiles.ARCHIVE_LOG and at.is_file() and at.is_relative_to(store.dir.resolve()):
             return path
     return None
 

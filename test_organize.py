@@ -143,6 +143,12 @@ class Stories(Store):
             self.assertNotIn("PLN-71", keys)
             self.assertNotIn("PLN-40", keys)
 
+    def test_a_plan_doc_link_that_leaves_the_store_is_not_a_plan_doc(self):
+        (self.top / "secret.md").write_text("outside\n")
+        (self.plans / "plan.md").write_text("# Plan\n\n## Feature\n\n- [ ] PLN-80 **Refunds.** See [doc](active/../../secret.md).\n", encoding="utf-8")
+        got = organize.stories(self.store, self.snap(), False)
+        self.assertIsNone(next(s for s in got if s["key"] == "PLN-80")["doc"])
+
     def test_a_description_is_cut_to_about_300_characters(self):
         long = " ".join(["word"] * 200)
         (self.plans / "plan.md").write_text(f"# Backlog\n\n## Feature\n\n- [ ] PLN-80 **Refunds.** {long}\n", encoding="utf-8")

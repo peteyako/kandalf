@@ -519,7 +519,7 @@ def domain_name(raw: str) -> str:
     return name
 
 
-_TITLE_HEAD_RE = re.compile(r"^([A-Za-z][\w&-]*)(?=[ :])[^:]{0,30}:\s", re.ASCII)  # same in board.html (tileDomains' head)
+_TITLE_HEAD_RE = re.compile(r"^((?a:[A-Za-z][\w&-]*))(?=[ :])[^:]{0,30}:\s")  # \w ASCII as in JS; \s Unicode as in JS  # same in board.html (tileDomains' head)
 
 
 def tile_domains(index: dict) -> dict:

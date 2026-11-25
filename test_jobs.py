@@ -502,8 +502,6 @@ class AcrossProcesses(unittest.TestCase):
         self.assertEqual([j["key"] for j in jobs.Ledger(st).read()["jobs"]], ["CHILD", "PARENT"])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class GoneStore(unittest.TestCase):
@@ -536,3 +534,7 @@ def _chdir(path):
         yield
     finally:
         os.chdir(was)
+
+
+if __name__ == "__main__":
+    unittest.main()
