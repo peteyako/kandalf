@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.5
 
 - The map's bar keeps its tools (Whole map, Hide done, Masters, Reset layout, + New domain, Organize…) together in one bar on the right, apart from the domain chips on the left.
 - The map's bar has **Hide done**: it leaves finished stories off the map, keeping a done one whose branch isn't merged yet and a done master that still has open sub-stories. A master's count still counts every sub-story. The choice is kept in your browser.
