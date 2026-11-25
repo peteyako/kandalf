@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, splitOffered, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -1736,4 +1736,15 @@ test("Create sends the ticked sub-stories with their edited titles and descripti
   assert.deepEqual(all.stories.map(s => [s.title, s.description]), [["Card form", "Build the <card> form."], ["Money back", "Give it back."]]);
   assert.deepEqual(all.stories[1].tasks, [{ text: "refund API", done: true }]);
   assert.equal(page.splitCreatedText({ into: "PLN-72", created: ["PLN-90", "PLN-91", "PLN-92"] }), "PLN-72 split into PLN-90, PLN-91 and PLN-92.");
+});
+
+test("Split is offered only on a story the server would split: keyed, not a sub-story, with no session or job", () => {
+  page.open("build.md", PLANS, SERVER);
+  assert.equal(page.splitOffered("PLN-70", "PLN-70 **Dark mode.** The master story.", []), true);
+  assert.equal(page.splitOffered(null, "**No key.**", []), false);
+  assert.equal(page.splitOffered("PLN-75", "PLN-75 **Theme auth.**\n  Part of PLN-70.", []), false);
+  assert.equal(page.splitOffered("PLN-70", "PLN-70 **Dark mode.**\n  Claude session `ab12cd34`: `claude --resume ab12cd34`.", []), false);
+  for (const state of ["waiting", "paused", "started", "idle", "lost"])
+    assert.equal(page.splitOffered("PLN-70", "PLN-70 **Dark mode.**", [{ key: "PLN-70", state }]), false, state);
+  assert.equal(page.splitOffered("PLN-70", "PLN-70 **Dark mode.**", [{ key: "PLN-70", state: "done" }, { key: "PLN-71", state: "started" }]), true);
 });

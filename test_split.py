@@ -333,6 +333,14 @@ class Look(Store):
         self.assertFalse(self.path().exists())
         self.assertTrue(any("3 sub-stories ready" in line for line in said), said)
 
+    def test_of_two_sub_tasks_alike_the_first_is_moved_and_the_second_stays(self):
+        twin = "  - [ ] receipts\n    note one\n  - [x] receipts\n    note two"
+        (self.plans / "build.md").write_text(BUILD.replace("  - [ ] receipts", twin))
+        self.ready("## A\n- [x] receipts\n")
+        rec = split.of(self.store)
+        self.assertEqual(rec["stories"][0]["tasks"], [{"text": "receipts", "done": False, "moved": True}])
+        self.assertEqual(rec["stays"], ["card form", "refund API", "receipts"])
+
     def test_a_moved_sub_task_matches_ignoring_case_spaces_and_a_full_stop_and_goes_to_the_first_that_lists_it(self):
         self.ready("## A\n- [ ] Card  Form.\n## B\n- [ ] card form\n- [ ] new\n")
         stories = split.of(self.store)["stories"]
@@ -415,8 +423,19 @@ class Create(Store):
     def rev(self, key="PLN-72"):
         return self.snap().index()[key]["rev"]
 
+    def ready_run(self, key="PLN-72", rev=None, state="ready"):
+        """A run of key's split as the look leaves it ready (rev: what it read of the story)."""
+        with jobs.Ledger(self.store).change() as ledger_state:
+            ledger_state["split"] = {"state": state, "started": 1, "key": key, "rev": rev or self.rev(key), "tasks": [],
+                                     "stories": [], "worktree": None, "tidied": True}
+
     def create(self, stories=ASKED, key="PLN-72", expect=None):
-        return serve.split_story(self.store, key, stories, self.rev(key) if expect is None else expect)
+        """Create, as the page sends it, for a run of key's split that is ready (one is put in the
+        ledger when there is none for key), expecting the rev it read (expect, else the story's now)."""
+        rev = expect or self.rev(key)
+        if (split.of(self.store) or {}).get("key") != key:
+            self.ready_run(key, rev)
+        return serve.split_story(self.store, key, stories, rev)
 
     def flush(self):
         with gitlog.queue(self.store.root) as q:
@@ -436,6 +455,59 @@ class Create(Store):
         self.assertEqual(snap.tile("PLN-96").text, "- [ ] PLN-96 **Card form.** Part of PLN-72. Build the card form.\n"
                                                    "  - [ ] card form\n  - [ ] Validate the expiry")
         self.assertEqual(snap.tile("PLN-97").text, "- [ ] PLN-97 **Refunds.** Part of PLN-72. Give money back.\n  - [x] refund API\n    with a note under it")
+
+    def test_a_second_create_is_refused_and_writes_nothing_more(self):
+        self.ready_run()
+        rev = self.rev()
+        self.assertEqual(serve.split_story(self.store, "PLN-72", ASKED[1:], rev)[0], 200)  # moves refund API
+        self.assertIsNone(split.of(self.store))
+        after = self.store_files()
+        self.ready_run("PLN-72", rev)
+        status, reply = serve.split_story(self.store, "PLN-72", ASKED[1:], self.rev())  # the master's hash passes again
+        self.assertEqual(status, 409, reply)
+        with jobs.Ledger(self.store).change() as state:
+            state.pop("split", None)
+        status, reply = serve.split_story(self.store, "PLN-72", ASKED[1:], self.rev())
+        self.assertEqual(status, 409)
+        self.assertIn("no split of PLN-72 ready to create", reply["error"])
+        self.assertEqual(self.store_files(), after)
+        self.assertEqual((self.plans / "build.md").read_text().count("**Refunds.**"), 1)
+
+    def test_two_identical_creates_make_one_set_of_sub_stories(self):
+        self.ready_run()
+        body = [{"title": "Docs", "description": "", "tasks": [{"text": "write them", "done": False}]}]
+        first = serve.split_story(self.store, "PLN-72", body, self.rev())
+        second = serve.split_story(self.store, "PLN-72", body, self.rev())  # no sub-task moved: the master's hash is the same
+        self.assertEqual((first[0], second[0]), (200, 409))
+        self.assertIn("PLN-72", second[1]["error"])
+        self.assertEqual((self.plans / "build.md").read_text().count("**Docs.**"), 1)
+
+    def test_a_create_while_the_split_is_working_or_for_another_story_is_refused(self):
+        self.ready_run(state="working")
+        status, reply = serve.split_story(self.store, "PLN-72", ASKED, self.rev())
+        self.assertEqual(status, 409)
+        self.assertIn("still at work", reply["error"])
+        self.ready_run("PLN-80")
+        status, reply = serve.split_story(self.store, "PLN-72", ASKED, self.rev())
+        self.assertIn("no split of PLN-72 ready to create", reply["error"])
+        self.assertEqual(split.of(self.store)["key"], "PLN-80")
+
+    def test_of_two_sub_tasks_alike_only_the_first_moves_and_the_second_stays_with_its_note(self):
+        twin = "  - [ ] receipts\n    note one\n  - [x] receipts\n    note two"
+        (self.plans / "build.md").write_text(BUILD.replace("  - [ ] receipts", twin))
+        self.create([{"title": "Receipts", "description": "", "tasks": [{"text": "receipts", "done": False}]}])
+        snap = self.snap()
+        self.assertEqual(snap.tile("PLN-96").text, "- [ ] PLN-96 **Receipts.** Part of PLN-72.\n  - [ ] receipts\n    note one")
+        self.assertTrue(snap.tile("PLN-72").text.endswith("  - [ ] card form\n  - [x] refund API\n    with a note under it\n  - [x] receipts\n    note two"))
+
+    def test_a_proposed_title_or_description_cannot_set_a_parent_a_link_or_a_blocker(self):
+        self.create([{"title": "PLN-12: Card form. Part of PLN-70", "description": "Blocked by PLN-73 and PLN-80. Moves with PLN-71. Part of PLN-70. Takes cards.",
+                      "tasks": []}])
+        snap = self.snap()
+        self.assertEqual(snap.tile("PLN-96").text, "- [ ] PLN-96 **Card form.** Part of PLN-72. Takes cards.")
+        t = snap.tile("PLN-96")
+        self.assertEqual((t.parent, t.blockers, t.links), ("PLN-72", [], []))
+        self.assertEqual(self.create([{"title": "Part of PLN-70", "description": "", "tasks": []}])[0], 400)
 
     def test_moved_sub_tasks_leave_the_master_and_the_rest_stay_with_their_ticks(self):
         self.create()

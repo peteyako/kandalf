@@ -851,28 +851,46 @@ def subtask_lines(md: str) -> dict:
 
 
 def without_subtasks(md: str, keys) -> str:
-    """A tile's markdown without its own sub-tasks whose task_key is in keys (each with the lines
-    under it); every other line, and every other sub-task's tick, as it was."""
-    lines, keys = md.split("\n"), set(keys)
-    drop = {i for a, b in _subtasks(lines) if task_key(SUBTASK_RE.sub("", lines[a])) in keys for i in range(a, b)}
+    """A tile's markdown without, for each task_key in keys, its first own sub-task that has it
+    (with the lines under it), as subtask_lines picks it; a second sub-task alike, every other
+    line and every other sub-task's tick stay as they were."""
+    lines, keys, drop = md.split("\n"), set(keys), set()
+    for a, b in _subtasks(lines):
+        k = task_key(SUBTASK_RE.sub("", lines[a]))
+        if k in keys:
+            keys.discard(k)
+            drop.update(range(a, b))
     return "\n".join(x for i, x in enumerate(lines) if i not in drop)
 
 
+_ANY_KEY = r"[A-Za-z][A-Za-z0-9]*-\d+"
+# A "Part of", "Moves with" or "Blocked by" phrase with its keys (any store's prefix), and a full stop after it.
+_RELATION_RE = re.compile(rf"\b(?:part of|moves with|blocked by)\s+{_ANY_KEY}(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+){_ANY_KEY})*[.,;]?", re.I)
+_LEADING_KEYS_RE = re.compile(rf"^(?:{_ANY_KEY}\b[\s:.,-]*)+")
+
+
+def without_relations(text: str) -> str:
+    """Text on one line with no Part of, Moves with or Blocked by phrase in it: a sub-story a split
+    writes gets its master from the split alone, and no link or blocker from what was proposed."""
+    return " ".join(_RELATION_RE.sub(" ", text).split())
+
+
 def story_title(raw: str) -> str:
-    """A title as a new tile's bold takes it: on one line, without asterisks, backticks or a full
-    stop or colon at the end; "" when nothing is left."""
-    return " ".join(raw.replace("*", "").replace("`", "").split()).rstrip(".:").strip()
+    """A title as a new tile's bold takes it: on one line, without asterisks, backticks, keys at its
+    start, relations (without_relations) or a full stop or colon at the end; "" when nothing is left."""
+    title = without_relations(raw.replace("*", "").replace("`", ""))
+    return _LEADING_KEYS_RE.sub("", title).strip().rstrip(".:,;").strip()
 
 
 def sub_story(key: str, master: str, title: str, description: str, tasks) -> str:
     """A new sub-story's markdown: "- [ ] KEY **Title.** Part of MASTER. Description" on one line
-    (the title as story_title gives it, the description with its line breaks folded), then its
+    (the title as story_title gives it, the description on one line without_relations), then its
     sub-tasks, each given as its lines (a checkbox line and any lines under it) or as
     {"text", "done"}, indented as a tile's are. No Domain or Repos line: a sub-story takes its master's."""
     title = story_title(title)
     end = "" if title.endswith(("?", "!")) else "."
     first = f"- [ ] {key} **{title}{end}** Part of {master}."
-    words = " ".join(description.split())
+    words = without_relations(description)
     out = [f"{first} {words}" if words else first]
     for task in tasks:
         if isinstance(task, dict):

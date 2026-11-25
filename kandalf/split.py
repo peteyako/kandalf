@@ -214,9 +214,11 @@ def _proposal(run: dict, text: str) -> dict:
     """The fields of a run whose session wrote text: ready with its stories ([{title, description,
     tasks: [{text, done, moved}]}]), where a task that matches one of the story's own sub-tasks
     (tiles.task_key) is moved, spelt and ticked as the story has it, and goes only to the first
-    sub-story that lists it, and stays, the story's own sub-tasks none takes; or need when there
-    is no sub-story."""
-    own = {tiles.task_key(t["text"]): t for t in run.get("tasks") or []}
+    sub-story that lists it (of two of the story's alike, the first, as Create takes it), and
+    stays, the story's own sub-tasks none takes; or need when there is no sub-story."""
+    own = {}
+    for t in run.get("tasks") or []:
+        own.setdefault(tiles.task_key(t["text"]), t)
     taken, stories = set(), []
     for s in parse(text):
         tasks = []
@@ -232,7 +234,32 @@ def _proposal(run: dict, text: str) -> dict:
         stories.append({**s, "tasks": tasks})
     if not stories:
         return {"state": "need", "why": "The agent proposed no sub-stories."}
-    return {"state": "ready", "stories": stories, "stays": [t["text"] for k, t in own.items() if k not in taken]}
+    left, stays = set(taken), []
+    for t in run.get("tasks") or []:  # each sub-task taken goes once; one alike after it stays
+        k = tiles.task_key(t["text"])
+        if k in left:
+            left.discard(k)
+        else:
+            stays.append(t["text"])
+    return {"state": "ready", "stories": stories, "stays": stays}
+
+
+def claim(store, key: str, rev: str, expect):
+    """Take the run's proposal for Create: when the ledger's run is ready for this key, its rev
+    (what it read of the story) is the story's now (rev) and the one the page reviewed (expect),
+    it is marked ending at once, in one transaction, so a second Create (a retry, another tab)
+    finds no proposal to create. None when it is taken; else (409, {error}) with nothing
+    changed: ("changed since", changed: [key]) when the story or the proposal moved on."""
+    with ledger.Ledger(store).change() as state:
+        rec = state.get(SLOT)
+        if not rec or rec.get("key") != key or rec["state"] == "ending":
+            return 409, {"error": f"There is no split of {key} ready to create (it was created or discarded); ask again for a new one."}
+        if rec["state"] != "ready":
+            return 409, {"error": f"The split of {key} is still at work; create it once it is ready."}
+        if rec.get("rev") != rev or (expect is not None and expect != rec.get("rev")):
+            return 409, {"error": "changed since", "changed": [key]}
+        rec["state"] = "ending"
+    return None
 
 
 def look(store, *, sessions) -> list:

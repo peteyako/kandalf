@@ -565,11 +565,14 @@ def split_story(store, key, stories, expect=None) -> tuple:
     goes in the story's board and column, directly below it (tiles.sub_story). A task that
     matches one of the story's own sub-tasks (tiles.task_key) is moved: it leaves the story and
     goes over as the story has it, its tick and the lines under it kept; any other is new. The
-    story's other sub-tasks stay as they are. One commit, "board: PLN-72 split into PLN-90,
-    PLN-91". expect, when given, is the story's rev as the run read it (Snapshot.index). Returns
-    (200, {into, created: [keys]}), (400, {error}) when the request isn't one, (409, {error})
-    when the story can't be split (split.refusal), or (409, {error: "changed since", changed:
-    [key]}) when the story differs from expect, with nothing written."""
+    story's other sub-tasks stay as they are (of two alike, the first moves). One commit,
+    "board: PLN-72 split into PLN-90, PLN-91". It needs the ledger's split run ready for this
+    key, and takes it (split.claim) before it writes, then ends it, so it is created once.
+    expect, when given, is the story's rev as the run read it (Snapshot.index), as the page was
+    told it. Returns (200, {into, created: [keys]}), (400, {error}) when the request isn't one,
+    (409, {error}) when the story can't be split (split.refusal) or there is no ready run of
+    it, or (409, {error: "changed since", changed: [key]}) when the story or the proposal
+    differs, with nothing written."""
     if not isinstance(key, str) or not isinstance(stories, list) or not all(isinstance(s, dict) for s in stories):
         return 400, {"error": "Say which story to split, and into what."}
     if not stories:
@@ -583,8 +586,9 @@ def split_story(store, key, stories, expect=None) -> tuple:
     why = split.refusal(store, snap, key)
     if why:
         return 409, {"error": why}
-    if expect is not None and snap.index()[key]["rev"] != expect:
-        return 409, {"error": "changed since", "changed": [key]}
+    refused = split.claim(store, key, snap.index()[key]["rev"], expect)
+    if refused:
+        return refused
     name, master = snap.index()[key]["file"], snap.tile(key).text
     own = reader.subtask_lines(master)
     n = max((x for text in snap.files.values() for x in reader.numbers(store, text)), default=0)
@@ -607,6 +611,7 @@ def split_story(store, key, stories, expect=None) -> tuple:
     text = reader.insert_after(store, text, key, mds)
     write_atomic(store.dir / name, text)
     gitlog.record(store, [store.dir / name], f"board: {key} split into {', '.join(keys)}", subject=True)
+    split_end(store)  # claimed (ending) before the write: now its record goes
     return 200, {"into": key, "created": keys}
 
 
@@ -1641,8 +1646,6 @@ class Handler(BaseHTTPRequestHandler):
             status, reply = split_story(self.store, data.get("key"), data.get("stories"), data.get("expect"))
             if status != 200:
                 return self.send_json(status, reply)
-            if (split.of(self.store) or {}).get("key") == reply["into"]:
-                split_end(self.store)
             return self.send_json(status, {**self.board_reply(p), **reply, "split": split.summary(self.store)})
         if u.path == "/api/settings":  # {mtime, changes}: the settings panel's Save
             return self.save_settings(self.read_body())

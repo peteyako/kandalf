@@ -1175,7 +1175,9 @@ dialog#splitDlg { width: min(560px, 94vw); max-height: 90vh; overflow-y: auto; }
 #splitBody .split-tasks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 #splitBody .split-tasks li.done { color: var(--muted); text-decoration: line-through; }
 #splitBody .split-moved { color: var(--muted); font-size: 11px; font-style: normal; text-decoration: none; display: inline-block; }
-#splitBody .split-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 10px; }
+#splitBody .split-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; margin-top: 10px; }
+#splitBody .split-acts .split-error { flex: 1 1 100%; margin: 0; }
+#splitBody .split-acts .split-error:empty { display: none; }
 #mapOrganize[aria-expanded="true"] { border-color: var(--accent); }
 #mapView aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 5px; font-weight: 700; }
 #mapView aside h2:first-child { margin-top: 0; }
@@ -2656,6 +2658,13 @@ function organizeFiledText(filed) {
 function splitLabel(run, key) {
   if (!run || run.key !== key) return "Split…";
   return { working: "Splitting…", ready: "Review split…", need: "Split didn't finish…" }[run.state] || "Split…";
+}
+// Whether a card's story (its key and markdown) can be split, as the server would allow it
+// (split.refusal): keyed, not a sub-story, with no session line and no job pickup keeps for it
+// in jobs (/api/pickup's: waiting, paused, or with a session).
+function splitOffered(key, md, jobs) {
+  if (!key || tileFacts(key, md).parent || md.split("\n").some(line => sessionLine(line))) return false;
+  return !(jobs || []).some(j => j.key === key && ["waiting", "paused", "started", "idle", "lost"].includes(j.state));
 }
 // The review of a ready run: per proposed sub-story a tick (on unless its index is in off), its
 // title and description to edit, and its sub-tasks as they will be written (a moved one marked),
@@ -4235,8 +4244,10 @@ const splitRun = () => pickups.split || null;
 // and not to be pressed while another story's run is going.
 function splitButton() {
   const b = $("#cardSplit"), key = editing?.card ? cardKey(editing.card) : null, run = splitRun();
-  b.classList.toggle("hidden", !key || isDocFile() || file === ARCHIVE_LOG || readonly);
-  if (!key) return;
+  const md = editing?.card ? [editing.card.text, ...editing.card.body].join("\n") : "";
+  const offered = !!key && (run?.key === key || splitOffered(key, md, pickups.jobs));  // a run of its own stays reachable
+  b.classList.toggle("hidden", !offered || isDocFile() || file === ARCHIVE_LOG || readonly);
+  if (!offered) return;
   const other = !!run && run.key !== key;
   b.disabled = other;
   b.title = other ? `A split of ${run.key} is under way: finish it first.` : `Ask ${AGENT_LABEL} to split this story into sub-stories; you review what it proposes before anything is written`;
@@ -4263,7 +4274,7 @@ function splitDraw() {
   } else if (state === "ready") {
     html = `<h3 id="splitHead">Proposed sub-stories of ${key}</h3>${error}${splitReviewHTML(mine)}`
       + `<p class="split-note">Each ticked one becomes a tile below ${key}, part of it. The story's sub-tasks they take leave it.</p>`
-      + `<div class="split-acts"><button type="button" data-split-act="end">Discard</button><button type="button" class="primary" data-split-act="create">Create</button></div>`;
+      + `<div class="split-acts"><span class="split-error" id="splitActError" role="alert"></span><button type="button" data-split-act="end">Discard</button><button type="button" class="primary" data-split-act="create">Create</button></div>`;
   } else {
     html = `<h3 id="splitHead">The split didn't finish</h3><p class="split-why">${esc(mine.why || "It stopped without a proposal.")}</p>`
       + `<div class="split-acts"><button type="button" data-split-act="end">Close</button><button type="button" class="primary" data-split-act="again">Try again</button></div>`;
@@ -4313,10 +4324,10 @@ async function splitAct(act) {
     saving = true; setStatus("Splitting…");
     const got = await splitPost(`/api/split/create?file=${encodeURIComponent(file)}`, body);
     saving = false;
-    if (got.error) {
+    if (got.error) {  // said beside the buttons: the titles, descriptions and ticks edited stay as they are
       setStatus("Not done", true);
-      spl.error = got.changed ? `${run.key} has changed since ${AGENT_LABEL} read it, so nothing was created. Discard, and ask again for a proposal that fits the story as it is now.` : got.error;
-      spl.sig = ""; splitDraw();
+      const said = splitBody.querySelector("#splitActError");
+      if (said) said.textContent = got.changed ? `${run.key} has changed since ${AGENT_LABEL} read it, so nothing was created. Discard, and ask again for a proposal that fits the story as it is now.` : got.error;
       if (got.changed && !dirty) reloadQuiet().catch(() => {});
       return;
     }
