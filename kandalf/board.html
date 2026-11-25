@@ -2365,7 +2365,8 @@ const domainName = raw => {
 };
 // Each tile's domain, {key: name or ""}: its own Domain: line, else its master's domain, else
 // the first word before the colon in its title ("Admin: analytics") when two masters or three
-// stories start with that word; a word only one story starts with is not a domain.
+// stories start with that word; a word only one story starts with is not a domain. Same in
+// tiles.py (tile_domains); the cases are tile_cases.json's tileDomains.
 function tileDomains(index) {
   const head = t => /^([A-Za-z][\w&-]*)(?=[ :])[^:]{0,30}:\s/.exec(t.title)?.[1] || "";
   const masters = new Set([...index.values()].map(t => t.parent).filter(Boolean)), stories = new Map(), led = new Map();
@@ -2574,21 +2575,32 @@ function mapUndoable(filed, own) {
   return Object.entries(filed).filter(([k, f]) => !own.has(k) || !same(own.get(k), f.to)).map(([k]) => k).sort(byKeyOrder);
 }
 // Organize's review: the agent's proposal (/api/pickup's organize, ready: {moves: [{key, title,
-// domain, new}], left: [keys]}) grouped by domain in the order it first names them, a domain no
-// story has today marked new, a ticked checkbox per story, and a line for the stories it left.
-function organizeReviewHTML(org) {
+// domain, new, from}], left: [keys]}) grouped by domain in the order it first names them, a domain
+// no story has today marked new, a checkbox per story, ticked unless its key is in off (the
+// stories that changed since), and a line for the stories it left.
+function organizeReviewHTML(org, off = new Set()) {
   const groups = new Map();
   for (const m of org.moves || []) {
     if (!groups.has(m.domain)) groups.set(m.domain, { new: !!m.new, moves: [] });
     groups.get(m.domain).moves.push(m);
   }
-  const row = m => `<label class="org-row"><input type="checkbox" data-org="${esc(m.key)}" checked> <span class="m-key">${esc(m.key)}</span> ${esc(m.title || "")}</label>`;
+  const row = m => `<label class="org-row"><input type="checkbox" data-org="${esc(m.key)}"${off.has(m.key) ? "" : " checked"}> <span class="m-key">${esc(m.key)}</span> ${esc(m.title || "")}</label>`;
   const html = [...groups].map(([name, g]) => `<div class="org-group"><h2>${esc(name)}${g.new ? '<span class="org-new">new</span>' : ""}</h2>${g.moves.map(row).join("")}</div>`).join("");
   const left = org.left || [];
   return html + (left.length ? `<p class="org-left">${left.length === 1 ? "1 story" : `${left.length} stories`} left as they are: ${esc(left.join(", "))}</p>` : "");
 }
-// What Apply files: {KEY: domain} for each move whose key is ticked (a Set), for /api/domain's set.
-const organizeSet = (org, ticked) => Object.fromEntries((org.moves || []).filter(m => ticked.has(m.key)).map(m => [m.key, m.domain]));
+// What Apply sends /api/domain for the ticked keys (a Set): set, {KEY: domain}, and expect, {KEY:
+// its own domain when it was proposed, null for none}, so a story changed since files nothing.
+function organizeSend(org, ticked) {
+  const moves = (org.moves || []).filter(m => ticked.has(m.key));
+  return { set: Object.fromEntries(moves.map(m => [m.key, m.domain])), expect: Object.fromEntries(moves.map(m => [m.key, m.from ?? null])) };
+}
+// What the page says when Apply is refused because these stories changed since the proposal.
+function organizeChangedText(changed) {
+  const keys = [...changed].sort(byKeyOrder), one = keys.length === 1;
+  const named = one ? keys[0] : `${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
+  return `${named} ${one ? "has" : "have"} changed since the proposal, so nothing was filed. ${one ? "Its row is" : "Their rows are"} unticked: Apply again to file the rest.`;
+}
 // What the page says after Apply (and Undo after it), from /api/domain's filed ({KEY: {from, to}}).
 function organizeFiledText(filed) {
   const keys = Object.keys(filed).sort(byKeyOrder), tos = new Set(keys.map(k => filed[k].to));
@@ -3955,18 +3967,19 @@ async function mapNewDomain() {
 // org: whether the panel is open, the sentence a refused start gave, the state last drawn (to
 // open the panel when a run finishes) and what was drawn (so a poll doesn't wipe a typed note
 // or the ticks).
-const org = { open: false, error: "", was: null, sig: "" };
+const org = { open: false, error: "", was: null, sig: "", run: null, off: new Set(), said: "" };  // run, off, said: the run Apply was refused on, the stories it unticked, and why
 const orgPanel = $("#orgPanel");
 const orgRun = () => pickups.organize || null;
 function organizeDraw() {
   const run = orgRun(), state = run?.state || null;
   if (org.was === "working" && (state === "ready" || state === "need")) org.open = true;  // the run finished: show it
   org.was = state;
+  if (org.run !== run?.started) { org.run = run?.started; org.off = new Set(); org.said = ""; }  // a new run: nothing refused yet
   const btn = $("#mapOrganize");
-  btn.textContent = state === "working" ? "Organizing…" : "Organize…";
+  btn.textContent = state === "working" ? "Organizing…" : state === "ready" ? "Review…" : "Organize…";
   btn.setAttribute("aria-expanded", org.open);
   orgPanel.hidden = !org.open;
-  const sig = JSON.stringify([org.open, org.error, run && { ...run, started: undefined }]) + (state === "working" ? ageText(Date.now() / 1000 - run.started) : "");
+  const sig = JSON.stringify([org.open, org.error, org.said, [...org.off], run]) + (state === "working" ? ageText(Date.now() / 1000 - run.started) : "");
   if (!org.open || sig === org.sig) return;
   const kept = orgPanel.querySelector("#orgNote")?.value, keptRefile = orgPanel.querySelector("#orgRefile")?.checked;
   org.sig = sig;
@@ -3983,7 +3996,7 @@ function organizeDraw() {
     html = `<h3>Organizing…</h3><p class="org-note">${agentIcon()} ${esc(AGENT_LABEL)} is sorting the stories into domains${age ? ` (${age})` : ""}. You review what it proposes before anything is filed.</p>`
       + `<div class="org-acts"><button type="button" data-org-act="end">Cancel</button></div>`;
   } else if (state === "ready") {
-    html = `<h3>Proposed domains</h3>${organizeReviewHTML(run)}`
+    html = `<h3>Proposed domains</h3>${org.said ? `<p class="org-error">${esc(org.said)}</p>` : ""}${organizeReviewHTML(run, org.off)}`
       + `<div class="org-acts"><button type="button" class="primary" data-org-act="apply">Apply</button><button type="button" data-org-act="end">Discard</button></div>`;
   } else {
     html = `<h3>The sort didn't finish</h3><p class="org-why">${esc(run.why || "It stopped without a proposal.")}</p>`
@@ -4025,10 +4038,18 @@ async function organizeAct(act) {
   }
   if (act === "apply" && run?.state === "ready") {
     const ticked = new Set([...orgPanel.querySelectorAll("input[data-org]:checked")].map(i => i.dataset.org));
-    const set = organizeSet(run, ticked);
+    const { set, expect } = organizeSend(run, ticked);
     if (!Object.keys(set).length) return flash("Tick a story to file, or press Discard.");
-    const done = await mapSend(set);
+    const done = await mapSend(set, expect);
     if (!done) return;  // refused or failed, and said why: the proposal stays to try again
+    if (done.changed) {  // changed since the proposal (on a card, by an agent, in an editor): nothing filed
+      org.off = new Set([...org.off, ...done.changed]);
+      for (const box of orgPanel.querySelectorAll("input[data-org]")) if (!box.checked) org.off.add(box.dataset.org);
+      org.said = organizeChangedText(done.changed);
+      organizeDraw();
+      if (!dirty) reloadQuiet().catch(() => {});  // the map shows what is on disk
+      return;
+    }
     const filed = Object.entries(done.j.filed || {});
     const text = filed.length ? organizeFiledText(done.j.filed) : "Nothing to move: they are already there";
     if (filed.length) sm.lastFiling = { set: Object.fromEntries(filed.map(([k, f]) => [k, f.from])), filed: done.j.filed, text, pending: null };

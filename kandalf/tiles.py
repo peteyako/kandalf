@@ -519,6 +519,52 @@ def domain_name(raw: str) -> str:
     return name
 
 
+_TITLE_HEAD_RE = re.compile(r"^([A-Za-z][\w&-]*)(?=[ :])[^:]{0,30}:\s", re.ASCII)  # same in board.html (tileDomains' head)
+
+
+def tile_domains(index: dict) -> dict:
+    """Each tile's domain as the map draws it, {key: name or ""}, for an index of {key: {"title",
+    "parent", "domain"}} (Snapshot.index): its own Domain line, else its master's domain, else
+    the first word before the colon in its title ("Admin: analytics") when two masters or three
+    stories start with that word. Names that differ only in case are one domain, spelt as the
+    first met. Same in board.html (tileDomains there); the cases are tile_cases.json's tileDomains."""
+    def head(t):
+        found = _TITLE_HEAD_RE.match(t.get("title") or "")
+        return found.group(1) if found else ""
+    masters = {t["parent"] for t in index.values() if t.get("parent")}
+    stories, led = {}, {}
+    for k, t in index.items():
+        h = head(t).lower()
+        if h:
+            stories[h] = stories.get(h, 0) + 1
+            if k in masters:
+                led[h] = led.get(h, 0) + 1
+    spelt, out = {}, {}
+
+    def shared(h):
+        return led.get(h, 0) >= 2 or stories.get(h, 0) >= 3
+
+    def find(k, seen):
+        if k in out:
+            return out[k]
+        t, up = index[k], index[k].get("parent")
+        up = up if up and up in index and up not in seen else None
+        if t.get("domain"):
+            d = spelt.setdefault(t["domain"].lower(), t["domain"])
+        elif up:
+            seen.add(k)
+            d = find(up, seen)
+        else:
+            d = ""
+        if not d and shared(head(t).lower()):
+            d = spelt.setdefault(head(t).lower(), head(t))
+        out[k] = d
+        return d
+    for k in index:
+        find(k, set())
+    return out
+
+
 def with_domain(store, text: str, key: str, name) -> str:
     """The board with the tile with this key in the domain name: its first Domain: line
     replaced by "  Domain: name", or one added as the last line of its description (before a

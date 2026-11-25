@@ -229,5 +229,11 @@
     {"raw": "a`b", "error": "A domain's name can't hold a backtick or a line break."},
     {"raw": "a\nb", "error": "A domain's name can't hold a backtick or a line break."},
     {"raw": "Ops.", "error": "A domain's name can't end in a full stop."}
+  ],
+  "tileDomains": [
+    {"index": {"PLN-01": {"title": "Admin: users", "parent": null, "domain": null}, "PLN-02": {"title": "Admin: roles", "parent": null, "domain": null}, "PLN-03": {"title": "Operator: logs", "parent": "PLN-02", "domain": null}, "PLN-04": {"title": "Admin: audit", "parent": "PLN-01", "domain": null}, "PLN-10": {"title": "Sales: rates", "parent": null, "domain": "Sales"}, "PLN-11": {"title": "Rates", "parent": "PLN-10", "domain": null}, "PLN-20": {"title": "Docs: one of a kind", "parent": null, "domain": null}, "PLN-21": {"title": "Loose end", "parent": null, "domain": null}}, "domains": {"PLN-01": "Admin", "PLN-02": "Admin", "PLN-03": "Admin", "PLN-04": "Admin", "PLN-10": "Sales", "PLN-11": "Sales", "PLN-20": "", "PLN-21": ""}},
+    {"index": {"PLN-30": {"title": "Ops: a", "parent": null, "domain": null}, "PLN-31": {"title": "ops: b", "parent": null, "domain": null}, "PLN-32": {"title": "OPS  tidy: c", "parent": null, "domain": null}, "PLN-33": {"title": "Ops", "parent": null, "domain": null}}, "domains": {"PLN-30": "Ops", "PLN-31": "Ops", "PLN-32": "Ops", "PLN-33": ""}},
+    {"index": {"PLN-40": {"title": "x", "parent": null, "domain": "billing"}, "PLN-41": {"title": "y", "parent": null, "domain": "Billing"}, "PLN-42": {"title": "z", "parent": "PLN-99", "domain": null}}, "domains": {"PLN-40": "billing", "PLN-41": "billing", "PLN-42": ""}},
+    {"index": {"PLN-50": {"title": "x", "parent": "PLN-51", "domain": null}, "PLN-51": {"title": "y", "parent": "PLN-50", "domain": null}}, "domains": {"PLN-50": "", "PLN-51": ""}}
   ]
 }

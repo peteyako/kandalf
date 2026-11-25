@@ -10,6 +10,9 @@ per store at a time.
   - parse: the moves in an ORGANIZE.md
   - why_not: why Organize can't run, in pickup's words
   - of, start, end: the run in the ledger, started (worktree and session) and ended again
+
+The session can't reach the store: the store isn't linked into its worktree (the plan docs it
+reads are copies) and it runs without the store's hooks, so nothing it writes is committed.
   - look, busy, summary: the server's one pass over the run, and what it and the page are told
 """
 
@@ -28,11 +31,14 @@ from . import tiles
 STATES = ("working", "ready", "need", "ending")
 OUTPUT = "ORGANIZE.md"  # the file the session writes at its worktree's top
 DESCRIPTION_CUT = 300  # how much of a tile's description the session is given
-KEY = "organize"  # the run's worktree goes where a story with this key would have its own
+KEY = "kandalf-organize"  # the run's worktree goes where a story with this key would have its own: a name nobody types
 
 
 class Refused(ValueError):
     """A run that can't start, with one sentence saying why."""
+
+
+STILL_ENDING = "The last sort is still being cleaned up; try again in a moment."
 
 
 # ---------- what is sorted ----------
@@ -93,12 +99,11 @@ def stories(store, snap, refile: bool) -> list:
 
 
 def domains(snap) -> list:
-    """The domains the stories are in now, [(name, how many stories)], most first: each keyed
-    tile counts once, in its own Domain line's domain, else its nearest master's. Names that
-    differ only in case are one domain, spelt as the first tile spells it."""
+    """The domains the stories are in now, as the map draws them (tiles.tile_domains: a Domain
+    line, a master's, or a title prefix several stories share), [(name, how many stories)],
+    most first; each keyed tile on the boards and the archive counts once."""
     spelt, count = {}, {}
-    for key in snap.index():
-        found = snap.nearest(key, tiles.domain)
+    for found in tiles.tile_domains(snap.index()).values():
         if found:
             low = found.lower()
             spelt.setdefault(low, found)
@@ -107,13 +112,18 @@ def domains(snap) -> list:
 
 
 def _known(snap) -> dict:
-    """{lower-cased name: the name as first spelt} for every Domain line on the store's tiles."""
+    """{lower-cased name: the name as spelt} for every domain the map draws: each Domain line on
+    the store's tiles as the first spells it (what /api/domain writes), then each title prefix
+    that is a domain (tiles.tile_domains)."""
     out = {}
     for name in snap.files:
         for t in snap.tiles(name):
             own = tiles.domain(t.text)
             if own:
                 out.setdefault(own.lower(), own)
+    for found in tiles.tile_domains(snap.index()).values():
+        if found:
+            out.setdefault(found.lower(), found)
     return out
 
 
@@ -143,7 +153,8 @@ def prompt(store, chosen: list, existing: list, note) -> str:
         out += [f"- {name} ({n} stor{'y' if n == 1 else 'ies'})" for name, n in existing]
     else:
         out.append("There are no domains yet.")
-    out += ["", "The stories to sort. Only stories with no master are listed: a master's sub-stories follow it into its domain.", ""]
+    out += ["", "The stories to sort. Only stories with no master are listed: a master's sub-stories follow it into its domain. "
+            f"A plan doc named here is a copy, in docs/{store.link}/ in this folder.", ""]
     for s in chosen:
         out.append(f"- {s['key']} {s['title']}")
         if resort:
@@ -243,16 +254,11 @@ def _path(store) -> Path:
 
 
 def _cut_worktree(store) -> Path:
-    """A detached worktree of the main repo's trunk at the run's path (the store not linked in
-    yet: pickup.link_store). One git still lists there is removed and made again; any other
-    trouble raises RuntimeError with git's words, or a plain sentence naming the path."""
+    """A detached worktree of the main repo's trunk at the run's path. What is there already is
+    cleared only when it is a detached worktree (drafts.clear_for); anything else, or other
+    trouble, raises RuntimeError with git's words or a plain sentence naming the path."""
     repo, path = store.main_repo, _path(store)
-    if path.exists():
-        if not drafts._registered(repo.path, path):
-            raise RuntimeError(f"{path} is already there and isn't a worktree of {repo.name}, so move it away.")
-        why = drafts._drop(repo.path, path)
-        if why:
-            raise RuntimeError(why)
+    drafts.clear_for(repo.path, path, "a sort")
     pickup._git(repo.path, "worktree", "prune")
     pickup.keep_out(repo.path, path)
     made = pickup._git(repo.path, "worktree", "add", "--detach", str(path), repo.trunk)
@@ -261,19 +267,45 @@ def _cut_worktree(store) -> Path:
     return path
 
 
+def _copy_docs(store, cut: Path, chosen: list):
+    """Give the worktree its own copies of the stories' plan docs, at docs/<link>/<their path>,
+    where the prompt points. A docs/<link> link the app's checkout brought along is taken out
+    first, so nothing written there reaches the store."""
+    home = cut / "docs" / store.link
+    if home.is_symlink():
+        home.unlink()
+    for s in chosen:
+        if s.get("doc"):
+            to = home / s["doc"]
+            to.parent.mkdir(parents=True, exist_ok=True)
+            to.write_bytes((store.dir / s["doc"]).read_bytes())
+
+
+def _launch(store, args, cwd: Path, text: str) -> dict:
+    """Start the run's background session in cwd, in the store's permission mode, with no
+    hooks and no folder added (agent.start; not pickup._launch, which gives a session the
+    store's hooks and, for Copilot and Antigravity, the store's folder): {"state": "started",
+    "id", "session"} or {"state": "failed", "error"}."""
+    began = agent.start(args, cwd, store.permission, text)
+    if "error" in began:
+        return {"state": "failed", "error": began["error"]}
+    return {"state": "started", "id": began["id"], "session": pickup.full_id(began["id"])}
+
+
 def start(store, note, refile: bool, *, sessions) -> dict:
     """Start a run: refused (Refused, with why) while one is in the ledger, when Organize can't
     run (why_not) or when there is nothing to sort. The run is recorded working first, so a
-    second start is refused at once; then a detached worktree of the main repo is cut, the store
-    linked in, and one background session started there. The record as it then is: working with
+    second start is refused at once; then a detached worktree of the main repo is cut, the
+    stories' plan docs copied in (_copy_docs), and one background session started there
+    (_launch). The record as it then is: working with
     the session's id, or need with why when the worktree or the session didn't come (any
     worktree cut is removed again)."""
     why = why_not(store)
     if why:
         raise Refused(why)
     held = of(store)
-    if held and held["state"] == "ending":
-        end(store, sessions=sessions)
+    if held and held["state"] == "ending" and not end(store, sessions=sessions):
+        raise Refused(STILL_ENDING)
     snap = tiles.Snapshot.read(store)
     chosen = stories(store, snap, refile)
     note = (note or "").strip() or None
@@ -282,7 +314,7 @@ def start(store, note, refile: bool, *, sessions) -> dict:
            "repo": store.main_repo.name, "worktree": str(_path(store))}
     with ledger.Ledger(store).change() as state:
         if state.get("organize"):
-            raise Refused("A sort is already under way: finish it or cancel it first.")
+            raise Refused(STILL_ENDING if state["organize"]["state"] == "ending" else "A sort is already under way: finish it or cancel it first.")
         if not chosen:
             raise Refused("There are no stories to sort." if refile else
                           "Every story is in a domain already; tick Re-sort filed stories too to sort them again.")
@@ -290,9 +322,9 @@ def start(store, note, refile: bool, *, sessions) -> dict:
     cut = None
     try:
         cut = _cut_worktree(store)
-        pickup.link_store(store, store.main_repo.path, cut)
+        _copy_docs(store, cut, chosen)
         args = pickup.session_args({"key": "Organize", "title": "domains", "model": store.model})
-        launched = pickup._launch(store, run, args, cut, prompt(store, chosen, domains(snap), note), {})
+        launched = _launch(store, args, cut, prompt(store, chosen, domains(snap), note))
         failed = None if launched["state"] == "started" else f"The session didn't start: {launched.get('error') or 'no reason given'}"
     except Exception as e:  # git's trouble, or anything else
         launched, failed = {}, f"The worktree couldn't be made: {e}" if cut is None else f"The session didn't start: {e}"
@@ -371,7 +403,9 @@ def _output(run: dict):
 
 def _proposal(store, run: dict, text: str) -> dict:
     """The fields of a run whose session wrote text: ready with its moves ([{key, title, domain,
-    new}], a name a tile already carries spelt as the board spells it, new when none does) and
+    new, from}], a name a tile already carries spelt as the board spells it, new when none does,
+    from the story's own Domain line when it was given, None for none; Apply sends it as
+    /api/domain's expect) and
     the keys it left as they are; or need when there is no move."""
     known = _known(tiles.Snapshot.read(store))
     given = {s["key"]: s.get("domain") for s in run.get("stories") or []}
@@ -381,7 +415,7 @@ def _proposal(store, run: dict, text: str) -> dict:
         new = name.lower() not in known
         name = spelt.setdefault(name.lower(), name)  # a new name the proposal spells twice is spelt as it first did
         if (given[key] or "").lower() != name.lower():
-            moves.append({"key": key, "title": titles[key], "domain": name, "new": new})
+            moves.append({"key": key, "title": titles[key], "domain": name, "new": new, "from": given[key]})
     if not moves:
         return {"state": "need", "why": "The agent proposed no moves."}
     moved = {m["key"] for m in moves}
@@ -390,10 +424,11 @@ def _proposal(store, run: dict, text: str) -> dict:
 
 def look(store, *, sessions) -> list:
     """One pass over the run. An ending run is ended again. A working one moves on by what its
-    session is doing, once SETTLE has passed since it started: busy is left alone; waiting (a
-    question, a permission prompt, an error) needs you, with that said; idle or gone from the
-    list has its ORGANIZE.md read (parse), ready with some move, else need (no file, or no
-    move); a list that can't be read changes nothing. A run that leaves working has its session
+    session is doing, once SETTLE has passed since it started: busy is left alone; otherwise its
+    ORGANIZE.md is read (parse), and a file with some move makes it ready, whatever the session
+    is doing; without one, waiting (a question, a permission prompt, an error) needs you with
+    that said, and idle or gone from the list needs you (no file, or no move); a list that
+    can't be read changes nothing. A run that leaves working has its session
     retired and worktree removed, then or on a later look. The lines to log."""
     rec = of(store)
     if not rec:
@@ -411,18 +446,20 @@ def look(store, *, sessions) -> list:
         seen = listing.get(sid) if sid else None
         if seen == "busy":
             return said
-        waits = sessions.why(sid) if seen else None
-        if seen == "waiting" and not waits:
-            waits = "question"
-        if waits:
+        text = _output(rec)
+        fields = _proposal(store, rec, text) if text is not None else None
+        waits = None
+        if not (fields and fields["state"] == "ready") and seen:
+            waits = sessions.why(sid)
+            if seen == "waiting" and not waits:
+                waits = "question"
+        if fields and fields["state"] == "ready":
+            pass  # a proposal written is kept, whatever the session did after it
+        elif waits:
             fields = {"state": "need", "why": f"{agent.label()} stopped before it finished: {ledger.WAITING.get(waits, ledger.WAITING['question'])}."}
-        else:
-            text = _output(rec)
-            if text is None:
-                fields = {"state": "need", "why": f"The session is gone and wrote no {OUTPUT}." if seen is None
-                          else f"The session finished without writing {OUTPUT}."}
-            else:
-                fields = _proposal(store, rec, text)
+        elif fields is None:
+            fields = {"state": "need", "why": f"The session is gone and wrote no {OUTPUT}." if seen is None
+                      else f"The session finished without writing {OUTPUT}."}
         if not _set(store, rec, "working", fields):
             return said
         said.append(f"organize: {len(fields['moves'])} moves ready to review" if fields["state"] == "ready"

@@ -578,6 +578,11 @@ class TileCases(unittest.TestCase):
                 if "session" in case:
                     self.assertEqual(seen_session(tiles.session(tile.text)), case["session"])
 
+    def test_each_index_s_domains_are_as_the_case_says(self):
+        for case in CASES["tileDomains"]:
+            with self.subTest(sorted(case["index"])):
+                self.assertEqual(tiles.tile_domains(case["index"]), case["domains"])
+
     def test_each_domain_name_is_taken_or_refused_as_the_case_says(self):
         for case in CASES["domainNames"]:
             with self.subTest(case["raw"]):

@@ -301,6 +301,15 @@ class Start(Repos):
         self.assertEqual(got["state"], "working")
         self.assertFalse((self.path() / "stale").exists())
 
+    def test_a_branch_worktree_with_work_in_it_at_the_path_is_left_alone(self):
+        git(self.app, "worktree", "add", "-q", "-b", "mine", str(self.path()))
+        (self.path() / "unsaved").write_text("work\n")
+        got = self.start()
+        self.assertEqual(got["state"], "need")
+        self.assertIn(str(self.path()), got["why"])
+        self.assertEqual((self.path() / "unsaved").read_text(), "work\n")
+        self.launch.assert_not_called()
+
     def test_a_path_that_is_not_a_worktree_makes_the_draft_need_you_naming_the_path(self):
         self.path().mkdir(parents=True)
         (self.path() / "mine").write_text("not a worktree\n")

@@ -236,12 +236,6 @@ def request(store, key: str, tile: str, note, *, sessions) -> dict:
 
 
 # ---------- worktrees ----------
-def _registered(repo: Path, path: Path) -> bool:
-    """Whether git lists path as one of the repo's worktrees."""
-    listed = pickup._git(repo, "worktree", "list", "--porcelain").stdout.splitlines()
-    return any(line.startswith("worktree ") and Path(line[9:]).resolve() == path.resolve() for line in listed)
-
-
 def _drop(repo: Path, path: Path) -> str:
     """Remove a worktree and what it changed. "" when it is gone (one that was gone already is);
     else why not, in git's words."""
@@ -252,19 +246,33 @@ def _drop(repo: Path, path: Path) -> str:
     return "" if not path.exists() else failed or f"{path} would not go"
 
 
+def clear_for(repo: Path, path: Path, who: str):
+    """Make way for a throwaway worktree at path: a detached worktree git lists there is removed
+    with what it changed, and nothing there is fine. Anything else there (a worktree on a branch,
+    which is someone's work, or a folder that isn't a worktree) raises RuntimeError with a
+    sentence naming the path, and is left as it is; so does a list git can't give, and a
+    worktree git won't remove raises with git's words. who: what cuts it ("this draft")."""
+    if not path.exists():
+        return
+    listing = _listed(repo)
+    if listing is None:
+        raise RuntimeError(f"git couldn't list the worktrees of {repo}, so {path} is left as it is.")
+    block = listing.get(path.resolve())
+    if block is None or "detached" not in block:
+        raise RuntimeError(f"{path} is already there and isn't a throwaway worktree {who} cut, so move it away.")
+    why = _drop(repo, path)
+    if why:
+        raise RuntimeError(why)
+
+
 def _worktree(store, key: str, repo, tile: str) -> dict:
     """A detached worktree of the repo's trunk for the draft: {"name", "worktree", "trunk"}.
-    A worktree git still lists at the path is removed and made again; any other trouble raises
-    RuntimeError with git's words, or a plain sentence naming the path. The store is not linked
-    in yet (pickup.link_store)."""
+    What is at the path already is cleared (clear_for: only a detached worktree goes); any other
+    trouble raises RuntimeError with git's words, or a plain sentence naming the path. The
+    store is not linked in yet (pickup.link_store)."""
     path = pickup.worktree(store, {"key": "draft-" + key, "title": ""}, repo)
     trunk = pickup.story_trunk(store, repo, None, tile)
-    if path.exists():
-        if not _registered(repo.path, path):
-            raise RuntimeError(f"{path} is already there and isn't a worktree of {repo.name}, so move it away.")
-        why = _drop(repo.path, path)
-        if why:
-            raise RuntimeError(why)
+    clear_for(repo.path, path, "a draft")
     pickup._git(repo.path, "worktree", "prune")
     pickup.keep_out(repo.path, path)
     made = pickup._git(repo.path, "worktree", "add", "--detach", str(path), trunk)

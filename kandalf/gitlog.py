@@ -35,8 +35,13 @@ SUBJECT_MAX = 72
 
 
 def git_dir(root: Path) -> Path:
-    return Path(subprocess.run(["git", "-C", str(root), "rev-parse", "--absolute-git-dir"],
-                               capture_output=True, text=True).stdout.strip())
+    """The repo's git folder. Raises FileNotFoundError when git names none (the repo is gone):
+    an empty answer would be the current folder, and the queue would be written there."""
+    found = subprocess.run(["git", "-C", str(root), "rev-parse", "--absolute-git-dir"],
+                           capture_output=True, text=True).stdout.strip()
+    if not found:
+        raise FileNotFoundError(f"{root} is not in a git repo")
+    return Path(found)
 
 
 def tiles(store, text: str) -> dict:
@@ -304,9 +309,14 @@ def flush(store, q: dict) -> bool:
 def wait(store):
     """The committer: sleep until the store's commit_delay() seconds after the latest change,
     commit, and exit once the queue is empty. Runs detached; record() starts it when none is
-    alive, as its own process, so it reads the store's board.json afresh."""
+    alive, as its own process, so it reads the store's board.json afresh. A store that is gone
+    (deleted while it waited) ends it, with nothing written."""
     delay = store.commit_delay()
     while True:
+        try:
+            git_dir(store.root)
+        except OSError:
+            return
         with queue(store.root) as q:
             if not q["paths"]:
                 if q.get("pid") == os.getpid():

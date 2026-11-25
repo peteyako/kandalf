@@ -3,7 +3,9 @@
 ## Unreleased
 
 - The map's bar has **Hide done**: it leaves finished stories off the map, keeping a done one whose branch isn't merged yet and a done master that still has open sub-stories. A master's count still counts every sub-story. The choice is kept in your browser.
-- The map's bar has **Organize…**: the store's agent proposes a domain for each story that has none (or for every story, with **Re-sort filed stories too**), and you tick what to keep. **Apply** files it in one commit, and one **Undo** takes it all back. The session runs in a throwaway worktree and writes nothing but its proposal, `ORGANIZE.md`, which the server reads (`POST /api/organize`, `POST /api/organize/end`).
+- The map's bar has **Organize…**: the store's agent proposes a domain for each story that has none (or for every story, with **Re-sort filed stories too**), and you tick what to keep. **Apply** files it in one commit, and one **Undo** takes it all back. The session runs in a throwaway worktree with copies of the stories' plan docs, not the store, and without the store's hooks, so nothing it writes reaches the store; the server reads its proposal, `ORGANIZE.md` (`POST /api/organize`, `POST /api/organize/end`). Apply files nothing when a story's domain changed after the proposal, and says which.
+- Draft options no longer removes a worktree on a branch that sits at a draft's `draft-<key>` path: the draft needs you and names the path.
+- A background committer whose store was deleted stops, instead of writing `board-pending.json` into the folder it was started from.
 
 ## 1.3.0
 

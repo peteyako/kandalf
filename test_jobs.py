@@ -504,3 +504,35 @@ class AcrossProcesses(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GoneStore(unittest.TestCase):
+    """A committer outlives its store when the store is deleted (a throwaway one, a test's):
+    it then writes nothing, least of all into the folder it was started from."""
+
+    def test_a_committer_whose_store_is_gone_stops_and_writes_nothing_where_it_runs(self):
+        from kandalf import gitlog
+        top = Path(tempfile.mkdtemp()).resolve()
+        here = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(top), str(here)]))
+        subprocess.run(["git", "-C", str(top), "init", "-q"], check=True)
+        (top / "board.json").write_text("{}")
+        st = stores.Store(top)
+        self.assertIsNotNone(st.root)
+        subprocess.run(["rm", "-rf", str(top)], check=True)
+        with self.assertRaises(OSError):
+            gitlog.git_dir(top)
+        with contextlib.chdir(here) if hasattr(contextlib, "chdir") else _chdir(here):
+            gitlog.wait(st)
+        self.assertEqual(list(here.iterdir()), [])
+
+
+@contextlib.contextmanager
+def _chdir(path):
+    import os
+    was = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(was)

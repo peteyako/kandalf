@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSet, organizeFiledText, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -961,6 +961,10 @@ test("each domain name in tile_cases.json is taken or refused as the case says",
   for (const c of CASES.domainNames) assert.deepEqual(page.domainName(c.raw), "error" in c ? { error: c.error } : { name: c.name }, JSON.stringify(c.raw));
 });
 
+test("each index in tile_cases.json has the domains the case says", () => {
+  for (const c of CASES.tileDomains) assert.deepEqual(Object.fromEntries(page.tileDomains(new Map(Object.entries(c.index)))), c.domains, Object.keys(c.index).join());
+});
+
 test("each options block in tile_cases.json reads as the case says", () => {
   for (const c of CASES.options) assert.deepEqual(page.optionsOf(c.md), c.options, c.md);
 });
@@ -1654,10 +1658,19 @@ test("the review panel lists a proposal grouped by domain, a new domain marked a
   assert.doesNotMatch(page.organizeReviewHTML({ ...PROPOSAL, left: [] }), /left as they are/);
 });
 
-test("Apply sends the domain of each ticked row and nothing for the rest", () => {
-  assert.deepEqual(page.organizeSet(PROPOSAL, new Set(["PLN-72", "PLN-81"])), { "PLN-72": "Payments", "PLN-81": "Clubs" });
-  assert.deepEqual(page.organizeSet(PROPOSAL, new Set(["PLN-99"])), {});
-  assert.deepEqual(page.organizeSet(PROPOSAL, new Set()), {});
+test("Apply sends the domain of each ticked row, and what each story's domain was when it was proposed", () => {
+  const org = { ...PROPOSAL, moves: PROPOSAL.moves.map(m => ({ ...m, from: m.key === "PLN-81" ? "Social" : null })) };
+  assert.deepEqual(page.organizeSend(org, new Set(["PLN-72", "PLN-81"])),
+    { set: { "PLN-72": "Payments", "PLN-81": "Clubs" }, expect: { "PLN-72": null, "PLN-81": "Social" } });
+  assert.deepEqual(page.organizeSend(org, new Set(["PLN-99"])), { set: {}, expect: {} });
+});
+
+test("stories changed since the proposal are said, and their rows come back unticked", () => {
+  assert.equal(page.organizeChangedText(["PLN-72"]), "PLN-72 has changed since the proposal, so nothing was filed. Its row is unticked: Apply again to file the rest.");
+  assert.equal(page.organizeChangedText(["PLN-80", "PLN-72"]), "PLN-72 and PLN-80 have changed since the proposal, so nothing was filed. Their rows are unticked: Apply again to file the rest.");
+  const html = page.organizeReviewHTML(PROPOSAL, new Set(["PLN-80"]));
+  assert.equal((html.match(/ checked/g) || []).length, 2);
+  assert.match(html, /data-org="PLN-80">/);
 });
 
 test("what Apply says names one story, one domain or how many of each", () => {

@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kandalf import jobs, organize, pickup, serve, tiles
+from kandalf import agent, jobs, organize, pickup, serve, tiles
 from kandalf import store as stores
 
 WHY_NOT = organize.why_not  # the real rule, before the fixture stubs it
@@ -95,9 +95,13 @@ class Store(unittest.TestCase):
     def snap(self):
         return tiles.Snapshot.read(self.store)
 
-    def start(self, note=None, refile=False, launched=None):
+    def start(self, note=None, refile=False, launched=None, effect=None):
         launched = launched or {"state": "started", "id": "s1", "session": "s1-full"}
-        with mock.patch.object(pickup, "_launch", return_value=launched) as launch:
+        def launch_(store, args, cwd, text):  # the session, stubbed: effect(cwd) is what it does there
+            if effect:
+                effect(cwd)
+            return launched
+        with mock.patch.object(organize, "_launch", side_effect=launch_) as launch:
             self.launch = launch
             got = organize.start(self.store, note, refile, sessions=self.sessions)
         if launched.get("id"):
@@ -105,7 +109,12 @@ class Store(unittest.TestCase):
         return got
 
     def path(self):
-        return pickup.worktree(self.store, {"key": "organize", "title": ""}, self.store.main_repo)
+        return pickup.worktree(self.store, {"key": "kandalf-organize", "title": ""}, self.store.main_repo)
+
+    def store_files(self):
+        """Every file of the store but the ledger and git's, with its bytes."""
+        return {str(f.relative_to(self.plans)): f.read_bytes() for f in sorted(self.plans.rglob("*"))
+                if f.is_file() and not f.name.startswith(".") and ".git" not in f.parts}
 
     def later(self, seconds=jobs.SETTLE + 1):
         self.clock[0] += seconds
@@ -142,6 +151,10 @@ class Stories(Store):
 
     def test_the_domains_there_are_count_their_stories_with_sub_stories_following_their_master(self):
         self.assertEqual(organize.domains(self.snap()), [("Theming", 2), ("Clubs", 1)])
+
+    def test_a_title_prefix_the_map_draws_as_a_domain_counts_as_one(self):
+        (self.plans / "archive" / "archived.md").write_text(ARCHIVE + "".join(f"- [x] PLN-4{i} **Admin: part {i}.**\n" for i in range(1, 4)))
+        self.assertIn(("Admin", 3), organize.domains(self.snap()))
 
 
 class Prompt(Store):
@@ -199,21 +212,65 @@ class Parse(unittest.TestCase):
 
 
 class Start(Store):
-    def test_it_cuts_a_detached_worktree_with_the_store_linked_and_records_working(self):
+    def test_it_cuts_a_detached_worktree_with_copies_of_the_plan_docs_and_records_working(self):
         got = self.start("keep payments apart")
         path = self.path()
         self.assertEqual((got["state"], got["id"], got["session"]), ("working", "s1", "s1-full"))
         self.assertEqual(git(path, "branch", "--show-current").strip(), "")
         self.assertEqual(git(path, "rev-parse", "HEAD"), git(self.app, "rev-parse", "dev"))
-        self.assertTrue((path / "docs" / "plans").is_symlink())
+        self.assertFalse((path / "docs" / "plans").is_symlink())
+        self.assertEqual((path / "docs" / "plans" / "active" / "2026-11-01-pay.md").read_text(), "# Pay\n")
+        self.assertFalse((path / "docs" / "plans" / "build.md").exists())
         rec = organize.of(self.store)
         self.assertEqual((rec["state"], rec["worktree"], rec["note"], rec["refile"], rec["started"]),
                          ("working", str(path), "keep payments apart", False, self.clock[0]))
         self.assertEqual([s["key"] for s in rec["stories"]], ["PLN-72", "PLN-80", "PLN-81"])
-        text, cwd = self.launch.call_args.args[4], self.launch.call_args.args[3]
+        text, cwd = self.launch.call_args.args[3], self.launch.call_args.args[2]
         self.assertEqual(cwd, path)
         self.assertIn("keep payments apart", text)
         self.assertEqual(git(self.app, "status", "--porcelain"), "")
+
+    def test_a_branch_worktree_with_work_in_it_at_the_path_is_left_alone(self):
+        git(self.app, "worktree", "add", "-q", "-b", "mine", str(self.path()))
+        (self.path() / "unsaved").write_text("work\n")
+        got = self.start()
+        self.assertEqual(got["state"], "need")
+        self.assertIn(str(self.path()), got["why"])
+        self.assertEqual((self.path() / "unsaved").read_text(), "work\n")
+        self.launch.assert_not_called()
+        organize.end(self.store, sessions=self.sessions)
+        self.assertEqual((self.path() / "unsaved").read_text(), "work\n")
+
+    def test_nothing_the_session_writes_reaches_the_store(self):
+        before = self.store_files()
+        def scribble(cwd):
+            (cwd / "docs" / "plans" / "build.md").write_text("scribbled\n")
+            (cwd / "docs" / "plans" / "active" / "2026-11-01-pay.md").write_text("scribbled\n")
+        self.start(effect=scribble)
+        self.write("- PLN-72: Payments\n")
+        self.live["s1"] = "idle"
+        self.later()
+        organize.look(self.store, sessions=self.sessions)
+        organize.end(self.store, sessions=self.sessions)
+        self.assertEqual(self.store_files(), before)
+
+    def test_the_session_is_started_without_the_store_s_hooks_or_its_folder(self):
+        (self.plans / ".claude").mkdir()
+        (self.plans / ".claude" / "settings.json").write_text("{}")
+        self.assertTrue(self.store.hooks_file.is_file())
+        with mock.patch.object(agent, "start", return_value={"id": "s9"}) as began, mock.patch.object(pickup, "full_id", return_value="s9-full"):
+            got = organize._launch(self.store, ["-n", "Organize domains"], self.app, "text")
+        self.assertEqual(got, {"state": "started", "id": "s9", "session": "s9-full"})
+        self.assertNotIn("--settings", began.call_args.args[0])
+        self.assertEqual((began.call_args.args[1:], began.call_args.kwargs), ((self.app, self.store.permission, "text"), {}))  # no folders added, the store's least of all
+
+    def test_a_run_still_being_cleaned_up_refuses_a_new_one_in_those_words(self):
+        self.start()
+        self.sessions.retire = lambda sid: False
+        organize.end(self.store, sessions=self.sessions)
+        with self.assertRaises(organize.Refused) as e:
+            self.start()
+        self.assertEqual(str(e.exception), "The last sort is still being cleaned up; try again in a moment.")
 
     def test_a_second_run_is_refused(self):
         self.start()
@@ -264,13 +321,22 @@ class Look(Store):
         said = self.look()
         rec = organize.of(self.store)
         self.assertEqual(rec["state"], "ready")
-        self.assertEqual(rec["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Payments", "new": True},
-                                        {"key": "PLN-80", "title": "Refunds", "domain": "Payments", "new": True},
-                                        {"key": "PLN-81", "title": "Club invites", "domain": "Clubs", "new": False}])
+        self.assertEqual(rec["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Payments", "new": True, "from": None},
+                                        {"key": "PLN-80", "title": "Refunds", "domain": "Payments", "new": True, "from": None},
+                                        {"key": "PLN-81", "title": "Club invites", "domain": "Clubs", "new": False, "from": None}])
         self.assertEqual(rec["left"], [])
         self.assertEqual(self.retired, ["s1"])
         self.assertFalse(self.path().exists())
         self.assertTrue(any("ready" in line for line in said), said)
+
+    def test_a_title_prefix_domain_is_not_new(self):
+        (self.plans / "archive" / "archived.md").write_text(ARCHIVE + "".join(f"- [x] PLN-4{i} **Admin: part {i}.**\n" for i in range(1, 4)))
+        self.start()
+        self.write("- PLN-72: admin\n")
+        self.live["s1"] = "idle"
+        self.later()
+        self.look()
+        self.assertEqual(organize.of(self.store)["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Admin", "new": False, "from": None}])
 
     def test_an_existing_domain_is_spelt_as_the_board_spells_it(self):
         self.start()
@@ -279,7 +345,7 @@ class Look(Store):
         self.later()
         self.look()
         rec = organize.of(self.store)
-        self.assertEqual(rec["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Theming", "new": False}])
+        self.assertEqual(rec["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Theming", "new": False, "from": None}])
         self.assertEqual(rec["left"], ["PLN-80", "PLN-81"])
 
     def test_a_busy_or_just_started_session_is_left_alone(self):
@@ -292,6 +358,23 @@ class Look(Store):
         self.later()
         self.look()
         self.assertEqual(organize.of(self.store)["state"], "working")
+
+    def test_a_proposal_written_before_the_session_stopped_on_a_question_is_kept(self):
+        self.start()
+        self.write("- PLN-72: Payments\n")
+        self.live["s1"] = "waiting"
+        self.later()
+        self.look()
+        self.assertEqual(organize.of(self.store)["state"], "ready")
+        self.assertEqual(self.retired, ["s1"])
+
+    def test_a_proposal_left_by_a_session_that_is_gone_is_kept(self):
+        self.start()
+        self.write("- PLN-72: Payments\n")
+        del self.live["s1"]
+        self.later()
+        self.look()
+        self.assertEqual(organize.of(self.store)["state"], "ready")
 
     def test_a_waiting_session_needs_you(self):
         self.start()
@@ -400,7 +483,7 @@ class Server(Store):
             srv.server_close()
 
     def test_the_routes_start_a_run_report_it_and_end_it(self):
-        with mock.patch.object(pickup, "_launch", return_value={"state": "started", "id": "s1", "session": "s1-full"}):
+        with mock.patch.object(organize, "_launch", return_value={"state": "started", "id": "s1", "session": "s1-full"}):
             status, reply = self.call("POST", "/api/organize", {"note": "apart", "refile": False})
         self.assertEqual(status, 200, reply)
         self.assertEqual(reply["organize"]["state"], "working")
@@ -424,7 +507,7 @@ class Server(Store):
         organize.look(self.store, sessions=self.sessions)
         status, reply = self.call("GET", "/api/pickup")
         self.assertEqual(reply["organize"]["state"], "ready")
-        self.assertEqual(reply["organize"]["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Payments", "new": True}])
+        self.assertEqual(reply["organize"]["moves"], [{"key": "PLN-72", "title": "Pay by card", "domain": "Payments", "new": True, "from": None}])
         self.assertEqual(reply["organize"]["left"], ["PLN-80", "PLN-81"])
 
     def test_the_watch_s_turn_looks_when_asked(self):
