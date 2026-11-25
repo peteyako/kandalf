@@ -3541,7 +3541,7 @@ async function jumpTo(key) {
 
 // ---------- combining stories ----------
 // Select mode puts a checkbox on each keyed card; a click on a card ticks it instead of opening it.
-// A long press on a keyed card starts it, with that card ticked; Done or Esc ends it.
+// A long press on a keyed card starts it, with that card ticked; Done, Esc or unticking the last card ends it.
 // picked holds the ticked keys in the order they were ticked: the first stays when they are combined.
 let pickMode = false;
 const picked = new Set();
@@ -3581,6 +3581,7 @@ function togglePick(cardEl) {
   const f = findCard(cardEl.dataset.id), key = f && cardKey(f.c);
   if (!key) return;
   if (!picked.delete(key)) picked.add(key);
+  if (!picked.size) return setPickMode(false);  // the last tick taken off ends selecting; a long press starts it again
   pickRefresh();
 }
 // Ask, then combine `keys` into one story (POST /api/combine) and take the reply as the board.
