@@ -20,7 +20,7 @@ const page = new Function(
    let MODELS = ["opus", "sonnet"];
    const localStorage = null;  // the page's remembered settings: none here
    ${html.slice(start, end)}
-   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, combineTitleHTML, suggestionFor, enterCommits, switchFills, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, splitOffered, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
+   return { cardMarkdown, movesWith, blockedBy, decisionLine, decisionOf, isDecisionCol, splitCard, sessionsOf, readyLine, inline, keyLinks, tileFacts, tileIndex, kidsOf, blocking, decisionsFor, blocksOf, inRing, optionsOf, draftOf, draftTag, optionRows, useText, faceBody, onlyOptionsDiffer, sectionIdMap, subTaskLines, pollsFor, blockerLines, blockerRowsHTML, answerKey, relatedTo, whereLabel, columnLayout, foldedTree, cardKey, sessionLine, storyParts, parse, modelOf, scrollPlaces, buildState, buildStats, withModel, baseOf, withBase, testsOf, withTests, inheritedTests, versionLabel, reposOf, withRepos, statusLine, readyLine, handoffLine, statusParts, statusToast, noteParts, pickupHintShows, readsAsBoard, pickupTag, wakeButton, queueButton, sessionState, wantsReply, canMessage, jobView, draftView, cardLook, replyHTML, isPickupColumn, isDoneCol, settingsHTML, settingsChanges, domainOf, domainName, tileDomains, mapGraph, mapLayout, mapStats, mapHideDone, mapToggle, mapShiftClick, combineShown, combineBody, combineDeleteNote, combineTitleHTML, suggestionFor, enterCommits, switchFills, mapKeepShown, mapBoxed, mapRegionAt, mapFiling, mapFiledText, mapPending, mapWithPending, mapSpelt, mapUndoable, organizeReviewHTML, organizeSend, organizeChangedText, organizeFiledText, splitLabel, splitReviewHTML, splitSend, splitCreatedText, splitOffered, agentMark, columnKind, kindTaken, doubledKinds, boardNames, boardLabel, ownName, pickable, boardOrder, renamingNotice, renamingHTML, namesMoved,
             setNames: n => applyNames(n),
             setRepos: list => { STORE_REPOS = list; },
             setTrunk: name => { STORE_TRUNK = name; },
@@ -1731,6 +1731,13 @@ test("the combine dialog lists the stories, ticks the first as the one that stay
   assert.match(said, /archive/);
   assert.match(said, /no Undo/i);
   assert.match(page.combineBody(["PLN-72", "PLN-73"], "PLN-73", index)[1], /value="PLN-73" checked/);
+});
+
+test("the combine dialog offers to delete the others, and warns when one of them holds the highest key", () => {
+  const index = new Map([["PLN-72", { title: "Main" }], ["PLN-73", { title: "Other" }]]);
+  assert.match(page.combineBody(["PLN-72", "PLN-73"], "PLN-72", index)[3], /<input type="checkbox" id="combineDelete">.*Delete the others instead of archiving them/);
+  assert.equal(page.combineDeleteNote(["PLN-73"], 73), "PLN-73 has the highest key, so a new story may be given it again.");
+  assert.equal(page.combineDeleteNote(["PLN-73"], 90), "");
 });
 
 // A split run as /api/pickup tells it, ready to review.

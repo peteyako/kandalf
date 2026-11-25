@@ -542,7 +542,7 @@ def combine_suggestion(store, keys) -> tuple:
     return 200, {"title": title}
 
 
-def combine_stories(store, keys, into, expect=None, title=None) -> tuple:
+def combine_stories(store, keys, into, expect=None, title=None, delete=False) -> tuple:
     """Combine stories into one: keys is the list of keys to combine and into the one that
     survives (tiles.combine says what its text becomes). The others go to the top of the archive log
     with "Combined into KEY." on them, their plan docs stay where they are, and any other tile that
@@ -552,7 +552,9 @@ def combine_stories(store, keys, into, expect=None, title=None) -> tuple:
     isn't one, (409, {error}) when a story can't be combined (archived, in flight with a session
     or job, or a master of another of them), or (409, {error: "changed since", changed: [KEY]})
     when a tile differs from expect, with nothing written. title, when given, is the survivor's new
-    title (valid_title: a sentence in a 400 when it isn't one)."""
+    title (valid_title: a sentence in a 400 when it isn't one). delete: the others are taken off the
+    boards and not archived (git history keeps them; a deleted story's key may be given out again
+    when it was the highest)."""
     if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys) or not isinstance(into, str):
         return 400, {"error": "Say which stories to combine, and which one stays."}
     if title is not None:
@@ -605,17 +607,18 @@ def combine_stories(store, keys, into, expect=None, title=None) -> tuple:
         tile = next(t for t in tile if t.key == key)
         notes.append(rebase_into_archive(reader.combined_note(store, tile.text, into), name))
         files[name] = reader.without(files[name], [tile])
-    log = files.get(ARCHIVE_LOG, ARCHIVE_HEAD)
-    for note in reversed(notes):
-        log = filed_in_archive(log, note)
-    files[ARCHIVE_LOG] = log
+    if not delete:
+        log = files.get(ARCHIVE_LOG, ARCHIVE_HEAD)
+        for note in reversed(notes):
+            log = filed_in_archive(log, note)
+        files[ARCHIVE_LOG] = log
     paths = []
     for name, text in sorted(files.items(), key=lambda f: f[0] != ARCHIVE_LOG):  # the archive first: a failed write never loses a story
         if text != snap.files.get(name):
             (store.dir / name).parent.mkdir(exist_ok=True)
             write_atomic(store.dir / name, text)
             paths.append(store.dir / name)
-    gitlog.record(store, paths, f"board: {', '.join(others)} combined into {into}", subject=True)
+    gitlog.record(store, paths, f"board: {', '.join(others)} combined into {into}{' and deleted' if delete else ''}", subject=True)
     end_drafts(store, others)
     return 200, {"combined": others, "into": into}
 
@@ -1678,7 +1681,7 @@ class Handler(BaseHTTPRequestHandler):
             if p is None or not p.is_file() or p.parent != self.plans:
                 return self.send_json(404, {"error": "no such board"})
             data = self.read_body()
-            status, reply = combine_stories(self.store, data.get("keys"), data.get("into"), data.get("expect"), data.get("title"))
+            status, reply = combine_stories(self.store, data.get("keys"), data.get("into"), data.get("expect"), data.get("title"), data.get("delete") is True)
             return self.send_json(status, {**self.board_reply(p), **reply} if status == 200 else reply)
         if u.path == "/api/decide":
             p = self.target(parse_qs(u.query))

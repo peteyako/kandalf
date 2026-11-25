@@ -292,6 +292,17 @@ class CombineInGit(unittest.TestCase):
         self.assertLess(text.index("From PLN-73"), text.index("From PLN-74"))
         self.assertLess(text.index("From PLN-74"), text.index("From PLN-75"))
 
+    def test_deleting_the_others_leaves_the_archive_alone_and_says_so_in_the_commit(self):
+        status, reply = serve.combine_stories(self.store, ["PLN-74", "PLN-75"], "PLN-74", delete=True)
+        self.assertEqual(status, 200, reply)
+        with gitlog.queue(self.store.root) as q:
+            gitlog.flush(self.store, q)
+        subject = subprocess.run(["git", "-C", str(self.dir), "log", "-1", "--format=%s"], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(subject, "board: PLN-75 combined into PLN-74 and deleted")
+        self.assertEqual((self.dir / "archive/archived.md").read_text(), self.FILES["archive/archived.md"])
+        self.assertIsNone(self.snap().tile("PLN-75"))
+        self.assertIn("From PLN-75 (Other loose).", self.snap().tile("PLN-74").text)
+
     def test_a_survivor_without_repos_takes_the_main_repo_with_the_others_repos(self):
         self.combine(["PLN-74", "PLN-73"], "PLN-74")
         self.assertEqual(reader.repos(self.snap().tile("PLN-74").text), ["myapp", "api", "web"])

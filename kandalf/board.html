@@ -2528,7 +2528,14 @@ const combineShown = keys => keys.length >= 2;
 function combineBody(keys, into, index) {
   const rows = keys.map(k => `<label class="combine-row"><input type="radio" name="combineInto" value="${esc(k)}"${k === into ? " checked" : ""}> <span><b>${esc(k)}</b> ${esc(index.get(k)?.title ?? "")}</span></label>`);
   return [`Combine these ${keys.length} stories into one. The one you pick stays, with its key and title:`, rows.join(""),
-    "It takes in the others' descriptions, sub-tasks and links; the others move to the archive, marked as combined into it, and stay there. There is no Undo (git history has the rest)."];
+    "It takes in the others' descriptions, sub-tasks and links; the others move to the archive, marked as combined into it, and stay there. There is no Undo (git history has the rest).",
+    `<label class="combine-row"><input type="checkbox" id="combineDelete"> Delete the others instead of archiving them</label> <span id="combineDeleteNote" class="ask-note"></span>`];
+}
+// What the dialog says beside "Delete the others" when it is ticked: a deleted story that holds the
+// store's highest key (high: its number) lets that key be given to a new story again.
+function combineDeleteNote(others, high) {
+  const top = others.find(k => Number(k.split("-").pop()) === high);
+  return top ? `${top} has the highest key, so a new story may be given it again.` : "";
 }
 // The dialog's Title field, first in it: filled with the title of the story that stays (the person's
 // to change), with a note beside it for the agent's suggestion and a button, hidden, to take it.
@@ -3582,8 +3589,13 @@ async function combineStories(keys) {
   field.addEventListener("keydown", e => { if (enterCommits(e)) { e.preventDefault(); $("#askOk").click(); } });
   $("#askOk").onclick = e => { if (!field.value.trim()) { e.preventDefault(); note.textContent = "A title can't be empty."; field.focus(); } };
   use.addEventListener("click", () => { field.value = use.dataset.title; use.hidden = true; note.textContent = `Suggested by ${AGENT_LABEL}`; field.focus(); });
+  const del = $("#combineDelete"), delNote = $("#combineDeleteNote");
+  const intoNow = () => document.querySelector('#askBody input[name="combineInto"]:checked')?.value || keys[0];
+  const high = Math.max(maxKey, ...[...index.keys()].map(k => Number(k.split("-").pop())).filter(Number.isFinite));
+  const sayDelete = () => { delNote.textContent = del.checked ? combineDeleteNote(keys.filter(k => k !== intoNow()), high) : ""; };
+  del.addEventListener("change", sayDelete);
   for (const radio of document.querySelectorAll('#askBody input[name="combineInto"]'))
-    radio.addEventListener("change", () => { if (switchFills(touched, filled)) field.value = index.get(radio.value)?.title ?? ""; });
+    radio.addEventListener("change", () => { if (switchFills(touched, filled)) field.value = index.get(radio.value)?.title ?? ""; sayDelete(); });
   note.textContent = `Asking ${AGENT_LABEL}…`;
   // One request per selection: opening the dialog again while it is out waits for the same one.
   const sig = keys.join();
@@ -3602,13 +3614,12 @@ async function combineStories(keys) {
   const yes = await asking;
   $("#askOk").onclick = null;
   if (!yes) return;
-  const into = document.querySelector('#askBody input[name="combineInto"]:checked')?.value || keys[0];
-  const title = field.value.trim();
+  const into = intoNow(), title = field.value.trim(), remove = del.checked;
   const expect = Object.fromEntries(keys.filter(k => serverTiles[k]?.rev).map(k => [k, serverTiles[k].rev]));
   saving = true; setStatus("Combining…");
   let reply = null;
   try {
-    const r = await fetch(`/api/combine?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys, into, expect, ...(title && title !== (index.get(into)?.title ?? "") ? { title } : {}) }) });
+    const r = await fetch(`/api/combine?file=${encodeURIComponent(file)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys, into, expect, ...(title && title !== (index.get(into)?.title ?? "") ? { title } : {}), ...(remove ? { delete: true } : {}) }) });
     reply = await r.json();
     if (!r.ok) {
       flash(reply.changed ? `Not combined: ${reply.changed.join(", ")} changed since the board was read.` : reply.error || `That didn't work (${r.status}).`);
@@ -3621,7 +3632,7 @@ async function combineStories(keys) {
   saving = false;
   adopt(reply); setStatus("Saved ✓ " + new Date().toLocaleTimeString());
   picked.clear(); pickMode = false; sm.sel = new Set(); sm.sig = ""; render();
-  flash(`${reply.combined.join(", ")} combined into ${reply.into}.`);
+  flash(`${reply.combined.join(", ")} combined into ${reply.into}${remove ? " and deleted" : ""}.`);
 }
 $("#pickBtn").addEventListener("click", () => setPickMode(!pickMode));
 $("#combineBtn").addEventListener("click", () => combineStories([...picked]));
